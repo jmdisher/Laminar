@@ -1,0 +1,67 @@
+This page contains some miscellaneous notes/background used to support the implementation/design of Laminar.
+
+Goals of Laminar project:
+-implement a simple and easily embeddable RAFT consensus mechanism
+-implement a simple and easily embeddable buffered network IO layer
+-implement a simple and easily embeddable append-only file IO layer
+-embed programmability into the event stream via AVM
+-implement small and easily embeddable Java client library
+-a design goal is to minimize dependencies of the core functionality (only AVM and its required dependencies will be considered - even those will be stripped down from its reference implementation since types, etc, will be different)
+
+Scope of Laminar 1.0:
+-RAFT consensus with dynamic cluster definition
+-high-throughput, multi-topic event store RPC, with on-disk persistence
+-embed a heavily modified AVM into the critical write path
+	-ability to create/destroy raw topics and programmable topics
+-create Java client library for transparent fail-over and replication/validation hooks
+-configurable per-node time-outs and forced term limits
+-create a predefined namespace for top-level topics
+	-this will be "."-prefixed
+	-only the leader can write to these (not clients)
+	-".config" will be where config changes are made
+		-managed by the leader, not the client, since the leader might want to ensure that any new nodes are synced before it actually enters join consensus
+		-when this is written, joint consensus is entered
+		-when this is committed, new consensus is active and old consensus is discarded
+-majority-write causes a COMMIT to be returned (since a majority is all that is required to ensure that we don't go back in time, on next term)
+
+Out-of-scope for Laminar 1.0 (may be considered for future releases):
+-inter-server compression
+-client-server compression
+-on-disk compression
+-topic compaction
+-ability for client to read directly from followers
+-replication-only followers (never attempt to lead)
+-lazy AVM object graph loading
+-cross-topic or re-entrant AVM invocations
+	-cross-topic calls would be useful, since they could allow atomic writes cross-topic, but that would grow complexity
+-scatter-gather fast sync of new nodes
+-server-server encryption
+-client-server encryption
+-abandon lagging nodes
+
+Possibly in-scope, but only if they help with testing:
+-generated message codec and projection code
+
+Miscellaneous design considerations within Laminar:
+-each term has a 1-indexed u64 monotonic value
+-clients are given 1-indexed u64 monotonic identifiers when connecting to a cluster for the first time
+-writable topics are UTF-8 strings of [1,127] bytes in length, not starting with "."
+	-read-only topics start with "."
+-there is a single input event stream which is fully in-order
+-each topic has its own committed event stream
+-messages _to_ a programmable topic appear in the even stream AFTER any events the execution of the message caused
+-each message is uniquely identified by a specific 1-indexed u64 monotonic value
+-each client also needs to associate a 1-indexed u64 nonce for each message it sends
+	-this is used to de-duplicate re-sends, after fail-over, but does also appear in the output stream
+-a client maintains a "re-send buffer" which holds a copy of every message it sent, until the leader tells it that message has committed
+-the leader will only consider a message committed if it has been acked by a majority of nodes in the current config (or both configs, during joint consensus)
+-the leader will send the "last commit offset" when appending entries or sending a heartbeat so followers know what to commit
+-programmable topics will not support any kind of "revert" operation.  This means that a command to such a topic can only be executed once it has been replicated to the majority
+-empty appendEntries calls will be sent as the heartbeat
+-appendEntries will return its next write index, allowing the leader to quickly wind back when a node is out of sync
+-AVM execution will be done on commit only, since we will not be allowing topic state to reverse
+-when clients connect to read a topic, they will need to pass in the previous offset they read (starting at 0 is safe since no event exists at index 0)
+-clients can choose, per-message, what durability requirement they have when sending it (to control their own blocking behaviour)
+-during election and voting, comparisons are made based on the "most recently SEEN event", NOT "most recently COMMITTED event"
+	-this is because a majority may disagree on what the most recently SEEN event is, but will still agree that the COMMIT level is behind what any of the majority have SEEN
+	-this means a node which is further ahead can still back up and sync to the new leader since it will never need to reverse to before that COMMIT

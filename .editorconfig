@@ -1,0 +1,18 @@
+# Top-level EditorConfig file
+root = true
+
+[*]
+# Unix-style newlines
+end_of_line = lf
+
+# Removing trailing whitespace often changes lines unrelated to the change being made and can make work annoying in some editors
+trim_trailing_whitespace = false
+
+# A text file which doesn't end in a newline isn't a valid text file
+insert_final_newline = true
+
+# Default to UTF-8 to keep things simple
+charset = utf-8
+
+# Tabs
+indent_style = tab
