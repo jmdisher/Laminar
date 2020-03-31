@@ -1,19 +1,30 @@
 package com.jeffdisher.laminar.console;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.PrintStream;
 import java.util.concurrent.CountDownLatch;
 
 import org.junit.Assert;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 
 class TestConsoleManager {
+	private PrintStream _fakeOut;
+
+	@BeforeEach
+	public void beforeEach() {
+		// Create a new fake sink for every test.
+		_fakeOut = new PrintStream(new ByteArrayOutputStream(1024));
+	}
+
 	@Test
 	void testStopParse() throws Throwable {
 		FakeStream stream = new FakeStream("stop\n");
 		CountDownLatch waitForStop = new CountDownLatch(1);
-		ConsoleManager manager = new ConsoleManager(System.out, stream, new IConsoleManagerBackgroundCallbacks() {
+		ConsoleManager manager = new ConsoleManager(_fakeOut, stream, new IConsoleManagerBackgroundCallbacks() {
 			@Override
 			public void handleStopCommand() {
 				waitForStop.countDown();
@@ -29,7 +40,7 @@ class TestConsoleManager {
 	void testStopWithArgs() throws Throwable {
 		FakeStream stream = new FakeStream("stop now in 5\n");
 		CountDownLatch waitForStop = new CountDownLatch(1);
-		ConsoleManager manager = new ConsoleManager(System.out, stream, new IConsoleManagerBackgroundCallbacks() {
+		ConsoleManager manager = new ConsoleManager(_fakeOut, stream, new IConsoleManagerBackgroundCallbacks() {
 			@Override
 			public void handleStopCommand() {
 				waitForStop.countDown();
@@ -44,7 +55,7 @@ class TestConsoleManager {
 	@Test
 	void testNoInput() throws Throwable {
 		FakeStream stream = new FakeStream("");
-		ConsoleManager manager = new ConsoleManager(System.out, stream, new IConsoleManagerBackgroundCallbacks() {
+		ConsoleManager manager = new ConsoleManager(_fakeOut, stream, new IConsoleManagerBackgroundCallbacks() {
 			@Override
 			public void handleStopCommand() {
 				// We shouldn't see this.
@@ -62,7 +73,7 @@ class TestConsoleManager {
 	void testStopMultiple() throws Throwable {
 		FakeStream stream = new FakeStream("stop\nstopstop\nstop\n\n\n");
 		CountDownLatch waitForStop = new CountDownLatch(1);
-		ConsoleManager manager = new ConsoleManager(System.out, stream, new IConsoleManagerBackgroundCallbacks() {
+		ConsoleManager manager = new ConsoleManager(_fakeOut, stream, new IConsoleManagerBackgroundCallbacks() {
 			@Override
 			public void handleStopCommand() {
 				waitForStop.countDown();
@@ -83,7 +94,7 @@ class TestConsoleManager {
 		builder.append("\nstop\n");
 		FakeStream stream = new FakeStream(builder.toString());
 		CountDownLatch waitForStop = new CountDownLatch(1);
-		ConsoleManager manager = new ConsoleManager(System.out, stream, new IConsoleManagerBackgroundCallbacks() {
+		ConsoleManager manager = new ConsoleManager(_fakeOut, stream, new IConsoleManagerBackgroundCallbacks() {
 			@Override
 			public void handleStopCommand() {
 				waitForStop.countDown();
