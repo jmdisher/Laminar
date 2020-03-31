@@ -8,7 +8,7 @@ import java.io.File;
  * files.
  */
 public class DiskManager {
-	public DiskManager(File dataDirectory) {
+	public DiskManager(File dataDirectory, IDiskManagerBackgroundCallbacks callbackTarget) {
 		// TODO Auto-generated constructor stub
 	}
 

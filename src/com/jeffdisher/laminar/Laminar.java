@@ -6,8 +6,13 @@ import java.net.InetSocketAddress;
 import java.nio.channels.ServerSocketChannel;
 
 import com.jeffdisher.laminar.console.ConsoleManager;
+import com.jeffdisher.laminar.console.IConsoleManagerBackgroundCallbacks;
 import com.jeffdisher.laminar.disk.DiskManager;
-import com.jeffdisher.laminar.network.NetworkManager;
+import com.jeffdisher.laminar.disk.IDiskManagerBackgroundCallbacks;
+import com.jeffdisher.laminar.network.ClientManager;
+import com.jeffdisher.laminar.network.ClusterManager;
+import com.jeffdisher.laminar.network.IClientManagerBackgroundCallbacks;
+import com.jeffdisher.laminar.network.IClusterManagerBackgroundCallbacks;
 import com.jeffdisher.laminar.state.NodeState;
 
 
@@ -68,27 +73,49 @@ public class Laminar {
 		System.out.println("Data directory configured: " + dataDirectoryName);
 		
 		// By this point, all requirements of the system should be satisfied so create the subsystems.
-		NetworkManager clientManager = new NetworkManager(clientSocket, null);
-		NetworkManager clusterManager = new NetworkManager(clusterSocket, null);
-		DiskManager disk = new DiskManager(dataDirectory);
-		ConsoleManager console = new ConsoleManager(System.out, System.in, null);
+		// First, the core NodeState and the background thread callback handlers for the managers.
+		NodeState thisNodeState = new NodeState();
+		IClientManagerBackgroundCallbacks clientCallbacks = new IClientManagerBackgroundCallbacks() {
+		};
+		IClusterManagerBackgroundCallbacks clusterCallbacks = new IClusterManagerBackgroundCallbacks() {
+		};
+		IDiskManagerBackgroundCallbacks diskCallbacks = new IDiskManagerBackgroundCallbacks() {
+		};
+		IConsoleManagerBackgroundCallbacks consoleCallbacks = new IConsoleManagerBackgroundCallbacks() {
+			@Override
+			public void handleStopCommand() {
+				// TODO Auto-generated method stub
+			}
+		};
 		
+		// Now, create the managers.
+		ClientManager clientManager = new ClientManager(clientSocket, clientCallbacks);
+		ClusterManager clusterManager = new ClusterManager(clusterSocket, clusterCallbacks);
+		DiskManager diskManager = new DiskManager(dataDirectory, diskCallbacks);
+		ConsoleManager consoleManager = new ConsoleManager(System.out, System.in, consoleCallbacks);
+		
+		// All the components are ready so we can now register the managers with it.
+		thisNodeState.registerClientManager(clientManager);
+		thisNodeState.registerClusterManager(clusterManager);
+		thisNodeState.registerDiskManager(diskManager);
+		thisNodeState.registerConsoleManager(consoleManager);
+		
+		// Start all background threads and other manager processes.
 		clientManager.startAndWaitForReady();
 		clusterManager.startAndWaitForReady();
-		disk.startAndWaitForReady();
-		console.startAndWaitForReady();
+		diskManager.startAndWaitForReady();
+		consoleManager.startAndWaitForReady();
 		
 		// We are now ready so enter the initial state.
 		System.out.println("Laminar ready for leader connection or config upload...");
-		NodeState thisNodeState = new NodeState(clientManager, clusterManager, disk, console);
 		thisNodeState.runUntilShutdown();
 		
 		// The node state has entered a shutdown state so notify the user and close everything.
 		System.out.println("Laminar shutting down...");
 		clientManager.stopAndWaitForTermination();
 		clusterManager.stopAndWaitForTermination();
-		disk.stopAndWaitForTermination();
-		console.stopAndWaitForTermination();
+		diskManager.stopAndWaitForTermination();
+		consoleManager.stopAndWaitForTermination();
 		
 		// Close the resources we created - we just log if there are issues, and proceed.
 		System.out.println("Laminar threads shutdown.  Closing sockets and terminating...");
