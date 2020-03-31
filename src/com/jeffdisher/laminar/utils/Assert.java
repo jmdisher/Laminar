@@ -17,4 +17,15 @@ public class Assert {
 	public static AssertionError unexpected(Throwable throwable) {
 		throw new AssertionError("Unexpected throwable", throwable);
 	}
+
+	/**
+	 * Fails when a statement which must be true but is not.
+	 * 
+	 * @param flag A statement which MUST be true for the program to be in a valid state.
+	 */
+	public static void assertTrue(boolean flag) {
+		if (!flag) {
+			throw new AssertionError("Statement MUST be true");
+		}
+	}
 }

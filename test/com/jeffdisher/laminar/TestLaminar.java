@@ -60,6 +60,8 @@ class TestLaminar {
 
 	@Test
 	void testNormalRun() {
+		// We just want this to start everything and then shut down.
+		System.setIn(new ByteArrayInputStream("stop\n".getBytes()));
 		Laminar.main(new String[] {"--client", "2000", "--cluster", "2001", "--data", "/tmp/laminar"});
 	}
 }

@@ -84,7 +84,7 @@ public class Laminar {
 		IConsoleManagerBackgroundCallbacks consoleCallbacks = new IConsoleManagerBackgroundCallbacks() {
 			@Override
 			public void handleStopCommand() {
-				// TODO Auto-generated method stub
+				thisNodeState.backgroundStopNode();
 			}
 		};
 		
