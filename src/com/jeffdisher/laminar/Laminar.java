@@ -71,7 +71,7 @@ public class Laminar {
 		NetworkManager clientManager = new NetworkManager(clientSocket, null);
 		NetworkManager clusterManager = new NetworkManager(clusterSocket, null);
 		DiskManager disk = new DiskManager(dataDirectory);
-		ConsoleManager console = new ConsoleManager(System.out, System.in);
+		ConsoleManager console = new ConsoleManager(System.out, System.in, null);
 		
 		clientManager.startAndWaitForReady();
 		clusterManager.startAndWaitForReady();
