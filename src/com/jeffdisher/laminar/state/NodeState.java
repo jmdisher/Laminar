@@ -1,9 +1,13 @@
 package com.jeffdisher.laminar.state;
 
 import com.jeffdisher.laminar.console.ConsoleManager;
+import com.jeffdisher.laminar.console.IConsoleManagerBackgroundCallbacks;
 import com.jeffdisher.laminar.disk.DiskManager;
+import com.jeffdisher.laminar.disk.IDiskManagerBackgroundCallbacks;
 import com.jeffdisher.laminar.network.ClientManager;
 import com.jeffdisher.laminar.network.ClusterManager;
+import com.jeffdisher.laminar.network.IClientManagerBackgroundCallbacks;
+import com.jeffdisher.laminar.network.IClusterManagerBackgroundCallbacks;
 import com.jeffdisher.laminar.utils.Assert;
 
 
@@ -14,7 +18,7 @@ import com.jeffdisher.laminar.utils.Assert;
  * Note that the thread which creates this instance is defined as "main" and MUST be the same thread which calls
  * runUntilShutdown() and MUST NOT call any background* methods (this is to verify re-entrance safety, etc).
  */
-public class NodeState {
+public class NodeState implements IClientManagerBackgroundCallbacks, IClusterManagerBackgroundCallbacks, IDiskManagerBackgroundCallbacks, IConsoleManagerBackgroundCallbacks {
 	// We keep the main thread for asserting no re-entrance bugs or invalid interface uses.
 	private final Thread _mainThread;
 
@@ -92,14 +96,14 @@ public class NodeState {
 		_consoleManager = consoleManager;
 	}
 
-	/**
-	 * Called by a callback handler's thread to tell the node to stop and begin shutting down.
-	 */
-	public synchronized void backgroundStopNode() {
+	// <IConsoleManagerBackgroundCallbacks>
+	@Override
+	public synchronized void handleStopCommand() {
 		// This MUST NOT be called on the main thread.
 		Assert.assertTrue(Thread.currentThread() != _mainThread);
 		
 		_keepRunning = false;
 		this.notifyAll();
 	}
+	// </IConsoleManagerBackgroundCallbacks>
 }

@@ -6,13 +6,9 @@ import java.net.InetSocketAddress;
 import java.nio.channels.ServerSocketChannel;
 
 import com.jeffdisher.laminar.console.ConsoleManager;
-import com.jeffdisher.laminar.console.IConsoleManagerBackgroundCallbacks;
 import com.jeffdisher.laminar.disk.DiskManager;
-import com.jeffdisher.laminar.disk.IDiskManagerBackgroundCallbacks;
 import com.jeffdisher.laminar.network.ClientManager;
 import com.jeffdisher.laminar.network.ClusterManager;
-import com.jeffdisher.laminar.network.IClientManagerBackgroundCallbacks;
-import com.jeffdisher.laminar.network.IClusterManagerBackgroundCallbacks;
 import com.jeffdisher.laminar.state.NodeState;
 
 
@@ -75,24 +71,21 @@ public class Laminar {
 		// By this point, all requirements of the system should be satisfied so create the subsystems.
 		// First, the core NodeState and the background thread callback handlers for the managers.
 		NodeState thisNodeState = new NodeState();
-		IClientManagerBackgroundCallbacks clientCallbacks = new IClientManagerBackgroundCallbacks() {
-		};
-		IClusterManagerBackgroundCallbacks clusterCallbacks = new IClusterManagerBackgroundCallbacks() {
-		};
-		IDiskManagerBackgroundCallbacks diskCallbacks = new IDiskManagerBackgroundCallbacks() {
-		};
-		IConsoleManagerBackgroundCallbacks consoleCallbacks = new IConsoleManagerBackgroundCallbacks() {
+		// We also want to install an uncaught exception handler to make sure background thread failures are fatal.
+		Thread.setDefaultUncaughtExceptionHandler(new Thread.UncaughtExceptionHandler() {
 			@Override
-			public void handleStopCommand() {
-				thisNodeState.backgroundStopNode();
+			public void uncaughtException(Thread t, Throwable e) {
+				System.err.println("FATAL UNCAUGHT ERROR ON THREAD: " + t);
+				e.printStackTrace(System.err);
+				System.exit(99);
 			}
-		};
+		});
 		
 		// Now, create the managers.
-		ClientManager clientManager = new ClientManager(clientSocket, clientCallbacks);
-		ClusterManager clusterManager = new ClusterManager(clusterSocket, clusterCallbacks);
-		DiskManager diskManager = new DiskManager(dataDirectory, diskCallbacks);
-		ConsoleManager consoleManager = new ConsoleManager(System.out, System.in, consoleCallbacks);
+		ClientManager clientManager = new ClientManager(clientSocket, thisNodeState);
+		ClusterManager clusterManager = new ClusterManager(clusterSocket, thisNodeState);
+		DiskManager diskManager = new DiskManager(dataDirectory, thisNodeState);
+		ConsoleManager consoleManager = new ConsoleManager(System.out, System.in, thisNodeState);
 		
 		// All the components are ready so we can now register the managers with it.
 		thisNodeState.registerClientManager(clientManager);
