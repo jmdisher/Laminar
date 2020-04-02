@@ -83,7 +83,13 @@ public class Laminar {
 		
 		// Now, create the managers.
 		ClientManager clientManager = new ClientManager(clientSocket, thisNodeState);
-		ClusterManager clusterManager = new ClusterManager(clusterSocket, thisNodeState);
+		ClusterManager clusterManager = null;
+		try {
+			clusterManager = new ClusterManager(clusterSocket, thisNodeState);
+		} catch (IOException e1) {
+			// Not sure how creating the Selector would fail but we can handle it since we haven't started, yet.
+			failStart("Failure creating ClusterManager: " + e1.getLocalizedMessage());
+		}
 		DiskManager diskManager = new DiskManager(dataDirectory, thisNodeState);
 		ConsoleManager consoleManager = new ConsoleManager(System.out, System.in, thisNodeState);
 		

@@ -28,4 +28,15 @@ public class Assert {
 			throw new AssertionError("Statement MUST be true");
 		}
 	}
+
+	/**
+	 * This is the only method here provided for prototyping.
+	 * This method can be called when state falls of the "happy path" being demonstrated.
+	 * THIS METHOD MUST BE REMOVED BEFORE FINAL RELEASE!
+	 * 
+	 * @param message An informative error.
+	 */
+	public static void unimplemented(String message) {
+		throw new AssertionError("UNIMPLEMENTED: " + message);
+	}
 }

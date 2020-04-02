@@ -6,6 +6,7 @@ import com.jeffdisher.laminar.disk.DiskManager;
 import com.jeffdisher.laminar.disk.IDiskManagerBackgroundCallbacks;
 import com.jeffdisher.laminar.network.ClientManager;
 import com.jeffdisher.laminar.network.ClusterManager;
+import com.jeffdisher.laminar.network.ClusterManager.NodeToken;
 import com.jeffdisher.laminar.network.IClientManagerBackgroundCallbacks;
 import com.jeffdisher.laminar.network.IClusterManagerBackgroundCallbacks;
 import com.jeffdisher.laminar.utils.Assert;
@@ -95,6 +96,32 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 		Assert.assertTrue(null == _consoleManager);
 		_consoleManager = consoleManager;
 	}
+
+	// <IClusterManagerBackgroundCallbacks>
+	@Override
+	public void nodeDidConnect(NodeToken node) {
+		// TODO Auto-generated method stub
+		
+	}
+
+	@Override
+	public void nodeDidDisconnect(NodeToken node) {
+		// TODO Auto-generated method stub
+		
+	}
+
+	@Override
+	public void nodeWriteReady(NodeToken node) {
+		// TODO Auto-generated method stub
+		
+	}
+
+	@Override
+	public void nodeReadReady(NodeToken node) {
+		// TODO Auto-generated method stub
+		
+	}
+	// </IClusterManagerBackgroundCallbacks>
 
 	// <IConsoleManagerBackgroundCallbacks>
 	@Override
