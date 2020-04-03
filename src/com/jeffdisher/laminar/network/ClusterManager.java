@@ -192,8 +192,8 @@ public class ClusterManager {
 			if (selectedKeyCount > 0) {
 				processSelectedKeys();
 			}
-			// Now, go back through the map of our keys and update our operations.
-			rebuildKeyOperations();
+			// Note that the keys' interested operations are updated by processing why they were selected or when an
+			// external caller changes the state so we don't need to go through them, again.
 		}
 		// We are shutting down so close all clients.
 		for (SelectionKey key : _connectedNodes) {
@@ -287,24 +287,6 @@ public class ClusterManager {
 				}
 			}
 			selectedKeys.remove();
-		}
-	}
-
-	private void rebuildKeyOperations() {
-		// Walk over all the connected nodes, and check their states to see what the select mode should be for each key.
-		for (SelectionKey key : _connectedNodes) {
-			ConnectionState state = (ConnectionState)key.attachment();
-			boolean canRead = false;
-			boolean canWrite = false;
-			synchronized (state) {
-				// If there is space in the reading buffer, we can try to read.
-				canRead = state.toRead.hasRemaining();
-				// If the writing buffer has anything in it, we can try to write.
-				canWrite = (state.toWrite.position() > 0);
-			}
-			int operations = (canRead ? SelectionKey.OP_READ : 0)
-					| (canWrite ? SelectionKey.OP_WRITE : 0);
-			key.interestOps(operations);
 		}
 	}
 
