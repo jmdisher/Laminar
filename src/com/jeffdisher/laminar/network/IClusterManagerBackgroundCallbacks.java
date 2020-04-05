@@ -39,4 +39,19 @@ public interface IClusterManagerBackgroundCallbacks {
 	 * @param node The node which has sent a message.
 	 */
 	void nodeReadReady(ClusterManager.NodeToken node);
+
+	/**
+	 * Called when a previously attempted outbound node connection has been established.
+	 * 
+	 * @param node The node which is now connected.
+	 */
+	void outboundNodeConnected(ClusterManager.NodeToken node);
+
+	/**
+	 * Called when an outbound node connection disconnected.
+	 * Once this call is made, the token is invalid and a new token must be created by reestablishing a new connection.
+	 * 
+	 * @param node The node which is no longer connected.
+	 */
+	void outboundNodeDisconnected(ClusterManager.NodeToken node);
 }

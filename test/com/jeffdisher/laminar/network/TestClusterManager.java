@@ -21,7 +21,7 @@ class TestClusterManager {
 	void testStartStop() throws Throwable {
 		// Create a server.
 		ServerSocketChannel socket = createSocket(PORT_BASE + 1);
-		Callbacks callbacks = new Callbacks(null, null, null, null);
+		LatchedCallbacks callbacks = new LatchedCallbacks(null, null, null, null);
 		ClusterManager server = new ClusterManager(socket, callbacks);
 		server.startAndWaitForReady();
 		server.stopAndWaitForTermination();
@@ -36,7 +36,7 @@ class TestClusterManager {
 		CountDownLatch readLatch = new CountDownLatch(1);
 		CountDownLatch writeLatch = new CountDownLatch(1);
 		CountDownLatch disconnectLatch = new CountDownLatch(1);
-		Callbacks callbacks = new Callbacks(connectLatch, readLatch, writeLatch, disconnectLatch);
+		LatchedCallbacks callbacks = new LatchedCallbacks(connectLatch, readLatch, writeLatch, disconnectLatch);
 		ClusterManager server = new ClusterManager(socket, callbacks);
 		server.startAndWaitForReady();
 		
@@ -63,6 +63,55 @@ class TestClusterManager {
 		server.stopAndWaitForTermination();
 	}
 
+	@Test
+	void testPingPong2() throws Throwable {
+		// Create main server.
+		int serverPort = PORT_BASE + 3;
+		// Create to "clients"
+		int clientPort1 = PORT_BASE + 4;
+		int clientPort2 = PORT_BASE + 5;
+		int maxPayload = 32 * 1024;
+		ServerSocketChannel serverSocket = createSocket(serverPort);
+		ServerSocketChannel clientSocket1 = createSocket(clientPort1);
+		ServerSocketChannel clientSocket2 = createSocket(clientPort2);
+		CountDownLatch latch = new CountDownLatch(2);
+		CountDownLatch ignored1 = new CountDownLatch(1);
+		CountDownLatch ignored2 = new CountDownLatch(1);
+		EchoClusterCallbacks serverLogic = new EchoClusterCallbacks(maxPayload, latch);
+		EchoClusterCallbacks clientLogic1 = new EchoClusterCallbacks(maxPayload, ignored1);
+		EchoClusterCallbacks clientLogic2 = new EchoClusterCallbacks(maxPayload, ignored2);
+		ClusterManager serverManager = new ClusterManager(serverSocket, serverLogic);
+		ClusterManager clientManager1 = new ClusterManager(clientSocket1, clientLogic1);
+		ClusterManager clientManager2 = new ClusterManager(clientSocket2, clientLogic2);
+		serverLogic.startThreadForManager(serverManager);
+		clientLogic1.startThreadForManager(clientManager1);
+		clientLogic2.startThreadForManager(clientManager2);
+		serverManager.startAndWaitForReady();
+		clientManager1.startAndWaitForReady();
+		clientManager2.startAndWaitForReady();
+		
+		NodeToken token1 = clientManager1.createOutgoingConnection(new InetSocketAddress(serverPort));
+		NodeToken token2 = clientManager2.createOutgoingConnection(new InetSocketAddress(serverPort));
+		boolean didSend = clientManager1.trySendMessage(token1, new byte[0]);
+		// The buffer starts writable so this can't fail.
+		Assert.assertTrue(didSend);
+		didSend = clientManager2.trySendMessage(token2, new byte[0]);
+		Assert.assertTrue(didSend);
+		latch.await();
+		
+		// Close the connections.
+		clientManager1.closeOutgoingConnection(token1);
+		clientManager2.closeOutgoingConnection(token2);
+		
+		// Shut everything down.
+		serverManager.stopAndWaitForTermination();
+		clientManager1.stopAndWaitForTermination();
+		clientManager2.stopAndWaitForTermination();
+		serverLogic.stopAndWait();
+		clientLogic1.stopAndWait();
+		clientLogic2.stopAndWait();
+	}
+
 
 	private ServerSocketChannel createSocket(int port) throws IOException {
 		ServerSocketChannel socket = ServerSocketChannel.open();
@@ -72,14 +121,17 @@ class TestClusterManager {
 	}
 
 
-	private static class Callbacks implements IClusterManagerBackgroundCallbacks {
+	/**
+	 * Used for simple cases where the external test only wants to verify that a call was made when expected.
+	 */
+	private static class LatchedCallbacks implements IClusterManagerBackgroundCallbacks {
 		private final CountDownLatch _connectLatch;
 		private final CountDownLatch _readLatch;
 		private final CountDownLatch _writeLatch;
 		private final CountDownLatch _disconnectLatch;
 		public volatile NodeToken recentConnection;
 		
-		public Callbacks(CountDownLatch connectLatch, CountDownLatch readLatch, CountDownLatch writeLatch, CountDownLatch disconnectLatch) {
+		public LatchedCallbacks(CountDownLatch connectLatch, CountDownLatch readLatch, CountDownLatch writeLatch, CountDownLatch disconnectLatch) {
 			_connectLatch = connectLatch;
 			_readLatch = readLatch;
 			_writeLatch = writeLatch;
@@ -105,6 +157,14 @@ class TestClusterManager {
 		@Override
 		public void nodeReadReady(NodeToken node) {
 			_readLatch.countDown();
+		}
+
+		@Override
+		public void outboundNodeConnected(NodeToken node) {
+		}
+
+		@Override
+		public void outboundNodeDisconnected(NodeToken node) {
 		}
 	}
 }

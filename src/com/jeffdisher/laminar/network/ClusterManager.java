@@ -1,6 +1,7 @@
 package com.jeffdisher.laminar.network;
 
 import java.io.IOException;
+import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.ClosedChannelException;
 import java.nio.channels.SelectionKey;
@@ -21,6 +22,15 @@ import com.jeffdisher.laminar.utils.Assert;
  * only hand-off to the coordination thread, outside.
  * Note on message framing:  All network messages, including the header, are limited to 64 KiB.  The header is 2-bytes
  * (the big-endian u16 of the size) so this means the usable payload can be between [0..65534].
+ * 
+ * Concerns regarding concurrent access to NIO resources:
+ * 1)  Registering a channel with a selector seems to block on any other interaction with the selector, mostly notably
+ *  a blocking select operation.  For the most part, these registrations are only done on the internal but outgoing
+ *  connections are created/destroyed on an external caller.  For this reasons, we will use a hand-off so that the
+ *  internal thread wakes from the select operation to do the registration on behalf of the caller.
+ * 2)  Changing the interested operations of an existing registration _appears_ to be safe and not blocked by an ongoing
+ *  select operation so we will still change those on the outside.  This may be unreliable and the documentation states
+ *  that this is implementation-dependent so this may chance in the future.
  */
 public class ClusterManager {
 	// We will use 64 KiB buffers since we will impose a message size limit less than this.
@@ -31,8 +41,14 @@ public class ClusterManager {
 	private final Selector _selector;
 	private final ServerSocketChannel _acceptorSocket;
 	private final SelectionKey _acceptorKey;
+	// Note that the _connectedNodes contains all connected sockets, incoming or outgoing.
 	private final LinkedList<SelectionKey> _connectedNodes;
 	private final IClusterManagerBackgroundCallbacks _callbackTarget;
+
+	// Hand-offs used for opening/closing out-going connections.
+	private volatile SocketChannel _handoff_newConnection;
+	private volatile NodeToken _handoff_newConnectionResponse;
+	private volatile NodeToken _handoff_closeConnection;
 
 	// We will mark this volatile since we are relying on the select, not the monitor.
 	private volatile boolean _keepRunning;
@@ -184,6 +200,81 @@ public class ClusterManager {
 		return message;
 	}
 
+	public NodeToken createOutgoingConnection(InetSocketAddress address) throws IOException {
+		// We consider calls into the public interface on the internal thread to be statically incorrect re-entrance
+		// errors, so those are assertions.
+		Assert.assertTrue(Thread.currentThread() != _background);
+		
+		// Create the socket as non-blocking and initiate the connection.
+		// This is then added to our _persistentOutboundNodes set, since we want to re-establish these if they drop.
+		SocketChannel outbound = SocketChannel.open();
+		outbound.configureBlocking(false);
+		boolean isImmediatelyConnected = outbound.connect(address);
+		// TODO: Remove this once we can test if immediate connections happen and what the implications are, if it does.
+		if (isImmediatelyConnected) {
+			System.out.println("IMMEDIATE CONNECT");
+		}
+		// Note:  This part seems gratuitously complex but we want the _internal_ thread to register the connection and
+		// interact with _connectedNodes, ONLY.
+		// This allows enhanced safety around _connectedNodes but mostly it is to avoid an issue where registering with
+		// the selector will block if an active select is in-process.
+		// Also, since creating/destroying connections is a rare an expensive operation, this should be safe.
+		NodeToken token = null;
+		synchronized (this) {
+			// Make sure we aren't queued behind someone else.
+			while (null != _handoff_newConnection) {
+				try {
+					this.wait();
+				} catch (InterruptedException e) {
+					// We don't use interruption.
+					Assert.unexpected(e);
+				}
+			}
+			_handoff_newConnection = outbound;
+			// Notify the internal thread (it isn't blocked in a monitor, but in the select).
+			_selector.wakeup();
+			while (null == _handoff_newConnectionResponse) {
+				try {
+					this.wait();
+				} catch (InterruptedException e) {
+					// We don't use interruption.
+					Assert.unexpected(e);
+				}
+			}
+			token = _handoff_newConnectionResponse;
+			_handoff_newConnectionResponse = null;
+		}
+		return token;
+	}
+
+	public void closeOutgoingConnection(NodeToken token) throws IOException {
+		SocketChannel channel = ((ConnectionState)(token.actualKey).attachment()).channel;
+		// The _internal_ thread owns outgoing connection open/close so hand this off to them.
+		synchronized (this) {
+			// Make sure we aren't queued behind someone else.
+			while (null != _handoff_closeConnection) {
+				try {
+					this.wait();
+				} catch (InterruptedException e) {
+					// We don't use interruption.
+					Assert.unexpected(e);
+				}
+			}
+			_handoff_closeConnection = token;
+			// Notify the internal thread (it isn't blocked in a monitor, but in the select).
+			_selector.wakeup();
+			while (null != _handoff_closeConnection) {
+				try {
+					this.wait();
+				} catch (InterruptedException e) {
+					// We don't use interruption.
+					Assert.unexpected(e);
+				}
+			}
+		}
+		// By this point, we can proceed to close the channel (symmetry with the opening of the channel).
+		channel.close();
+	}
 
 	private void _backgroundThreadMain() throws IOException {
 		while (_keepRunning) {
@@ -194,12 +285,44 @@ public class ClusterManager {
 			}
 			// Note that the keys' interested operations are updated by processing why they were selected or when an
 			// external caller changes the state so we don't need to go through them, again.
+			
+			// Also, we may have an outgoing connection pending so check that.
+			_backgroundCheckHandoff();
 		}
 		// We are shutting down so close all clients.
 		for (SelectionKey key : _connectedNodes) {
 			ConnectionState state = (ConnectionState)key.attachment();
 			state.channel.close();
 			key.cancel();
+		}
+	}
+
+	private synchronized void _backgroundCheckHandoff() throws ClosedChannelException {
+		if (null != _handoff_newConnection) {
+			// Register this connection, pass back the token, and notify them.
+			ConnectionState newState = new ConnectionState(_handoff_newConnection);
+			SelectionKey newKey = _handoff_newConnection.register(_selector, SelectionKey.OP_CONNECT, newState);
+			NodeToken token = new NodeToken(newKey);
+			newState.token = token;
+			_connectedNodes.add(newKey);
+			
+			_handoff_newConnection = null;
+			// The last caller would have consumed the response before the new caller could have passed us work.
+			Assert.assertTrue(null == _handoff_newConnectionResponse);
+			_handoff_newConnectionResponse = token;
+			
+			this.notifyAll();
+		}
+		
+		// Check the disconnect, as well.
+		if (null != _handoff_closeConnection) {
+			SelectionKey key = _handoff_closeConnection.actualKey;
+			_connectedNodes.remove(key);
+			key.cancel();
+			// (note that we only cancel the registration - closing the socket is done in the calling thread).
+			
+			_handoff_closeConnection = null;
+			this.notifyAll();
 		}
 	}
 
@@ -232,6 +355,24 @@ public class ClusterManager {
 				Assert.assertTrue(null != state);
 				
 				// See what operation we wanted to perform.
+				if (key.isConnectable()) {
+					// Finish the connection, send the callback that an outbound connection was established, and switch
+					// its interested ops (normally just READ but WRITE is possible if data has already been written to
+					// the outgoing buffer.
+					// NOTE: Outbound connections are NOT added to _connectedNodes.
+					boolean isConnected = state.channel.finishConnect();
+					if (!isConnected) {
+						Assert.unimplemented("Does connection failure manifest here?");
+					}
+					int interestedOps = SelectionKey.OP_READ;
+					synchronized (state) {
+						if (state.toWrite.position() > 0) {
+							interestedOps |= SelectionKey.OP_WRITE;
+						}
+					}
+					key.interestOps(interestedOps);
+					_callbackTarget.outboundNodeConnected(state.token);
+				}
 				if (key.isReadable()) {
 					// Read into our buffer.
 					int newMessagesAvailable = 0;

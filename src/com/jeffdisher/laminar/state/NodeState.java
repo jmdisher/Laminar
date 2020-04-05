@@ -121,6 +121,18 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 		// TODO Auto-generated method stub
 		
 	}
+
+	@Override
+	public void outboundNodeConnected(NodeToken node) {
+		// TODO Auto-generated method stub
+		
+	}
+
+	@Override
+	public void outboundNodeDisconnected(NodeToken node) {
+		// TODO Auto-generated method stub
+		
+	}
 	// </IClusterManagerBackgroundCallbacks>
 
 	// <IConsoleManagerBackgroundCallbacks>
