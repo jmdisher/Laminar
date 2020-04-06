@@ -30,13 +30,22 @@ public class Assert {
 	}
 
 	/**
+	 * Fails  when a code-path which should not have been reachable is executed.
+	 * 
+	 * @param message Description of why this path shouldn't have been reached.
+	 */
+	public static AssertionError unreachable(String message) {
+		throw new AssertionError(message);
+	}
+
+	/**
 	 * This is the only method here provided for prototyping.
 	 * This method can be called when state falls of the "happy path" being demonstrated.
 	 * THIS METHOD MUST BE REMOVED BEFORE FINAL RELEASE!
 	 * 
 	 * @param message An informative error.
 	 */
-	public static void unimplemented(String message) {
+	public static AssertionError unimplemented(String message) {
 		throw new AssertionError("UNIMPLEMENTED: " + message);
 	}
 }

@@ -96,6 +96,32 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 		_consoleManager = consoleManager;
 	}
 
+	// <IClientManagerBackgroundCallbacks>
+	@Override
+	public void clientConnectedToUs(ClientManager.ClientNode node) {
+		// TODO Auto-generated method stub
+		
+	}
+
+	@Override
+	public void clientDisconnectedFromUs(ClientManager.ClientNode node) {
+		// TODO Auto-generated method stub
+		
+	}
+
+	@Override
+	public void clientWriteReady(ClientManager.ClientNode node) {
+		// TODO Auto-generated method stub
+		
+	}
+
+	@Override
+	public void clientReadReady(ClientManager.ClientNode node) {
+		// TODO Auto-generated method stub
+		
+	}
+	// </IClientManagerBackgroundCallbacks>
+
 	// <IClusterManagerBackgroundCallbacks>
 	@Override
 	public void peerConnectedToUs(ClusterManager.ClusterNode realNode) {
