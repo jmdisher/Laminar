@@ -8,7 +8,7 @@ import java.nio.channels.ServerSocketChannel;
 import com.jeffdisher.laminar.console.ConsoleManager;
 import com.jeffdisher.laminar.disk.DiskManager;
 import com.jeffdisher.laminar.network.ClientManager;
-import com.jeffdisher.laminar.network.NetworkManager;
+import com.jeffdisher.laminar.network.ClusterManager;
 import com.jeffdisher.laminar.state.NodeState;
 
 
@@ -83,9 +83,9 @@ public class Laminar {
 		
 		// Now, create the managers.
 		ClientManager clientManager = new ClientManager(clientSocket, thisNodeState);
-		NetworkManager networkManager = null;
+		ClusterManager clulsterManager = null;
 		try {
-			networkManager = new NetworkManager(clusterSocket, thisNodeState);
+			clulsterManager = new ClusterManager(clusterSocket, thisNodeState);
 		} catch (IOException e1) {
 			// Not sure how creating the Selector would fail but we can handle it since we haven't started, yet.
 			failStart("Failure creating NetworkManager: " + e1.getLocalizedMessage());
@@ -95,13 +95,13 @@ public class Laminar {
 		
 		// All the components are ready so we can now register the managers with it.
 		thisNodeState.registerClientManager(clientManager);
-		thisNodeState.registerNetworkManager(networkManager);
+		thisNodeState.registerClusterManager(clulsterManager);
 		thisNodeState.registerDiskManager(diskManager);
 		thisNodeState.registerConsoleManager(consoleManager);
 		
 		// Start all background threads and other manager processes.
 		clientManager.startAndWaitForReady();
-		networkManager.startAndWaitForReady();
+		clulsterManager.startAndWaitForReady();
 		diskManager.startAndWaitForReady();
 		consoleManager.startAndWaitForReady();
 		
@@ -112,7 +112,7 @@ public class Laminar {
 		// The node state has entered a shutdown state so notify the user and close everything.
 		System.out.println("Laminar shutting down...");
 		clientManager.stopAndWaitForTermination();
-		networkManager.stopAndWaitForTermination();
+		clulsterManager.stopAndWaitForTermination();
 		diskManager.stopAndWaitForTermination();
 		consoleManager.stopAndWaitForTermination();
 		

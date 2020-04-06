@@ -15,7 +15,8 @@ import com.jeffdisher.laminar.utils.Assert;
 
 
 /**
- * Top-level abstraction of a collection of network connections related to interactions with other servers.
+ * Common abstraction over a logical network use-case.  While it is possible to have all network use-cases share the
+ * same manager, we will keep them distinct for the time being.
  * The manager maintains all sockets and buffers associated with this purpose and performs all interactions in its own
  * thread.
  * All interactions with it are asynchronous and CALLBACKS ARE SENT IN THE MANAGER'S THREAD.  This means that they must

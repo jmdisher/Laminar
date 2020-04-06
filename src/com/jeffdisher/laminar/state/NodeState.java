@@ -5,10 +5,9 @@ import com.jeffdisher.laminar.console.IConsoleManagerBackgroundCallbacks;
 import com.jeffdisher.laminar.disk.DiskManager;
 import com.jeffdisher.laminar.disk.IDiskManagerBackgroundCallbacks;
 import com.jeffdisher.laminar.network.ClientManager;
-import com.jeffdisher.laminar.network.NetworkManager;
-import com.jeffdisher.laminar.network.NetworkManager.NodeToken;
+import com.jeffdisher.laminar.network.ClusterManager;
 import com.jeffdisher.laminar.network.IClientManagerBackgroundCallbacks;
-import com.jeffdisher.laminar.network.INetworkManagerBackgroundCallbacks;
+import com.jeffdisher.laminar.network.IClusterManagerBackgroundCallbacks;
 import com.jeffdisher.laminar.utils.Assert;
 
 
@@ -19,12 +18,12 @@ import com.jeffdisher.laminar.utils.Assert;
  * Note that the thread which creates this instance is defined as "main" and MUST be the same thread which calls
  * runUntilShutdown() and MUST NOT call any background* methods (this is to verify re-entrance safety, etc).
  */
-public class NodeState implements IClientManagerBackgroundCallbacks, INetworkManagerBackgroundCallbacks, IDiskManagerBackgroundCallbacks, IConsoleManagerBackgroundCallbacks {
+public class NodeState implements IClientManagerBackgroundCallbacks, IClusterManagerBackgroundCallbacks, IDiskManagerBackgroundCallbacks, IConsoleManagerBackgroundCallbacks {
 	// We keep the main thread for asserting no re-entrance bugs or invalid interface uses.
 	private final Thread _mainThread;
 
 	private ClientManager _clientManager;
-	private NetworkManager _networkManager;
+	private ClusterManager _clusterManager;
 	private DiskManager _diskManager;
 	private ConsoleManager _consoleManager;
 
@@ -40,7 +39,7 @@ public class NodeState implements IClientManagerBackgroundCallbacks, INetworkMan
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		// Not fully configuring the instance is a programming error.
 		Assert.assertTrue(null != _clientManager);
-		Assert.assertTrue(null != _networkManager);
+		Assert.assertTrue(null != _clusterManager);
 		Assert.assertTrue(null != _diskManager);
 		Assert.assertTrue(null != _consoleManager);
 		
@@ -66,14 +65,14 @@ public class NodeState implements IClientManagerBackgroundCallbacks, INetworkMan
 		_clientManager = clientManager;
 	}
 
-	public void registerNetworkManager(NetworkManager networkManager) {
+	public void registerClusterManager(ClusterManager clusterManager) {
 		// This MUST be called on the main thread.
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		// Input CANNOT be null.
-		Assert.assertTrue(null != networkManager);
+		Assert.assertTrue(null != clusterManager);
 		// Reconfiguration is not defined.
-		Assert.assertTrue(null == _networkManager);
-		_networkManager = networkManager;
+		Assert.assertTrue(null == _clusterManager);
+		_clusterManager = clusterManager;
 		
 	}
 
@@ -97,43 +96,43 @@ public class NodeState implements IClientManagerBackgroundCallbacks, INetworkMan
 		_consoleManager = consoleManager;
 	}
 
-	// <INetworkManagerBackgroundCallbacks>
+	// <IClusterManagerBackgroundCallbacks>
 	@Override
-	public void nodeDidConnect(NodeToken node) {
+	public void peerConnectedToUs(ClusterManager.ClusterNode realNode) {
 		// TODO Auto-generated method stub
 		
 	}
 
 	@Override
-	public void nodeDidDisconnect(NodeToken node) {
+	public void peerDisconnectedFromUs(ClusterManager.ClusterNode realNode) {
 		// TODO Auto-generated method stub
 		
 	}
 
 	@Override
-	public void nodeWriteReady(NodeToken node) {
+	public void peerWriteReady(ClusterManager.ClusterNode realNode) {
 		// TODO Auto-generated method stub
 		
 	}
 
 	@Override
-	public void nodeReadReady(NodeToken node) {
+	public void peerReadReady(ClusterManager.ClusterNode realNode) {
 		// TODO Auto-generated method stub
 		
 	}
 
 	@Override
-	public void outboundNodeConnected(NodeToken node) {
+	public void weConnectedToPeer(ClusterManager.ClusterNode realNode) {
 		// TODO Auto-generated method stub
 		
 	}
 
 	@Override
-	public void outboundNodeDisconnected(NodeToken node) {
+	public void weDisconnectedFromPeer(ClusterManager.ClusterNode realNode) {
 		// TODO Auto-generated method stub
 		
 	}
-	// </INetworkManagerBackgroundCallbacks>
+	// </IClusterManagerBackgroundCallbacks>
 
 	// <IConsoleManagerBackgroundCallbacks>
 	@Override
