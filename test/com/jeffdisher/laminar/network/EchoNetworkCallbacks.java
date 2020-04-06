@@ -12,11 +12,11 @@ import java.util.concurrent.LinkedBlockingQueue;
 
 import org.junit.Assert;
 
-import com.jeffdisher.laminar.network.ClusterManager.NodeToken;
+import com.jeffdisher.laminar.network.NetworkManager.NodeToken;
 
 
 /**
- * An implementation of IClusterManagerBackgroundCallbacks intended for use with tests.
+ * An implementation of INetworkManagerBackgroundCallbacks intended for use with tests.
  * This implementation uses an internal thread to the message it received back to the client who sent it.
  * There is, however, a decision around what to do with the message, first:  it will be extended by one byte and sent
  * unless it is longer than a stated maximum size, where it will be dropped, instead.
@@ -24,8 +24,8 @@ import com.jeffdisher.laminar.network.ClusterManager.NodeToken;
  * The internal structures are mostly just handled on the internal thread, where a queue of Runnables is sent from the
  * callback thread into this internal thread to request state changes.
  */
-public class EchoClusterCallbacks implements IClusterManagerBackgroundCallbacks {
-	private ClusterManager _manager;
+public class EchoNetworkCallbacks implements INetworkManagerBackgroundCallbacks {
+	private NetworkManager _manager;
 	private final int _maxLength;
 	private final CountDownLatch _messageDroppedLatch;
 	private final Thread _thread;
@@ -34,7 +34,7 @@ public class EchoClusterCallbacks implements IClusterManagerBackgroundCallbacks 
 	private final Set<NodeToken> _writeReady;
 	private boolean _keepRunning;
 	
-	public EchoClusterCallbacks(int maxLength, CountDownLatch messageDroppedLatch) {
+	public EchoNetworkCallbacks(int maxLength, CountDownLatch messageDroppedLatch) {
 		_maxLength = maxLength;
 		_messageDroppedLatch = messageDroppedLatch;
 		_thread = new Thread() {
@@ -53,7 +53,7 @@ public class EchoClusterCallbacks implements IClusterManagerBackgroundCallbacks 
 		_writeReady = new HashSet<>();
 	}
 
-	public void startThreadForManager(ClusterManager manager) {
+	public void startThreadForManager(NetworkManager manager) {
 		_manager = manager;
 		_thread.start();
 	}

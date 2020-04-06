@@ -5,10 +5,10 @@ import com.jeffdisher.laminar.console.IConsoleManagerBackgroundCallbacks;
 import com.jeffdisher.laminar.disk.DiskManager;
 import com.jeffdisher.laminar.disk.IDiskManagerBackgroundCallbacks;
 import com.jeffdisher.laminar.network.ClientManager;
-import com.jeffdisher.laminar.network.ClusterManager;
-import com.jeffdisher.laminar.network.ClusterManager.NodeToken;
+import com.jeffdisher.laminar.network.NetworkManager;
+import com.jeffdisher.laminar.network.NetworkManager.NodeToken;
 import com.jeffdisher.laminar.network.IClientManagerBackgroundCallbacks;
-import com.jeffdisher.laminar.network.IClusterManagerBackgroundCallbacks;
+import com.jeffdisher.laminar.network.INetworkManagerBackgroundCallbacks;
 import com.jeffdisher.laminar.utils.Assert;
 
 
@@ -19,12 +19,12 @@ import com.jeffdisher.laminar.utils.Assert;
  * Note that the thread which creates this instance is defined as "main" and MUST be the same thread which calls
  * runUntilShutdown() and MUST NOT call any background* methods (this is to verify re-entrance safety, etc).
  */
-public class NodeState implements IClientManagerBackgroundCallbacks, IClusterManagerBackgroundCallbacks, IDiskManagerBackgroundCallbacks, IConsoleManagerBackgroundCallbacks {
+public class NodeState implements IClientManagerBackgroundCallbacks, INetworkManagerBackgroundCallbacks, IDiskManagerBackgroundCallbacks, IConsoleManagerBackgroundCallbacks {
 	// We keep the main thread for asserting no re-entrance bugs or invalid interface uses.
 	private final Thread _mainThread;
 
 	private ClientManager _clientManager;
-	private ClusterManager _clusterManager;
+	private NetworkManager _networkManager;
 	private DiskManager _diskManager;
 	private ConsoleManager _consoleManager;
 
@@ -40,7 +40,7 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		// Not fully configuring the instance is a programming error.
 		Assert.assertTrue(null != _clientManager);
-		Assert.assertTrue(null != _clusterManager);
+		Assert.assertTrue(null != _networkManager);
 		Assert.assertTrue(null != _diskManager);
 		Assert.assertTrue(null != _consoleManager);
 		
@@ -66,14 +66,14 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 		_clientManager = clientManager;
 	}
 
-	public void registerClusterManager(ClusterManager clusterManager) {
+	public void registerNetworkManager(NetworkManager networkManager) {
 		// This MUST be called on the main thread.
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		// Input CANNOT be null.
-		Assert.assertTrue(null != clusterManager);
+		Assert.assertTrue(null != networkManager);
 		// Reconfiguration is not defined.
-		Assert.assertTrue(null == _clusterManager);
-		_clusterManager = clusterManager;
+		Assert.assertTrue(null == _networkManager);
+		_networkManager = networkManager;
 		
 	}
 
@@ -97,7 +97,7 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 		_consoleManager = consoleManager;
 	}
 
-	// <IClusterManagerBackgroundCallbacks>
+	// <INetworkManagerBackgroundCallbacks>
 	@Override
 	public void nodeDidConnect(NodeToken node) {
 		// TODO Auto-generated method stub
@@ -133,7 +133,7 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 		// TODO Auto-generated method stub
 		
 	}
-	// </IClusterManagerBackgroundCallbacks>
+	// </INetworkManagerBackgroundCallbacks>
 
 	// <IConsoleManagerBackgroundCallbacks>
 	@Override

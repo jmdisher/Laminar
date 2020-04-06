@@ -32,7 +32,7 @@ import com.jeffdisher.laminar.utils.Assert;
  *  select operation so we will still change those on the outside.  This may be unreliable and the documentation states
  *  that this is implementation-dependent so this may chance in the future.
  */
-public class ClusterManager {
+public class NetworkManager {
 	// We will use 64 KiB buffers since we will impose a message size limit less than this.
 	private static final int BUFFER_SIZE_BYTES = 64 * 1024;
 	// We reserve 2 bytes in the message payload for the big-endian u16 size so the maximum payload is 65534 bytes.
@@ -43,7 +43,7 @@ public class ClusterManager {
 	private final SelectionKey _acceptorKey;
 	// Note that the _connectedNodes contains all connected sockets, incoming or outgoing.
 	private final LinkedList<SelectionKey> _connectedNodes;
-	private final IClusterManagerBackgroundCallbacks _callbackTarget;
+	private final INetworkManagerBackgroundCallbacks _callbackTarget;
 
 	// Hand-offs used for opening/closing out-going connections.
 	private volatile SocketChannel _handoff_newConnection;
@@ -54,7 +54,7 @@ public class ClusterManager {
 	private volatile boolean _keepRunning;
 	private Thread _background;
 
-	public ClusterManager(ServerSocketChannel clusterSocket, IClusterManagerBackgroundCallbacks callbackTarget) throws IOException {
+	public NetworkManager(ServerSocketChannel clusterSocket, INetworkManagerBackgroundCallbacks callbackTarget) throws IOException {
 		// This can throw IOException which always feels odd in a constructor so maybe this should be a static method.
 		// (could be passed in but this seems like an internal concern)
 		_selector = Selector.open();
@@ -118,7 +118,7 @@ public class ClusterManager {
 	 * @return True if the payload was added to the write buffer, false if it couldn't fit.
 	 * @throws IllegalArgumentException If the payload is larger than MESSAGE_PAYLOAD_MAXIMUM_BYTES.
 	 */
-	public boolean trySendMessage(ClusterManager.NodeToken target, byte[] payload) throws IllegalArgumentException {
+	public boolean trySendMessage(NetworkManager.NodeToken target, byte[] payload) throws IllegalArgumentException {
 		// We consider calls into the public interface on the internal thread to be statically incorrect re-entrance
 		// errors, so those are assertions.
 		Assert.assertTrue(Thread.currentThread() != _background);
@@ -161,7 +161,7 @@ public class ClusterManager {
 	 * @param sender The node from which the message was sent.
 	 * @return The message payload or null if a complete message wasn't available.
 	 */
-	public byte[] readWaitingMessage(ClusterManager.NodeToken sender) {
+	public byte[] readWaitingMessage(NetworkManager.NodeToken sender) {
 		// We consider calls into the public interface on the internal thread to be statically incorrect re-entrance
 		// errors, so those are assertions.
 		Assert.assertTrue(Thread.currentThread() != _background);

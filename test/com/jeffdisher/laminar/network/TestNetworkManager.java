@@ -11,10 +11,10 @@ import java.util.concurrent.CountDownLatch;
 import org.junit.Assert;
 import org.junit.jupiter.api.Test;
 
-import com.jeffdisher.laminar.network.ClusterManager.NodeToken;
+import com.jeffdisher.laminar.network.NetworkManager.NodeToken;
 
 
-class TestClusterManager {
+class TestNetworkManager {
 	private static final int PORT_BASE = 3000;
 
 	@Test
@@ -22,7 +22,7 @@ class TestClusterManager {
 		// Create a server.
 		ServerSocketChannel socket = createSocket(PORT_BASE + 1);
 		LatchedCallbacks callbacks = new LatchedCallbacks(null, null, null, null);
-		ClusterManager server = new ClusterManager(socket, callbacks);
+		NetworkManager server = new NetworkManager(socket, callbacks);
 		server.startAndWaitForReady();
 		server.stopAndWaitForTermination();
 	}
@@ -37,7 +37,7 @@ class TestClusterManager {
 		CountDownLatch writeLatch = new CountDownLatch(1);
 		CountDownLatch disconnectLatch = new CountDownLatch(1);
 		LatchedCallbacks callbacks = new LatchedCallbacks(connectLatch, readLatch, writeLatch, disconnectLatch);
-		ClusterManager server = new ClusterManager(socket, callbacks);
+		NetworkManager server = new NetworkManager(socket, callbacks);
 		server.startAndWaitForReady();
 		
 		try (Socket client = new Socket("localhost", port)) {
@@ -77,12 +77,12 @@ class TestClusterManager {
 		CountDownLatch latch = new CountDownLatch(2);
 		CountDownLatch ignored1 = new CountDownLatch(1);
 		CountDownLatch ignored2 = new CountDownLatch(1);
-		EchoClusterCallbacks serverLogic = new EchoClusterCallbacks(maxPayload, latch);
-		EchoClusterCallbacks clientLogic1 = new EchoClusterCallbacks(maxPayload, ignored1);
-		EchoClusterCallbacks clientLogic2 = new EchoClusterCallbacks(maxPayload, ignored2);
-		ClusterManager serverManager = new ClusterManager(serverSocket, serverLogic);
-		ClusterManager clientManager1 = new ClusterManager(clientSocket1, clientLogic1);
-		ClusterManager clientManager2 = new ClusterManager(clientSocket2, clientLogic2);
+		EchoNetworkCallbacks serverLogic = new EchoNetworkCallbacks(maxPayload, latch);
+		EchoNetworkCallbacks clientLogic1 = new EchoNetworkCallbacks(maxPayload, ignored1);
+		EchoNetworkCallbacks clientLogic2 = new EchoNetworkCallbacks(maxPayload, ignored2);
+		NetworkManager serverManager = new NetworkManager(serverSocket, serverLogic);
+		NetworkManager clientManager1 = new NetworkManager(clientSocket1, clientLogic1);
+		NetworkManager clientManager2 = new NetworkManager(clientSocket2, clientLogic2);
 		serverLogic.startThreadForManager(serverManager);
 		clientLogic1.startThreadForManager(clientManager1);
 		clientLogic2.startThreadForManager(clientManager2);
@@ -124,7 +124,7 @@ class TestClusterManager {
 	/**
 	 * Used for simple cases where the external test only wants to verify that a call was made when expected.
 	 */
-	private static class LatchedCallbacks implements IClusterManagerBackgroundCallbacks {
+	private static class LatchedCallbacks implements INetworkManagerBackgroundCallbacks {
 		private final CountDownLatch _connectLatch;
 		private final CountDownLatch _readLatch;
 		private final CountDownLatch _writeLatch;

@@ -8,7 +8,7 @@ import java.nio.channels.ServerSocketChannel;
 import com.jeffdisher.laminar.console.ConsoleManager;
 import com.jeffdisher.laminar.disk.DiskManager;
 import com.jeffdisher.laminar.network.ClientManager;
-import com.jeffdisher.laminar.network.ClusterManager;
+import com.jeffdisher.laminar.network.NetworkManager;
 import com.jeffdisher.laminar.state.NodeState;
 
 
@@ -83,25 +83,25 @@ public class Laminar {
 		
 		// Now, create the managers.
 		ClientManager clientManager = new ClientManager(clientSocket, thisNodeState);
-		ClusterManager clusterManager = null;
+		NetworkManager networkManager = null;
 		try {
-			clusterManager = new ClusterManager(clusterSocket, thisNodeState);
+			networkManager = new NetworkManager(clusterSocket, thisNodeState);
 		} catch (IOException e1) {
 			// Not sure how creating the Selector would fail but we can handle it since we haven't started, yet.
-			failStart("Failure creating ClusterManager: " + e1.getLocalizedMessage());
+			failStart("Failure creating NetworkManager: " + e1.getLocalizedMessage());
 		}
 		DiskManager diskManager = new DiskManager(dataDirectory, thisNodeState);
 		ConsoleManager consoleManager = new ConsoleManager(System.out, System.in, thisNodeState);
 		
 		// All the components are ready so we can now register the managers with it.
 		thisNodeState.registerClientManager(clientManager);
-		thisNodeState.registerClusterManager(clusterManager);
+		thisNodeState.registerNetworkManager(networkManager);
 		thisNodeState.registerDiskManager(diskManager);
 		thisNodeState.registerConsoleManager(consoleManager);
 		
 		// Start all background threads and other manager processes.
 		clientManager.startAndWaitForReady();
-		clusterManager.startAndWaitForReady();
+		networkManager.startAndWaitForReady();
 		diskManager.startAndWaitForReady();
 		consoleManager.startAndWaitForReady();
 		
@@ -112,7 +112,7 @@ public class Laminar {
 		// The node state has entered a shutdown state so notify the user and close everything.
 		System.out.println("Laminar shutting down...");
 		clientManager.stopAndWaitForTermination();
-		clusterManager.stopAndWaitForTermination();
+		networkManager.stopAndWaitForTermination();
 		diskManager.stopAndWaitForTermination();
 		consoleManager.stopAndWaitForTermination();
 		

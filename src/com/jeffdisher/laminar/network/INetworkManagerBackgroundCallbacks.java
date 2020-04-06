@@ -2,15 +2,15 @@ package com.jeffdisher.laminar.network;
 
 
 /**
- * Callbacks sent by the ClusterManager, on its thread (implementor will need to hand these off to a different thread).
+ * Callbacks sent by the NetworkManager, on its thread (implementor will need to hand these off to a different thread).
  */
-public interface IClusterManagerBackgroundCallbacks {
+public interface INetworkManagerBackgroundCallbacks {
 	/**
 	 * Called when a new node has connected.
 	 * 
 	 * @param node The newly-connected node.
 	 */
-	void nodeDidConnect(ClusterManager.NodeToken node);
+	void nodeDidConnect(NetworkManager.NodeToken node);
 
 	/**
 	 * Called when a node appears to have disconnected.
@@ -19,7 +19,7 @@ public interface IClusterManagerBackgroundCallbacks {
 	 * 
 	 * @param node The node which is no longer valid.
 	 */
-	void nodeDidDisconnect(ClusterManager.NodeToken node);
+	void nodeDidDisconnect(NetworkManager.NodeToken node);
 
 	/**
 	 * Called when the given node's write buffer is completely empty.
@@ -29,23 +29,23 @@ public interface IClusterManagerBackgroundCallbacks {
 	 * 
 	 * @param node The node which is ready to receive a message.
 	 */
-	void nodeWriteReady(ClusterManager.NodeToken node);
+	void nodeWriteReady(NetworkManager.NodeToken node);
 
 	/**
 	 * Called when a fully-formed message has arrived from the node.
-	 * Note that the ClusterManager expects the message to be fetched, since the receiver of this call likely can't
+	 * Note that the NetworkManager expects the message to be fetched, since the receiver of this call likely can't
 	 * otherwise communicate back-pressure here.
 	 * 
 	 * @param node The node which has sent a message.
 	 */
-	void nodeReadReady(ClusterManager.NodeToken node);
+	void nodeReadReady(NetworkManager.NodeToken node);
 
 	/**
 	 * Called when a previously attempted outbound node connection has been established.
 	 * 
 	 * @param node The node which is now connected.
 	 */
-	void outboundNodeConnected(ClusterManager.NodeToken node);
+	void outboundNodeConnected(NetworkManager.NodeToken node);
 
 	/**
 	 * Called when an outbound node connection disconnected.
@@ -53,5 +53,5 @@ public interface IClusterManagerBackgroundCallbacks {
 	 * 
 	 * @param node The node which is no longer connected.
 	 */
-	void outboundNodeDisconnected(ClusterManager.NodeToken node);
+	void outboundNodeDisconnected(NetworkManager.NodeToken node);
 }
