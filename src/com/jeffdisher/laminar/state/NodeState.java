@@ -27,11 +27,14 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 	private DiskManager _diskManager;
 	private ConsoleManager _consoleManager;
 
+	private RaftState _currentState;
 	private boolean _keepRunning;
 
 	public NodeState() {
 		// We define the thread which instantiates us as "main".
 		_mainThread = Thread.currentThread();
+		// Note that we default to the LEADER state (typically forced into a FOLLOWER state when an existing LEADER attempts to append entries).
+		_currentState = RaftState.LEADER;
 	}
 
 	public synchronized void runUntilShutdown() {
