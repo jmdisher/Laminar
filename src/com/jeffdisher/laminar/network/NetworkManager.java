@@ -39,6 +39,34 @@ public class NetworkManager {
 	// We reserve 2 bytes in the message payload for the big-endian u16 size so the maximum payload is 65534 bytes.
 	public static final int MESSAGE_PAYLOAD_MAXIMUM_BYTES = 64 * 1024 - 2;
 
+	/**
+	 * Creates a NetworkManager which is set to receive incoming connections on serverSocket and can also be used to
+	 * make outgoing connections.
+	 * 
+	 * @param serverSocket The socket where incoming connections will be received.
+	 * @param callbackTarget Target for background thread callbacks.
+	 * @return A NetworkManager configured to allow incoming and outgoing connections.
+	 * @throws IOException Something went wrong when setting up the network infrastructure.
+	 */
+	public static NetworkManager bidirectional(ServerSocketChannel serverSocket, INetworkManagerBackgroundCallbacks callbackTarget) throws IOException {
+		if (null == serverSocket) {
+			throw new IllegalArgumentException("Server socket must be provided");
+		}
+		return new NetworkManager(serverSocket, callbackTarget);
+	}
+
+	/**
+	 * Creates a NetworkManager which is set to allow only outgoing connections to be created.
+	 * 
+	 * @param callbackTarget Target for background thread callbacks.
+	 * @return A NetworkManager configured to allow outgoing connections only.
+	 * @throws IOException Something went wrong when setting up the network infrastructure.
+	 */
+	public static NetworkManager outboundOnly(INetworkManagerBackgroundCallbacks callbackTarget) throws IOException {
+		return new NetworkManager(null, callbackTarget);
+	}
+
+
 	private final Selector _selector;
 	private final ServerSocketChannel _acceptorSocket;
 	private final SelectionKey _acceptorKey;
@@ -55,18 +83,23 @@ public class NetworkManager {
 	private volatile boolean _keepRunning;
 	private Thread _background;
 
-	public NetworkManager(ServerSocketChannel clusterSocket, INetworkManagerBackgroundCallbacks callbackTarget) throws IOException {
+	private NetworkManager(ServerSocketChannel clusterSocket, INetworkManagerBackgroundCallbacks callbackTarget) throws IOException {
 		// This can throw IOException which always feels odd in a constructor so maybe this should be a static method.
 		// (could be passed in but this seems like an internal concern)
 		_selector = Selector.open();
-		// Configure the cluster server socket for use with the selector.
-		clusterSocket.configureBlocking(false);
-		// If this isn't a server socket, this is a static error.
-		int serverSocketOps = clusterSocket.validOps();
-		Assert.assertTrue(SelectionKey.OP_ACCEPT == serverSocketOps);
-		_acceptorSocket = clusterSocket;
-		// Note that we normally put ConnectionState in attachment, but there isn't one for the server socket.
-		_acceptorKey = clusterSocket.register(_selector, serverSocketOps, null);
+		if (null != clusterSocket) {
+			// Configure the cluster server socket for use with the selector.
+			clusterSocket.configureBlocking(false);
+			// If this isn't a server socket, this is a static error.
+			int serverSocketOps = clusterSocket.validOps();
+			Assert.assertTrue(SelectionKey.OP_ACCEPT == serverSocketOps);
+			_acceptorSocket = clusterSocket;
+			// Note that we normally put ConnectionState in attachment, but there isn't one for the server socket.
+			_acceptorKey = clusterSocket.register(_selector, serverSocketOps, null);
+		} else {
+			_acceptorSocket = null;
+			_acceptorKey = null;
+		}
 		// We put the connected nodes in a LinkedList since we want a dense list, we rarely change it, and often need to walk, in-order.
 		_connectedNodes = new LinkedList<>();
 		_callbackTarget = callbackTarget;
@@ -89,6 +122,9 @@ public class NetworkManager {
 	}
 
 	public void stopAndWaitForTermination() {
+		if (!_keepRunning) {
+			throw new IllegalStateException("Background thread not running");
+		}
 		// We can use the wakeup() method, instead of needing a pipe to break the select and a monitor to notify.
 		_keepRunning = false;
 		_selector.wakeup();
@@ -99,8 +135,10 @@ public class NetworkManager {
 			// We don't use interruption.
 			Assert.unexpected(e);
 		}
-		// Since we registered the initial selector, we need to cancel it.
-		_acceptorKey.cancel();
+		if (null != _acceptorKey) {
+			// Since we registered the initial selector, we need to cancel it.
+			_acceptorKey.cancel();
+		}
 		// We also expect the selector's key set to now be empty (we need to force it to update this).
 		try {
 			_selector.selectNow();
@@ -120,6 +158,9 @@ public class NetworkManager {
 	 * @throws IllegalArgumentException If the payload is larger than MESSAGE_PAYLOAD_MAXIMUM_BYTES.
 	 */
 	public boolean trySendMessage(NetworkManager.NodeToken target, byte[] payload) throws IllegalArgumentException {
+		if (!_keepRunning) {
+			throw new IllegalStateException("Background thread not running");
+		}
 		// We consider calls into the public interface on the internal thread to be statically incorrect re-entrance
 		// errors, so those are assertions.
 		Assert.assertTrue(Thread.currentThread() != _background);
@@ -163,6 +204,9 @@ public class NetworkManager {
 	 * @return The message payload or null if a complete message wasn't available.
 	 */
 	public byte[] readWaitingMessage(NetworkManager.NodeToken sender) {
+		if (!_keepRunning) {
+			throw new IllegalStateException("Background thread not running");
+		}
 		// We consider calls into the public interface on the internal thread to be statically incorrect re-entrance
 		// errors, so those are assertions.
 		Assert.assertTrue(Thread.currentThread() != _background);
@@ -202,6 +246,9 @@ public class NetworkManager {
 	}
 
 	public NodeToken createOutgoingConnection(InetSocketAddress address) throws IOException {
+		if (!_keepRunning) {
+			throw new IllegalStateException("Background thread not running");
+		}
 		// We consider calls into the public interface on the internal thread to be statically incorrect re-entrance
 		// errors, so those are assertions.
 		Assert.assertTrue(Thread.currentThread() != _background);
@@ -249,6 +296,9 @@ public class NetworkManager {
 	}
 
 	public void closeOutgoingConnection(NodeToken token) throws IOException {
+		if (!_keepRunning) {
+			throw new IllegalStateException("Background thread not running");
+		}
 		SocketChannel channel = ((ConnectionState)(token.actualKey).attachment()).channel;
 		// The _internal_ thread owns outgoing connection open/close so hand this off to them.
 		synchronized (this) {
@@ -338,6 +388,8 @@ public class NetworkManager {
 			else if (key == _acceptorKey) {
 				// This must be a new node connecting.
 				Assert.assertTrue(SelectionKey.OP_ACCEPT == key.readyOps());
+				// This cannot be null if we matched the acceptor key.
+				Assert.assertTrue(null != _acceptorSocket);
 				SocketChannel newNode = _acceptorSocket.accept();
 				
 				// Configure this new node for our selection set - by default, it starts only waiting for read.

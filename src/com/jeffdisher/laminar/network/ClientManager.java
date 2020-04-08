@@ -21,7 +21,7 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 
 	public ClientManager(ServerSocketChannel serverSocket, IClientManagerBackgroundCallbacks callbacks) throws IOException {
 		// This is really just a high-level wrapper over the common NetworkManager so create that here.
-		_networkManager = new NetworkManager(serverSocket, this);
+		_networkManager = NetworkManager.bidirectional(serverSocket, this);
 		_callbacks = callbacks;
 		_nodes = new WeakHashMap<>();
 	}

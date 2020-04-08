@@ -21,8 +21,8 @@ class TestNetworkManager {
 	void testStartStop() throws Throwable {
 		// Create a server.
 		ServerSocketChannel socket = createSocket(PORT_BASE + 1);
-		LatchedCallbacks callbacks = new LatchedCallbacks(null, null, null, null);
-		NetworkManager server = new NetworkManager(socket, callbacks);
+		LatchedCallbacks callbacks = new LatchedCallbacks(null, null, null, null, null, null);
+		NetworkManager server = NetworkManager.bidirectional(socket, callbacks);
 		server.startAndWaitForReady();
 		server.stopAndWaitForTermination();
 	}
@@ -36,8 +36,8 @@ class TestNetworkManager {
 		CountDownLatch readLatch = new CountDownLatch(1);
 		CountDownLatch writeLatch = new CountDownLatch(1);
 		CountDownLatch disconnectLatch = new CountDownLatch(1);
-		LatchedCallbacks callbacks = new LatchedCallbacks(connectLatch, readLatch, writeLatch, disconnectLatch);
-		NetworkManager server = new NetworkManager(socket, callbacks);
+		LatchedCallbacks callbacks = new LatchedCallbacks(connectLatch, readLatch, writeLatch, disconnectLatch, null, null);
+		NetworkManager server = NetworkManager.bidirectional(socket, callbacks);
 		server.startAndWaitForReady();
 		
 		try (Socket client = new Socket("localhost", port)) {
@@ -48,9 +48,9 @@ class TestNetworkManager {
 			toServer.write(sending);
 			readLatch.await();
 			
-			byte[] observed = server.readWaitingMessage(callbacks.recentConnection);
+			byte[] observed = server.readWaitingMessage(callbacks.recentIncomingConnection);
 			Assert.assertArrayEquals(new byte[] {sending[2]}, observed);
-			boolean didSend = server.trySendMessage(callbacks.recentConnection, new byte[] {0x6});
+			boolean didSend = server.trySendMessage(callbacks.recentIncomingConnection, new byte[] {0x6});
 			Assert.assertTrue(didSend);
 			writeLatch.await();
 			
@@ -80,9 +80,9 @@ class TestNetworkManager {
 		EchoNetworkCallbacks serverLogic = new EchoNetworkCallbacks(maxPayload, latch);
 		EchoNetworkCallbacks clientLogic1 = new EchoNetworkCallbacks(maxPayload, ignored1);
 		EchoNetworkCallbacks clientLogic2 = new EchoNetworkCallbacks(maxPayload, ignored2);
-		NetworkManager serverManager = new NetworkManager(serverSocket, serverLogic);
-		NetworkManager clientManager1 = new NetworkManager(clientSocket1, clientLogic1);
-		NetworkManager clientManager2 = new NetworkManager(clientSocket2, clientLogic2);
+		NetworkManager serverManager = NetworkManager.bidirectional(serverSocket, serverLogic);
+		NetworkManager clientManager1 = NetworkManager.bidirectional(clientSocket1, clientLogic1);
+		NetworkManager clientManager2 = NetworkManager.bidirectional(clientSocket2, clientLogic2);
 		serverLogic.startThreadForManager(serverManager);
 		clientLogic1.startThreadForManager(clientManager1);
 		clientLogic2.startThreadForManager(clientManager2);
@@ -112,6 +112,55 @@ class TestNetworkManager {
 		clientLogic2.stopAndWait();
 	}
 
+	@Test
+	void testSingleClientWithNetworkManager() throws Throwable {
+		// Create a server.
+		int port = PORT_BASE + 6;
+		ServerSocketChannel socket = createSocket(port);
+		CountDownLatch connectLatch = new CountDownLatch(1);
+		CountDownLatch readLatch = new CountDownLatch(1);
+		CountDownLatch writeLatch = new CountDownLatch(1);
+		CountDownLatch disconnectLatch = new CountDownLatch(1);
+		LatchedCallbacks callbacks = new LatchedCallbacks(connectLatch, readLatch, writeLatch, disconnectLatch, null, null);
+		NetworkManager server = NetworkManager.bidirectional(socket, callbacks);
+		server.startAndWaitForReady();
+		
+		CountDownLatch client_connectLatch = new CountDownLatch(1);
+		CountDownLatch client_readLatch = new CountDownLatch(1);
+		CountDownLatch client_writeLatch = new CountDownLatch(1);
+		CountDownLatch client_disconnectLatch = new CountDownLatch(1);
+		LatchedCallbacks client_callbacks = new LatchedCallbacks(null, client_readLatch, client_writeLatch, null, client_connectLatch, client_disconnectLatch);
+		NetworkManager client = NetworkManager.outboundOnly(client_callbacks);
+		client.startAndWaitForReady();
+		
+		client.createOutgoingConnection(new InetSocketAddress(port));
+		// Make sure the server saw the connection and the client saw it complete.
+		connectLatch.await();
+		client_connectLatch.await();
+		
+		byte[] sending = new byte[] {0x5};
+		boolean didSend = client.trySendMessage(client_callbacks.recentOutgoingConnection, sending);
+		Assert.assertTrue(didSend);
+		// Wait for the server to read the data and the client's write buffer to empty.
+		readLatch.await();
+		client_writeLatch.await();
+		
+		byte[] observed = server.readWaitingMessage(callbacks.recentIncomingConnection);
+		Assert.assertArrayEquals(sending, observed);
+		byte[] responding = new byte[] {0x6};
+		didSend = server.trySendMessage(callbacks.recentIncomingConnection, responding);
+		Assert.assertTrue(didSend);
+		// Wait for the server's write buffer to empty and the client to read something.
+		writeLatch.await();
+		client_readLatch.await();
+		
+		observed = client.readWaitingMessage(client_callbacks.recentOutgoingConnection);
+		Assert.assertArrayEquals(responding, observed);
+		
+		client.stopAndWaitForTermination();
+		server.stopAndWaitForTermination();
+	}
+
 
 	private ServerSocketChannel createSocket(int port) throws IOException {
 		ServerSocketChannel socket = ServerSocketChannel.open();
@@ -129,18 +178,23 @@ class TestNetworkManager {
 		private final CountDownLatch _readLatch;
 		private final CountDownLatch _writeLatch;
 		private final CountDownLatch _disconnectLatch;
-		public volatile NodeToken recentConnection;
+		private final CountDownLatch _outboundConnectLatch;
+		private final CountDownLatch _outboundDisconnectLatch;
+		public volatile NodeToken recentIncomingConnection;
+		public volatile NodeToken recentOutgoingConnection;
 		
-		public LatchedCallbacks(CountDownLatch connectLatch, CountDownLatch readLatch, CountDownLatch writeLatch, CountDownLatch disconnectLatch) {
+		public LatchedCallbacks(CountDownLatch connectLatch, CountDownLatch readLatch, CountDownLatch writeLatch, CountDownLatch disconnectLatch, CountDownLatch outboundConnectLatch, CountDownLatch outboundDisconnectLatch) {
 			_connectLatch = connectLatch;
 			_readLatch = readLatch;
 			_writeLatch = writeLatch;
 			_disconnectLatch = disconnectLatch;
+			_outboundConnectLatch = outboundConnectLatch;
+			_outboundDisconnectLatch = outboundDisconnectLatch;
 		}
 
 		@Override
 		public void nodeDidConnect(NodeToken node) {
-			recentConnection = node;
+			recentIncomingConnection = node;
 			_connectLatch.countDown();
 		}
 
@@ -161,10 +215,13 @@ class TestNetworkManager {
 
 		@Override
 		public void outboundNodeConnected(NodeToken node) {
+			recentOutgoingConnection = node;
+			_outboundConnectLatch.countDown();
 		}
 
 		@Override
 		public void outboundNodeDisconnected(NodeToken node) {
+			_outboundDisconnectLatch.countDown();
 		}
 	}
 }
