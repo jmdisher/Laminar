@@ -34,6 +34,20 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 		_networkManager.stopAndWaitForTermination();
 	}
 
+	public void send(ClientNode client, ClientResponse toSend) {
+		byte[] serialized = toSend.serialize();
+		boolean didSend = _networkManager.trySendMessage(client.token, serialized);
+		// We only send when ready.
+		Assert.assertTrue(didSend);
+	}
+
+	public ClientMessage receive(ClientNode client) {
+		byte[] serialized = _networkManager.readWaitingMessage(client.token);
+		// We only read when data is available.
+		Assert.assertTrue(null != serialized);
+		return ClientMessage.deserialize(serialized);
+	}
+
 	@Override
 	public void nodeDidConnect(NetworkManager.NodeToken node) {
 		ClientNode realNode = _translateNode(node);
