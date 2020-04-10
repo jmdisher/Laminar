@@ -3,12 +3,19 @@ package com.jeffdisher.laminar;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
+import java.io.PipedInputStream;
+import java.io.PipedOutputStream;
 import java.io.PrintStream;
+import java.net.InetSocketAddress;
 
 import org.junit.Assert;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+
+import com.jeffdisher.laminar.client.ClientConnection;
+import com.jeffdisher.laminar.client.ClientResult;
+import com.jeffdisher.laminar.network.ClientMessage;
 
 
 /**
@@ -63,5 +70,35 @@ class TestLaminar {
 		// We just want this to start everything and then shut down.
 		System.setIn(new ByteArrayInputStream("stop\n".getBytes()));
 		Laminar.main(new String[] {"--client", "2000", "--cluster", "2001", "--data", "/tmp/laminar"});
+	}
+
+	@Test
+	void testSimpleClient() throws Throwable {
+		// Here, we start up, connect a client, send one message, wait for it to commit, then shut everything down.
+		PipedOutputStream outStream = new PipedOutputStream();
+		PipedInputStream inStream = new PipedInputStream(outStream);
+		PrintStream feeder = new PrintStream(outStream);
+		System.setIn(inStream);
+		
+		// We need to run the Laminar process in a thread it will control and then sleep for startup.
+		// (this way of using sleep for timing is a hack but this will eventually be made into a more reliable integration test, probably outside of JUnit).
+		Thread runner = new Thread() {
+			@Override
+			public void run() {
+				Laminar.main(new String[] {"--client", "2002", "--cluster", "2003", "--data", "/tmp/laminar"});
+			}
+		};
+		runner.start();
+		
+		// HACK:  Wait for start.
+		Thread.sleep(2000);
+		
+		try (ClientConnection client = ClientConnection.open(new InetSocketAddress("localhost", 2002))) {
+			ClientResult result = client.sendMessage(ClientMessage.temp(1L, "Hello World!".getBytes()));
+			result.waitForReceived();
+			result.waitForCommitted();
+		}
+		feeder.println("stop");
+		runner.join();
 	}
 }
