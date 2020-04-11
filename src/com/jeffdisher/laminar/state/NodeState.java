@@ -249,18 +249,22 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 			// This is just for initial testing:  send the received, log it, and send the commit.
 			// (client outgoing message list is unbounded so this is safe to do all at once).
 			ClientResponse ack = ClientResponse.received(incoming.nonce);
-			boolean willBecomeWritable = state.writable && state.outgoingMessages.isEmpty();
-			state.outgoingMessages.add(ack);
-			if (willBecomeWritable) {
-				_writableClients.add(client);
-			}
+			_backgroundLockedEnqueueMessageToClient(client, state, ack);
 			System.out.println("GOT TEMP FROM " + incoming.nonce + ": \"" + new String(incoming.contents) + "\"");
 			ClientResponse commit = ClientResponse.committed(incoming.nonce);
-			state.outgoingMessages.add(commit);
+			_backgroundLockedEnqueueMessageToClient(client, state, commit);
 			break;
 		default:
 			Assert.unreachable("Default message case reached");
 			break;
+		}
+	}
+
+	private void _backgroundLockedEnqueueMessageToClient(ClientNode client, ClientState state, ClientResponse ack) {
+		boolean willBecomeWritable = state.writable && state.outgoingMessages.isEmpty();
+		state.outgoingMessages.add(ack);
+		if (willBecomeWritable) {
+			_writableClients.add(client);
 		}
 	}
 }

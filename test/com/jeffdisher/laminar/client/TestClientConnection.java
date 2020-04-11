@@ -30,13 +30,13 @@ class TestClientConnection {
 		
 		// Start the client.
 		try (ClientConnection connection = ClientConnection.open(new InetSocketAddress("localhost", port))) {
-			ByteBuffer readBuffer = ByteBuffer.allocate(Short.BYTES + message.serialize().length);
 			// Accept the connection (we will use blocking mode for the emulated side).
 			SocketChannel server = socket.accept();
 			server.configureBlocking(true);
 			// Send the message.
 			ClientResult result = connection.sendMessage(message);
 			// Receive the message on the emulated server.
+			ByteBuffer readBuffer = ByteBuffer.allocate(Short.BYTES + message.serialize().length);
 			int didRead = server.read(readBuffer);
 			Assert.assertEquals(readBuffer.position(), didRead);
 			readBuffer.flip();
@@ -47,23 +47,11 @@ class TestClientConnection {
 			Assert.assertEquals(message.nonce, observed.nonce);
 			Assert.assertArrayEquals(message.contents, observed.contents);
 			// Send the received from the server.
-			ClientResponse received = ClientResponse.received(observed.nonce);
-			raw = received.serialize();
-			ByteBuffer writeBuffer = ByteBuffer.allocate(Short.BYTES + raw.length);
-			writeBuffer.putShort((short)raw.length).put(raw);
-			writeBuffer.flip();
-			int didWrite = server.write(writeBuffer);
-			Assert.assertEquals(writeBuffer.position(), didWrite);
+			_sendReceived(server, observed.nonce);
 			// Wait for it on the client.
 			result.waitForReceived();
 			// Send the commit on the server.
-			ClientResponse committed = ClientResponse.committed(observed.nonce);
-			raw = committed.serialize();
-			writeBuffer = ByteBuffer.allocate(Short.BYTES + raw.length);
-			writeBuffer.putShort((short)raw.length).put(raw);
-			writeBuffer.flip();
-			didWrite = server.write(writeBuffer);
-			Assert.assertEquals(writeBuffer.position(), didWrite);
+			_sendCommitted(server, observed.nonce);
 			// Wait for it on the client.
 			result.waitForCommitted();
 		}
@@ -76,5 +64,25 @@ class TestClientConnection {
 		InetSocketAddress clientAddress = new InetSocketAddress(port);
 		socket.bind(clientAddress);
 		return socket;
+	}
+
+	private void _sendReceived(SocketChannel server, long nonce) throws IOException {
+		ClientResponse received = ClientResponse.received(nonce);
+		byte[] raw = received.serialize();
+		ByteBuffer writeBuffer = ByteBuffer.allocate(Short.BYTES + raw.length);
+		writeBuffer.putShort((short)raw.length).put(raw);
+		writeBuffer.flip();
+		int didWrite = server.write(writeBuffer);
+		Assert.assertEquals(writeBuffer.position(), didWrite);
+	}
+
+	private void _sendCommitted(SocketChannel server, long nonce) throws IOException {
+		ClientResponse committed = ClientResponse.committed(nonce);
+		byte[] raw = committed.serialize();
+		ByteBuffer writeBuffer = ByteBuffer.allocate(Short.BYTES + raw.length);
+		writeBuffer.putShort((short)raw.length).put(raw);
+		writeBuffer.flip();
+		int didWrite = server.write(writeBuffer);
+		Assert.assertEquals(writeBuffer.position(), didWrite);
 	}
 }
