@@ -7,6 +7,7 @@ import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 import com.jeffdisher.laminar.network.ClientMessage;
 import com.jeffdisher.laminar.network.ClientResponse;
@@ -64,6 +65,7 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 
 
 	private final NetworkManager _network;
+	private final UUID _clientId;
 	private NodeToken _connection;
 
 	private volatile boolean _keepRunning;
@@ -76,6 +78,7 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 
 	private ClientConnection() throws IOException {
 		_network = NetworkManager.outboundOnly(this);
+		_clientId = UUID.randomUUID();
 		_outgoingMessages = new LinkedList<>();
 		_inFlightMessages = new HashMap<>();
 		_keepRunning = true;
@@ -102,6 +105,16 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 		_outgoingMessages.add(result);
 		this.notifyAll();
 		return result;
+	}
+
+	/**
+	 * Every client has a UUID and this is the same after reconnections but new client instances always start with a new
+	 * one.
+	 * 
+	 * @return The UUID of this client.
+	 */
+	public UUID getClientId() {
+		return _clientId;
 	}
 
 	// <INetworkManagerBackgroundCallbacks>
@@ -135,6 +148,7 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 	public synchronized void outboundNodeConnected(NodeToken node) {
 		Assert.assertTrue(null == _connection);
 		_connection = node;
+		System.out.println("CLIENT " + _clientId + " CONNECTED");
 		// Every connection starts writable.
 		_canWrite = true;
 		this.notifyAll();

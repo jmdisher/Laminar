@@ -14,4 +14,5 @@ public class ClientState {
 	public final List<ClientResponse> outgoingMessages = new LinkedList<>();
 	public boolean writable = true;
 	public int readableMessages = 0;
+	public UUID clientId = null;
 }
