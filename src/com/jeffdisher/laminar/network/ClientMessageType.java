@@ -10,6 +10,10 @@ public enum ClientMessageType {
 	 */
 	INVALID,
 	/**
+	 * This handshake type is only used during client connection handshake.
+	 */
+	HANDSHAKE,
+	/**
 	 * This message is purely temporary to verify the client-server communication.
 	 */
 	TEMP,

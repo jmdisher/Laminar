@@ -1,12 +1,35 @@
 package com.jeffdisher.laminar.network;
 
 import java.nio.ByteBuffer;
+import java.util.UUID;
+
+import com.jeffdisher.laminar.utils.Assert;
 
 
 /**
  * High-level representation of a message to be sent FROM the client TO a server.
  */
 public class ClientMessage {
+	/**
+	 * Note that the client handshake is an outlier in overall behaviour since it doesn't really have a nonce, nor do
+	 * received and committed really make sense for it.  It is a core part of the message protocol, not the event
+	 * stream.
+	 * Due to this difference, it may be changed into a special-case, later on, if this causes problems/confusion.
+	 * 
+	 * @param clientId The UUID of the client.
+	 * @return A new ClientMessageInstance.
+	 */
+	public static ClientMessage handshake(long nonce, UUID clientId) {
+		// We know that the handshake nonce _MUST_ be 0.
+		Assert.assertTrue(0L == nonce);
+		// For now, we just serialize the UUID via longs.
+		byte[] buffer = ByteBuffer.allocate(2 * Long.BYTES)
+				.putLong(clientId.getMostSignificantBits())
+				.putLong(clientId.getLeastSignificantBits())
+				.array();
+		return new ClientMessage(ClientMessageType.HANDSHAKE, nonce, buffer);
+	}
+
 	/**
 	 * Creates a temp message.
 	 * Note that, as the name implies, this only exists for temporary testing of the flow and will be removed, later.

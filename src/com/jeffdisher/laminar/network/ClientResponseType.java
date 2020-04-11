@@ -10,6 +10,10 @@ public enum ClientResponseType {
 	 */
 	INVALID,
 	/**
+	 * General error case.
+	 */
+	ERROR,
+	/**
 	 * Means that at least the cluster leader has observed the message and determined its global order.
 	 */
 	RECEIVED,

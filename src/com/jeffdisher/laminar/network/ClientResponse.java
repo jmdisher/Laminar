@@ -8,6 +8,18 @@ import java.nio.ByteBuffer;
  */
 public class ClientResponse {
 	/**
+	 * Creates an "error" response.
+	 * This means that the message was malformed, in the wrong state, or otherwise not understood.
+	 * The client connection is forced to close but the client probably needs to close and restart.
+	 * 
+	 * @param nonce Per-client nonce of the message which caused the error.
+	 * @return A new ClientResponse instance.
+	 */
+	public static ClientResponse error(long nonce) {
+		return new ClientResponse(ClientResponseType.ERROR, nonce);
+	}
+
+	/**
 	 * Creates a "received" response.
 	 * This response is used to state that the message previously sent by this client, with the given nonce, has been
 	 * received by the leader of the cluster.
