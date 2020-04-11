@@ -15,7 +15,6 @@ import org.junit.jupiter.api.Test;
 
 import com.jeffdisher.laminar.client.ClientConnection;
 import com.jeffdisher.laminar.client.ClientResult;
-import com.jeffdisher.laminar.network.ClientMessage;
 
 
 /**
@@ -94,7 +93,7 @@ class TestLaminar {
 		Thread.sleep(2000);
 		
 		try (ClientConnection client = ClientConnection.open(new InetSocketAddress("localhost", 2002))) {
-			ClientResult result = client.sendMessage(ClientMessage.temp(1L, "Hello World!".getBytes()));
+			ClientResult result = client.sendTemp("Hello World!".getBytes());
 			result.waitForReceived();
 			result.waitForCommitted();
 		}

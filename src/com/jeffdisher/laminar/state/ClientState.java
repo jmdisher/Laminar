@@ -15,4 +15,5 @@ public class ClientState {
 	public boolean writable = true;
 	public int readableMessages = 0;
 	public UUID clientId = null;
+	public long nextNonce = 0;
 }

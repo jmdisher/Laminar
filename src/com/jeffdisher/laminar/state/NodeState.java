@@ -101,7 +101,13 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 					
 					// Now, act on this message.
 					// (note that we are still under lock but we need to change the state of ClientState, which is protected by this lock).
-					_backgroundLockedHandleMessage(client, state, incoming);
+					// We can do the nonce check here, before we enter the state machine for the specific message type/contents.
+					if (state.nextNonce == incoming.nonce) {
+						state.nextNonce += 1;
+						_backgroundLockedHandleMessage(client, state, incoming);
+					} else {
+						_backgroundLockedEnqueueMessageToClient(client, state, ClientResponse.error(incoming.nonce));
+					}
 				}
 			}
 		}

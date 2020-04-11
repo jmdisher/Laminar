@@ -78,12 +78,14 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 	private final List<ClientResult> _outgoingMessages;
 	// NOTE:  _inFlightMessages can ONLY be accessed by _backgroundThread.
 	private final Map<Long, ClientResult> _inFlightMessages;
+	private long _nextNonce;
 
 	private ClientConnection() throws IOException {
 		_network = NetworkManager.outboundOnly(this);
 		_clientId = UUID.randomUUID();
 		_outgoingMessages = new LinkedList<>();
 		_inFlightMessages = new HashMap<>();
+		_nextNonce = 0L;
 		_keepRunning = true;
 		_backgroundThread = new Thread() {
 			@Override
@@ -96,7 +98,7 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 		_backgroundThread.start();
 		
 		// (we will always queue up our handshake since this is a new client connection).
-		ClientMessage handshake = ClientMessage.handshake(0L, _clientId);
+		ClientMessage handshake = ClientMessage.handshake(_nextNonce++, _clientId);
 		_handshakeResult = new ClientResult(handshake);
 		_outgoingMessages.add(_handshakeResult);
 	}
@@ -106,7 +108,8 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 		_handshakeResult.waitForCommitted();
 	}
 
-	public synchronized ClientResult sendMessage(ClientMessage message) {
+	public synchronized ClientResult sendTemp(byte[] payload) {
+		ClientMessage message = ClientMessage.temp(_nextNonce++, payload);
 		ClientResult result = new ClientResult(message);
 		_outgoingMessages.add(result);
 		this.notifyAll();

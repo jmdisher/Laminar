@@ -25,7 +25,7 @@ class TestClientConnection {
 	@Test
 	void testSendTempCommit() throws Throwable {
 		// Create the message.
-		ClientMessage message = ClientMessage.temp(1000, new byte[] {0,1,2,3});
+		byte[] payload = new byte[] {0,1,2,3};
 		// Create a server socket.
 		int port = PORT_BASE + 1;
 		ServerSocketChannel socket = createSocket(port);
@@ -55,18 +55,18 @@ class TestClientConnection {
 			_sendCommitted(server, handshake.nonce);
 			
 			// Send the message.
-			ClientResult result = connection.sendMessage(message);
+			ClientResult result = connection.sendTemp(payload);
 			// Receive the message on the emulated server.
-			ByteBuffer readBuffer = ByteBuffer.allocate(Short.BYTES + message.serialize().length);
+			ByteBuffer readBuffer = ByteBuffer.allocate(Short.BYTES + Byte.BYTES + Long.BYTES + payload.length);
 			didRead = server.read(readBuffer);
 			Assert.assertEquals(readBuffer.position(), didRead);
 			readBuffer.flip();
 			raw = new byte[readBuffer.getShort()];
 			readBuffer.get(raw);
 			ClientMessage observed = ClientMessage.deserialize(raw);
-			Assert.assertEquals(message.type, observed.type);
-			Assert.assertEquals(message.nonce, observed.nonce);
-			Assert.assertArrayEquals(message.contents, observed.contents);
+			Assert.assertEquals(ClientMessageType.TEMP, observed.type);
+			Assert.assertEquals(1L, observed.nonce);
+			Assert.assertArrayEquals(payload, observed.contents);
 			// Send the received from the server.
 			_sendReceived(server, observed.nonce);
 			// Wait for it on the client.
