@@ -5,11 +5,13 @@ import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.SocketChannel;
+import java.util.UUID;
 
 import org.junit.Assert;
 import org.junit.jupiter.api.Test;
 
 import com.jeffdisher.laminar.network.ClientMessage;
+import com.jeffdisher.laminar.network.ClientMessageType;
 import com.jeffdisher.laminar.network.ClientResponse;
 
 
@@ -33,14 +35,33 @@ class TestClientConnection {
 			// Accept the connection (we will use blocking mode for the emulated side).
 			SocketChannel server = socket.accept();
 			server.configureBlocking(true);
+			
+			// Read the handshake.
+			ByteBuffer handshakeBuffer = ByteBuffer.allocate(Short.BYTES + Byte.BYTES + Long.BYTES + (2 * Long.BYTES));
+			int didRead = server.read(handshakeBuffer);
+			Assert.assertEquals(handshakeBuffer.position(), didRead);
+			handshakeBuffer.flip();
+			byte[] raw = new byte[handshakeBuffer.getShort()];
+			handshakeBuffer.get(raw);
+			ClientMessage handshake = ClientMessage.deserialize(raw);
+			// This should be the handshake.
+			Assert.assertEquals(ClientMessageType.HANDSHAKE, handshake.type);
+			Assert.assertEquals(0L, handshake.nonce);
+			Assert.assertEquals(2 * Long.BYTES, handshake.contents.length);
+			ByteBuffer uuidBuffer = ByteBuffer.wrap(handshake.contents);
+			Assert.assertEquals(connection.getClientId(), new UUID(uuidBuffer.getLong(), uuidBuffer.getLong()));
+			// Send the received and committed.
+			_sendReceived(server, handshake.nonce);
+			_sendCommitted(server, handshake.nonce);
+			
 			// Send the message.
 			ClientResult result = connection.sendMessage(message);
 			// Receive the message on the emulated server.
 			ByteBuffer readBuffer = ByteBuffer.allocate(Short.BYTES + message.serialize().length);
-			int didRead = server.read(readBuffer);
+			didRead = server.read(readBuffer);
 			Assert.assertEquals(readBuffer.position(), didRead);
 			readBuffer.flip();
-			byte[] raw = new byte[readBuffer.getShort()];
+			raw = new byte[readBuffer.getShort()];
 			readBuffer.get(raw);
 			ClientMessage observed = ClientMessage.deserialize(raw);
 			Assert.assertEquals(message.type, observed.type);

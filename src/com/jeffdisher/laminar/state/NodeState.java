@@ -1,9 +1,11 @@
 package com.jeffdisher.laminar.state;
 
+import java.nio.ByteBuffer;
 import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 import com.jeffdisher.laminar.console.ConsoleManager;
 import com.jeffdisher.laminar.console.IConsoleManagerBackgroundCallbacks;
@@ -245,14 +247,36 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 		case INVALID:
 			Assert.unreachable("Invalid message type");
 			break;
+		case HANDSHAKE:
+			// This is the first message a client sends us in order to make sure we know their UUID and the version is
+			// correct and any other options are supported.
+			ByteBuffer wrapper = ByteBuffer.wrap(incoming.contents);
+			UUID clientId = new UUID(wrapper.getLong(), wrapper.getLong());
+			if (null == state.clientId) {
+				state.clientId = clientId;
+				ClientResponse ack = ClientResponse.received(incoming.nonce);
+				_backgroundLockedEnqueueMessageToClient(client, state, ack);
+				System.out.println("HANDSHAKE: " + state.clientId);
+				ClientResponse commit = ClientResponse.committed(incoming.nonce);
+				_backgroundLockedEnqueueMessageToClient(client, state, commit);
+			} else {
+				// Tried to set the ID twice.
+				_backgroundLockedEnqueueMessageToClient(client, state, ClientResponse.error(incoming.nonce));
+			}
+			break;
 		case TEMP:
 			// This is just for initial testing:  send the received, log it, and send the commit.
 			// (client outgoing message list is unbounded so this is safe to do all at once).
-			ClientResponse ack = ClientResponse.received(incoming.nonce);
-			_backgroundLockedEnqueueMessageToClient(client, state, ack);
-			System.out.println("GOT TEMP FROM " + incoming.nonce + ": \"" + new String(incoming.contents) + "\"");
-			ClientResponse commit = ClientResponse.committed(incoming.nonce);
-			_backgroundLockedEnqueueMessageToClient(client, state, commit);
+			if (null != state.clientId) {
+				ClientResponse ack = ClientResponse.received(incoming.nonce);
+				_backgroundLockedEnqueueMessageToClient(client, state, ack);
+				System.out.println("GOT TEMP FROM " + state.clientId + ": \"" + new String(incoming.contents) + "\" (nonce " + incoming.nonce + ")");
+				ClientResponse commit = ClientResponse.committed(incoming.nonce);
+				_backgroundLockedEnqueueMessageToClient(client, state, commit);
+			} else {
+				// The client didn't handshake yet.
+				_backgroundLockedEnqueueMessageToClient(client, state, ClientResponse.error(incoming.nonce));
+			}
 			break;
 		default:
 			Assert.unreachable("Default message case reached");

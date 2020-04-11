@@ -66,6 +66,9 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 
 	private final NetworkManager _network;
 	private final UUID _clientId;
+	// The handshake response is what the client waits on before sending messages.
+	// (this is final until we implement the reconnect logic where this will be modified to wait for full reconnect)
+	private final ClientResult _handshakeResult;
 	private NodeToken _connection;
 
 	private volatile boolean _keepRunning;
@@ -91,13 +94,16 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 		// Note that it is normally poor form to start the thread in the constructor but this is a private constructor
 		// so the matter is 6 vs 1/2 dozen and this is more direct.
 		_backgroundThread.start();
+		
+		// (we will always queue up our handshake since this is a new client connection).
+		ClientMessage handshake = ClientMessage.handshake(0L, _clientId);
+		_handshakeResult = new ClientResult(handshake);
+		_outgoingMessages.add(_handshakeResult);
 	}
 
-	public synchronized void waitForConnection() throws InterruptedException {
-		while (null == _connection) {
-			// Note that we allow interruption since this is client accessible.
-			this.wait();
-		}
+	public void waitForConnection() throws InterruptedException {
+		// We just wait for the result of the handshake (the commit is synthesized on the server so it is the same as received).
+		_handshakeResult.waitForCommitted();
 	}
 
 	public synchronized ClientResult sendMessage(ClientMessage message) {
