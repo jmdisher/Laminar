@@ -18,6 +18,7 @@ import com.jeffdisher.laminar.network.ClientResponse;
 import com.jeffdisher.laminar.network.ClusterManager;
 import com.jeffdisher.laminar.network.IClientManagerBackgroundCallbacks;
 import com.jeffdisher.laminar.network.IClusterManagerBackgroundCallbacks;
+import com.jeffdisher.laminar.types.EventRecord;
 import com.jeffdisher.laminar.utils.Assert;
 
 
@@ -41,6 +42,9 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 	private final Map<ClientManager.ClientNode, ClientState> _connectedClients;
 	private final List<ClientManager.ClientNode> _writableClients;
 	private final List<ClientManager.ClientNode> _readableClients;
+	private final Map<Long, ClientCommitTuple> _pendingMessageCommits;
+	private final List<ClientCommitTuple> _readyMessageCommits;
+	private long _nextGlobalOffset;
 	private volatile boolean _keepRunning;
 
 	public NodeState() {
@@ -51,6 +55,10 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 		_connectedClients = new HashMap<>();
 		_writableClients = new LinkedList<>();
 		_readableClients = new LinkedList<>();
+		_pendingMessageCommits = new HashMap<>();
+		_readyMessageCommits = new LinkedList<>();
+		// Global offsets are 1-indexed so the first one is 1L.
+		_nextGlobalOffset = 1L;
 	}
 
 	public synchronized void runUntilShutdown() {
@@ -67,7 +75,7 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 		while (_keepRunning) {
 			// Wait for work.
 			// (note that the client data structures are all accessed under lock as well as the monitor wait).
-			while (_keepRunning && _writableClients.isEmpty() && _readableClients.isEmpty()) {
+			while (_keepRunning && _writableClients.isEmpty() && _readableClients.isEmpty() && _readyMessageCommits.isEmpty()) {
 				try {
 					this.wait();
 				} catch (InterruptedException e) {
@@ -108,6 +116,14 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 					} else {
 						_backgroundLockedEnqueueMessageToClient(client, state, ClientResponse.error(incoming.nonce));
 					}
+				}
+			}
+			// See if we have any commits to write back.
+			if (!_readyMessageCommits.isEmpty()) {
+				ClientCommitTuple tuple = _readyMessageCommits.remove(0);
+				// Verify that this client is still connected.
+				if (_connectedClients.containsKey(tuple.client)) {
+					_backgroundLockedEnqueueMessageToClient(tuple.client, tuple.state, tuple.ack);
 				}
 			}
 		}
@@ -236,6 +252,24 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 	}
 	// </IClusterManagerBackgroundCallbacks>
 
+	// <IDiskManagerBackgroundCallbacks>
+	@Override
+	public synchronized void recordWasCommitted(EventRecord completed) {
+		System.out.println("RECORD WAS COMMITTED");
+		ClientCommitTuple tuple = _pendingMessageCommits.remove(completed.globalOffset);
+		// This was requested for the specific tuple so it can't be missing.
+		Assert.assertTrue(null != tuple);
+		_readyMessageCommits.add(tuple);
+		this.notifyAll();
+	}
+
+	@Override
+	public void recordWasFetched(EventRecord record) {
+		// Not yet used.
+		Assert.unimplemented("Record fetch requests not yet sent (implement for listeners or cluster sync)");
+	}
+	// </IDiskManagerBackgroundCallbacks>
+
 	// <IConsoleManagerBackgroundCallbacks>
 	@Override
 	public synchronized void handleStopCommand() {
@@ -263,6 +297,7 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 				ClientResponse ack = ClientResponse.received(incoming.nonce);
 				_backgroundLockedEnqueueMessageToClient(client, state, ack);
 				System.out.println("HANDSHAKE: " + state.clientId);
+				// Handshakes are committed immediately since they don't have any required persistence or synchronization across the cluster.
 				ClientResponse commit = ClientResponse.committed(incoming.nonce);
 				_backgroundLockedEnqueueMessageToClient(client, state, commit);
 			} else {
@@ -277,8 +312,15 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 				ClientResponse ack = ClientResponse.received(incoming.nonce);
 				_backgroundLockedEnqueueMessageToClient(client, state, ack);
 				System.out.println("GOT TEMP FROM " + state.clientId + ": \"" + new String(incoming.contents) + "\" (nonce " + incoming.nonce + ")");
+				// Create the EventRecord, add it to storage, and set up the commit to send once we get the notification that it is durable.
+				// (for now, we don't have per-topic streams or programmable topics so the localOffset is the same as the global).
+				long globalOffset = _nextGlobalOffset++;
+				long localOffset = globalOffset;
+				EventRecord record = EventRecord.generateRecord(globalOffset, localOffset, state.clientId, incoming.contents);
 				ClientResponse commit = ClientResponse.committed(incoming.nonce);
-				_backgroundLockedEnqueueMessageToClient(client, state, commit);
+				// Setup the record for the async response and send the commit to the disk.
+				_pendingMessageCommits.put(globalOffset, new ClientCommitTuple(client, state, commit));
+				_diskManager.commitEvent(record);
 			} else {
 				// The client didn't handshake yet.
 				_backgroundLockedEnqueueMessageToClient(client, state, ClientResponse.error(incoming.nonce));
@@ -295,6 +337,23 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 		state.outgoingMessages.add(ack);
 		if (willBecomeWritable) {
 			_writableClients.add(client);
+		}
+	}
+
+
+	/**
+	 * Instances of this class are used to store data associated with a commit message (to a client) so that the message
+	 * can be sent once the commit callback comes from the disk layer.
+	 */
+	private static class ClientCommitTuple {
+		public final ClientNode client;
+		public final ClientState state;
+		public final ClientResponse ack;
+		
+		public ClientCommitTuple(ClientNode client, ClientState state, ClientResponse ack) {
+			this.client = client;
+			this.state = state;
+			this.ack = ack;
 		}
 	}
 }
