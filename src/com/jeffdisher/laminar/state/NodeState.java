@@ -39,11 +39,19 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 	private ConsoleManager _consoleManager;
 
 	private RaftState _currentState;
+	// Note that we currently track both clients and listeners the same way (this may change in the future).
 	private final Map<ClientManager.ClientNode, ClientState> _connectedClients;
 	private final List<ClientManager.ClientNode> _writableClients;
 	private final List<ClientManager.ClientNode> _readableClients;
 	private final Map<Long, ClientCommitTuple> _pendingMessageCommits;
 	private final List<ClientCommitTuple> _readyMessageCommits;
+	// This is a map of local offsets to the list of listener clients waiting for them.
+	// A key is only in this map if a load request for it is outstanding or it is an offset which hasn't yet been sent from a client.
+	// The map uses the ClientNode since these may have disconnected.
+	// Note that no listener should ever appear in _writableClients or _readableClients as these messages are sent immediately (since they would be unbounded buffers, otherwise).
+	// This also means that there is currently no asynchronous load/send on the listener path as it is fully lock-step between network and disk.  This will be changed later.
+	// (in the future, this will change to handle multiple topics).
+	private final Map<Long, List<ClientManager.ClientNode>> _listenersWaitingOnLocalOffset;
 	private long _nextGlobalOffset;
 	private volatile boolean _keepRunning;
 
@@ -57,6 +65,7 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 		_readableClients = new LinkedList<>();
 		_pendingMessageCommits = new HashMap<>();
 		_readyMessageCommits = new LinkedList<>();
+		_listenersWaitingOnLocalOffset = new HashMap<>();
 		// Global offsets are 1-indexed so the first one is 1L.
 		_nextGlobalOffset = 1L;
 	}
@@ -83,6 +92,9 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 					Assert.unexpected(e);
 				}
 			}
+			// Note:  This processing seems more complicated than it actually is so this may be converted into a
+			// Runnable queue, in the future.  This approach allows greater visibility into in-progress operations so it
+			// is being used, at least for now.
 			// See if we have any writing to do.
 			if (!_writableClients.isEmpty()) {
 				ClientManager.ClientNode client = _writableClients.remove(0);
@@ -190,12 +202,20 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 		ClientState state = _connectedClients.get(node);
 		// This cannot be null in direct response to a network callback.
 		Assert.assertTrue(null != state);
-		// This can't already be writable.
-		Assert.assertTrue(!state.writable);
-		state.writable = true;
-		if (!state.outgoingMessages.isEmpty()) {
-			_writableClients.add(node);
-			this.notifyAll();
+		// Determine if this is a normal client or a listener.
+		if (null != state.clientId) {
+			// Normal client.
+			// This can't already be writable.
+			Assert.assertTrue(!state.writable);
+			state.writable = true;
+			if (!state.outgoingMessages.isEmpty()) {
+				_writableClients.add(node);
+				this.notifyAll();
+			}
+		} else {
+			// Listener.
+			// TODO:  Setting up the listener next event directly from the network callback is incorrect - this needs to be moved to the background thread.
+			_lockedHandleListenerNextEvent(node, state);
 		}
 	}
 
@@ -205,6 +225,7 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 		ClientState state = _connectedClients.get(node);
 		// This cannot be null in direct response to a network callback.
 		Assert.assertTrue(null != state);
+		// TODO:  It is possible that a listener has sent us this message so we need to detect that and disconnect them.
 		boolean shouldAddToList = (0 == state.readableMessages);
 		state.readableMessages += 1;
 		if (shouldAddToList) {
@@ -264,9 +285,10 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 	}
 
 	@Override
-	public void recordWasFetched(EventRecord record) {
-		// Not yet used.
-		Assert.unimplemented("Record fetch requests not yet sent (implement for listeners or cluster sync)");
+	public synchronized void recordWasFetched(EventRecord record) {
+		// See what listeners requested this.
+		// TODO:  Sending the listener events directly from the disk callback is incorrect - this needs to be moved to the background thread.
+		_lockedSendRecordToListeners(record);
 	}
 	// </IDiskManagerBackgroundCallbacks>
 
@@ -305,6 +327,18 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 				_backgroundLockedEnqueueMessageToClient(client, state, ClientResponse.error(incoming.nonce));
 			}
 			break;
+		case LISTEN:
+			// This is the first message a client sends when they want to register as a listener.
+			// In this case, they won't send any other messages to us and just expect a constant stream of raw EventRecords to be sent to them.
+			// Note that this message overloads the nonce as the last received local offset.
+			long lastReceivedLocalOffset = incoming.nonce;
+			if ((lastReceivedLocalOffset < 0L) || (lastReceivedLocalOffset >= _nextGlobalOffset)) {
+				Assert.unimplemented("This listener is invalid so disconnect it");
+			}
+			// Update the client state.
+			state.lastSentLocalOffset = lastReceivedLocalOffset;
+			_lockedHandleListenerNextEvent(client, state);
+			break;
 		case TEMP:
 			// This is just for initial testing:  send the received, log it, and send the commit.
 			// (client outgoing message list is unbounded so this is safe to do all at once).
@@ -321,6 +355,8 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 				// Setup the record for the async response and send the commit to the disk.
 				_pendingMessageCommits.put(globalOffset, new ClientCommitTuple(client, state, commit));
 				_diskManager.commitEvent(record);
+				// See if any listeners want this.
+				_lockedSendRecordToListeners(record);
 			} else {
 				// The client didn't handshake yet.
 				_backgroundLockedEnqueueMessageToClient(client, state, ClientResponse.error(incoming.nonce));
@@ -337,6 +373,38 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 		state.outgoingMessages.add(ack);
 		if (willBecomeWritable) {
 			_writableClients.add(client);
+		}
+	}
+
+	private void _lockedHandleListenerNextEvent(ClientNode client, ClientState state) {
+		// See if there is a pending request for this offset.
+		long nextLocalOffset = state.lastSentLocalOffset + 1;
+		List<ClientManager.ClientNode> waitingList = _listenersWaitingOnLocalOffset.get(nextLocalOffset);
+		if (null == waitingList) {
+			// Nobody is currently waiting so set up the record.
+			waitingList = new LinkedList<>();
+			_listenersWaitingOnLocalOffset.put(nextLocalOffset, waitingList);
+			// Unless this is the next offset (meaning we are waiting for a client to send it), then request the load.
+			// WARNING:  We currently only use the global offset for these until we have per-topic committing.
+			if (nextLocalOffset < _nextGlobalOffset) {
+				_diskManager.fetchEvent(nextLocalOffset);
+			}
+		}
+		waitingList.add(client);
+	}
+
+	private void _lockedSendRecordToListeners(EventRecord record) {
+		List<ClientManager.ClientNode> waitingList = _listenersWaitingOnLocalOffset.remove(record.localOffset);
+		if (null != waitingList) {
+			for (ClientManager.ClientNode node : waitingList) {
+				ClientState listenerState = _connectedClients.get(node);
+				// (make sure this is still connected)
+				if (null != listenerState) {
+					_clientManager.sendEventToListener(node, record);
+					// Update the state to be the offset of this event.
+					listenerState.lastSentLocalOffset = record.localOffset;
+				}
+			}
 		}
 	}
 

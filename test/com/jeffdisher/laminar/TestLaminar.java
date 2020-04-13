@@ -2,11 +2,13 @@ package com.jeffdisher.laminar;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.PipedInputStream;
 import java.io.PipedOutputStream;
 import java.io.PrintStream;
 import java.net.InetSocketAddress;
+import java.util.concurrent.CountDownLatch;
 
 import org.junit.Assert;
 import org.junit.jupiter.api.AfterEach;
@@ -15,6 +17,8 @@ import org.junit.jupiter.api.Test;
 
 import com.jeffdisher.laminar.client.ClientConnection;
 import com.jeffdisher.laminar.client.ClientResult;
+import com.jeffdisher.laminar.client.ListenerConnection;
+import com.jeffdisher.laminar.types.EventRecord;
 
 
 /**
@@ -99,5 +103,81 @@ class TestLaminar {
 		}
 		feeder.println("stop");
 		runner.join();
+	}
+
+	@Test
+	void testSimpleClientAndListeners() throws Throwable {
+		byte[] message = "Hello World!".getBytes();
+		// Here, we start up, connect a client, send one message, wait for it to commit, observe listener behaviour, then shut everything down.
+		PipedOutputStream outStream = new PipedOutputStream();
+		PipedInputStream inStream = new PipedInputStream(outStream);
+		PrintStream feeder = new PrintStream(outStream);
+		System.setIn(inStream);
+		
+		// We need to run the Laminar process in a thread it will control and then sleep for startup.
+		// (this way of using sleep for timing is a hack but this will eventually be made into a more reliable integration test, probably outside of JUnit).
+		Thread runner = new Thread() {
+			@Override
+			public void run() {
+				Laminar.main(new String[] {"--client", "2002", "--cluster", "2003", "--data", "/tmp/laminar"});
+			}
+		};
+		runner.start();
+		InetSocketAddress address = new InetSocketAddress("localhost", 2002);
+		
+		// Start a listener before the client begins.
+		CountDownLatch beforeLatch = new CountDownLatch(1);
+		ListenerThread beforeListener = new ListenerThread(address, message, beforeLatch);
+		beforeListener.start();
+		
+		// HACK:  Wait for start.
+		Thread.sleep(2000);
+		
+		try (ClientConnection client = ClientConnection.open(address)) {
+			ClientResult result = client.sendTemp(message);
+			result.waitForReceived();
+			result.waitForCommitted();
+		}
+		
+		// Start a listener after the client begins.
+		CountDownLatch afterLatch = new CountDownLatch(1);
+		ListenerThread afterListener = new ListenerThread(address, message, afterLatch);
+		afterListener.start();
+		
+		// Verify that both listeners received the event.
+		beforeLatch.await();
+		afterLatch.await();
+		
+		// Shut down.
+		beforeListener.join();
+		afterListener.join();
+		feeder.println("stop");
+		runner.join();
+	}
+
+
+	private static class ListenerThread extends Thread {
+		private final InetSocketAddress _address;
+		private final byte[] _message;
+		private final CountDownLatch _latch;
+		
+		public ListenerThread(InetSocketAddress address, byte[] message, CountDownLatch latch) {
+			_address = address;
+			_message = message;
+			_latch = latch;
+		}
+		
+		@Override
+		public void run() {
+			try(ListenerConnection listener = ListenerConnection.open(_address)) {
+				EventRecord record = listener.pollForNextEvent(0L);
+				// We only expect the one.
+				Assert.assertEquals(1L, record.localOffset);
+				Assert.assertArrayEquals(_message, record.payload);
+				_latch.countDown();
+			} catch (IOException | InterruptedException e) {
+				Assert.fail(e.getLocalizedMessage());
+			}
+		}
 	}
 }
