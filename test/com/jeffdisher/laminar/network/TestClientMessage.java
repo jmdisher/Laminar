@@ -16,7 +16,20 @@ class TestClientMessage {
 		UUID uuid = UUID.randomUUID();
 		ClientMessage input = ClientMessage.handshake(nonce, uuid);
 		byte[] serialized = input.serialize();
-		Assert.assertEquals(Byte.BYTES + Long.BYTES + (2 * Long.BYTES), serialized.length);
+		int uuidSize = (2 * Long.BYTES);
+		Assert.assertEquals(Byte.BYTES + Long.BYTES + uuidSize, serialized.length);
+		ClientMessage output = ClientMessage.deserialize(serialized);
+		Assert.assertEquals(input.type, output.type);
+		Assert.assertEquals(input.nonce, output.nonce);
+		Assert.assertArrayEquals(input.contents, output.contents);
+	}
+
+	@Test
+	void testListenMessage() throws Throwable {
+		long previousLocalOffset = 5L;
+		ClientMessage input = ClientMessage.listen(previousLocalOffset);
+		byte[] serialized = input.serialize();
+		Assert.assertEquals(Byte.BYTES + Long.BYTES, serialized.length);
 		ClientMessage output = ClientMessage.deserialize(serialized);
 		Assert.assertEquals(input.type, output.type);
 		Assert.assertEquals(input.nonce, output.nonce);

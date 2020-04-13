@@ -14,6 +14,10 @@ public enum ClientMessageType {
 	 */
 	HANDSHAKE,
 	/**
+	 * Sent by a listener client when it wants to become a read-only client instead of a normal client.
+	 */
+	LISTEN,
+	/**
 	 * This message is purely temporary to verify the client-server communication.
 	 */
 	TEMP,
