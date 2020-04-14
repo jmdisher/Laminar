@@ -68,6 +68,12 @@ public class ClusterManager implements INetworkManagerBackgroundCallbacks {
 		_callbacks.weDisconnectedFromPeer(realNode);
 	}
 
+	@Override
+	public void outboundNodeConnectionFailed(NetworkManager.NodeToken node, IOException cause) {
+		ClusterNode realNode = _translateNode(node);
+		_callbacks.weFailedToConnectToPeer(realNode);
+	}
+
 
 	private ClusterNode _translateNode(NetworkManager.NodeToken node) {
 		ClusterNode realNode = _nodes.get(node);

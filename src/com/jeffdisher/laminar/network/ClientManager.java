@@ -121,6 +121,12 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 		Assert.unreachable("No outbound connections");
 	}
 
+	@Override
+	public void outboundNodeConnectionFailed(NetworkManager.NodeToken token, IOException cause) {
+		// This implementation has no outbound connections.
+		Assert.unreachable("No outbound connections");
+	}
+
 
 	private ClientNode _translateNode(NetworkManager.NodeToken node) {
 		ClientNode realNode = _nodes.get(node);

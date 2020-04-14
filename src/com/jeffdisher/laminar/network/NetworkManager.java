@@ -265,7 +265,7 @@ public class NetworkManager {
 		// Note:  This part seems gratuitously complex but we want the _internal_ thread to register the connection and
 		// interact with _connectedNodes, ONLY.
 		// This allows enhanced safety around _connectedNodes but mostly it is to avoid an issue where registering with
-		// the selector will block if an active select is in-process.
+		// the selector will block if an active select is in-progress.
 		// Also, since creating/destroying connections is a rare an expensive operation, this should be safe.
 		NodeToken token = null;
 		synchronized (this) {
@@ -401,13 +401,7 @@ public class NetworkManager {
 			// The key "isValid" will only be set false by our attempts to cancel on disconnect, below in this method, but it should start out valid.
 			Assert.assertTrue(key.isValid());
 			if (key == _acceptorKey) {
-				try {
-					_processAcceptorKey(key);
-				} catch (IOException e) {
-					// TODO:  Implement.
-					e.printStackTrace();
-					throw Assert.unimplemented(e.getLocalizedMessage());
-				}
+				_processAcceptorKey(key);
 			} else {
 				// This is normal data movement so get the state out of the attachment.
 				ConnectionState state = (ConnectionState)key.attachment();
@@ -416,13 +410,7 @@ public class NetworkManager {
 				
 				// See what operation we wanted to perform.
 				if (key.isConnectable()) {
-					try {
-						_processConnectableKey(key, state);
-					} catch (IOException e) {
-						// TODO:  Implement.
-						e.printStackTrace();
-						throw Assert.unimplemented(e.getLocalizedMessage());
-					}
+					_processConnectableKey(key, state);
 				}
 				if (key.isValid() && key.isReadable()) {
 					_processReadableKey(key, state);
@@ -435,17 +423,34 @@ public class NetworkManager {
 		}
 	}
 
-	private void _processAcceptorKey(SelectionKey key) throws IOException {
+	private void _processAcceptorKey(SelectionKey key) {
 		// This must be a new node connecting.
 		Assert.assertTrue(SelectionKey.OP_ACCEPT == key.readyOps());
 		// This cannot be null if we matched the acceptor key.
 		Assert.assertTrue(null != _acceptorSocket);
-		SocketChannel newNode = _acceptorSocket.accept();
+		SocketChannel newNode;
+		try {
+			newNode = _acceptorSocket.accept();
+		} catch (IOException e) {
+			// We don't know what problem would result in an IOException during accept so flag this as a bug.
+			throw Assert.unexpected(e);
+		}
 		
 		// Configure this new node for our selection set - by default, it starts only waiting for read.
-		newNode.configureBlocking(false);
+		try {
+			newNode.configureBlocking(false);
+		} catch (IOException e) {
+			// Changing this state shouldn't involve an IOException so flag that as fatal, if it happens.
+			throw Assert.unexpected(e);
+		}
 		ConnectionState newState = new ConnectionState(newNode);
-		SelectionKey newKey = newNode.register(_selector, SelectionKey.OP_READ, newState);
+		SelectionKey newKey;
+		try {
+			newKey = newNode.register(_selector, SelectionKey.OP_READ, newState);
+		} catch (ClosedChannelException e) {
+			// We just created this channel so this can't happen.
+			throw Assert.unexpected(e);
+		}
 		NodeToken token = new NodeToken(newKey);
 		newState.token = token;
 		_connectedNodes.add(newKey);
@@ -453,23 +458,42 @@ public class NetworkManager {
 		_callbackTarget.nodeDidConnect(token);
 	}
 
-	private void _processConnectableKey(SelectionKey key, ConnectionState state) throws IOException {
+	private void _processConnectableKey(SelectionKey key, ConnectionState state) {
 		// Finish the connection, send the callback that an outbound connection was established, and switch
 		// its interested ops (normally just READ but WRITE is possible if data has already been written to
 		// the outgoing buffer.
 		// NOTE: Outbound connections are NOT added to _connectedNodes.
-		boolean isConnected = state.channel.finishConnect();
-		if (!isConnected) {
-			Assert.unimplemented("Does connection failure manifest here?");
-		}
-		int interestedOps = SelectionKey.OP_READ;
-		synchronized (state) {
-			if (state.toWrite.position() > 0) {
-				interestedOps |= SelectionKey.OP_WRITE;
+		boolean isConnected;
+		try {
+			isConnected = state.channel.finishConnect();
+			// This would only return false if we hadn't selected on connectability.
+			Assert.assertTrue(isConnected);
+		} catch (IOException e) {
+			// This is typically "Connection refused".
+			// We just want to close the connection, cancel the key, and send the callback.
+			// Since this connection was still finishing, we haven't yet told them anything about this.  We still want
+			// to flag the connection "isClosed", just for consistency, and notify them that the connection failed.
+			try {
+				state.channel.close();
+			} catch (IOException e1) {
+				// This is just book-keeping so it can't fail.
+				Assert.unexpected(e1);
 			}
+			key.cancel();
+			state.isClosed = true;
+			_callbackTarget.outboundNodeConnectionFailed(state.token, e);
+			isConnected = false;
 		}
-		key.interestOps(interestedOps);
-		_callbackTarget.outboundNodeConnected(state.token);
+		if (isConnected) {
+			int interestedOps = SelectionKey.OP_READ;
+			synchronized (state) {
+				if (state.toWrite.position() > 0) {
+					interestedOps |= SelectionKey.OP_WRITE;
+				}
+			}
+			key.interestOps(interestedOps);
+			_callbackTarget.outboundNodeConnected(state.token);
+		}
 	}
 
 	private void _processReadableKey(SelectionKey key, ConnectionState state) {

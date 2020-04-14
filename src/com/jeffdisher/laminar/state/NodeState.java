@@ -286,6 +286,12 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 		// TODO Auto-generated method stub
 		
 	}
+
+	@Override
+	public void weFailedToConnectToPeer(ClusterManager.ClusterNode realNode) {
+		// TODO Auto-generated method stub
+		
+	}
 	// </IClusterManagerBackgroundCallbacks>
 
 	// <IDiskManagerBackgroundCallbacks>

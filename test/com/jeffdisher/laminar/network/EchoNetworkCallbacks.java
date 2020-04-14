@@ -1,5 +1,6 @@
 package com.jeffdisher.laminar.network;
 
+import java.io.IOException;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedList;
@@ -118,6 +119,11 @@ public class EchoNetworkCallbacks implements INetworkManagerBackgroundCallbacks 
 	@Override
 	public void outboundNodeDisconnected(NodeToken node) {
 		// This doesn't currently do anything with disconnects.
+	}
+
+	@Override
+	public void outboundNodeConnectionFailed(NodeToken token, IOException cause) {
+		// This doesn't currently do anything with connection failures.
 	}
 
 

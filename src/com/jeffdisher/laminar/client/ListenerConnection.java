@@ -151,6 +151,12 @@ public class ListenerConnection implements Closeable, INetworkManagerBackgroundC
 		Assert.assertTrue(_connection == node);
 		_connection = null;
 	}
+
+	@Override
+	public void outboundNodeConnectionFailed(NodeToken token, IOException cause) {
+		Assert.assertTrue(null == _connection);
+		throw Assert.unimplemented("TODO: Implement connection failure handling");
+	}
 	// </INetworkManagerBackgroundCallbacks>
 
 	@Override

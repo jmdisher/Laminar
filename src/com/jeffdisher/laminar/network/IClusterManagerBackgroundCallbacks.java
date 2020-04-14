@@ -18,4 +18,6 @@ public interface IClusterManagerBackgroundCallbacks {
 	void weConnectedToPeer(ClusterManager.ClusterNode realNode);
 
 	void weDisconnectedFromPeer(ClusterManager.ClusterNode realNode);
+
+	void weFailedToConnectToPeer(ClusterManager.ClusterNode realNode);
 }
