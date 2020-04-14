@@ -110,12 +110,7 @@ public class NetworkManager {
 		_background = new Thread() {
 			@Override
 			public void run() {
-				try {
-					_backgroundThreadMain();
-				} catch (IOException e) {
-					// TODO:  Remove this exception from the method signature and handle each case as either a valid state or a finer-grained problem.
-					Assert.unimplemented(e.getLocalizedMessage());
-				}
+				_backgroundThreadMain();
 			}
 		};
 		_background.start();
@@ -327,12 +322,19 @@ public class NetworkManager {
 		channel.close();
 	}
 
-	private void _backgroundThreadMain() throws IOException {
+	private void _backgroundThreadMain() {
 		while (_keepRunning) {
-			int selectedKeyCount = _selector.select();
+			int selectedKeyCount = 0;
+			try {
+				selectedKeyCount = _selector.select();
+			} catch (IOException e) {
+				// TODO:  Determine how we want to handle this once we observe what kind of IO error can happen here.
+				e.printStackTrace();
+				throw Assert.unimplemented(e.getLocalizedMessage());
+			}
 			// We are often just woken up to update the set of interested operations so this may be empty.
 			if (selectedKeyCount > 0) {
-				processSelectedKeys();
+				_processSelectedKeys();
 			}
 			// Note that the keys' interested operations are updated by processing why they were selected or when an
 			// external caller changes the state so we don't need to go through them, again.
@@ -343,16 +345,26 @@ public class NetworkManager {
 		// We are shutting down so close all clients.
 		for (SelectionKey key : _connectedNodes) {
 			ConnectionState state = (ConnectionState)key.attachment();
-			state.channel.close();
+			try {
+				state.channel.close();
+			} catch (IOException e) {
+				// This is a shutdown so just drop the exception and proceed.
+			}
 			key.cancel();
 		}
 	}
 
-	private synchronized void _backgroundCheckHandoff() throws ClosedChannelException {
+	private synchronized void _backgroundCheckHandoff() {
 		if (null != _handoff_newConnection) {
 			// Register this connection, pass back the token, and notify them.
 			ConnectionState newState = new ConnectionState(_handoff_newConnection);
-			SelectionKey newKey = _handoff_newConnection.register(_selector, SelectionKey.OP_CONNECT, newState);
+			SelectionKey newKey;
+			try {
+				newKey = _handoff_newConnection.register(_selector, SelectionKey.OP_CONNECT, newState);
+			} catch (ClosedChannelException e) {
+				// Due to the way we manage our channels, we will never close one while still interacting it elsewhere so this would be a static violation of that rule.
+				throw Assert.unexpected(e);
+			}
 			NodeToken token = new NodeToken(newKey);
 			newState.token = token;
 			_connectedNodes.add(newKey);
@@ -377,30 +389,22 @@ public class NetworkManager {
 		}
 	}
 
-	private void processSelectedKeys() throws IOException, ClosedChannelException {
+	private void _processSelectedKeys() {
 		Iterator<SelectionKey> selectedKeys = _selector.selectedKeys().iterator();
 		while (selectedKeys.hasNext()) {
 			SelectionKey key = selectedKeys.next();
 			if (!key.isValid()) {
 				// TODO:  Determine if this is how read/write failures on a closed connection are detected or if this is just us seeing the echo of something _we_ disconnected.
-				System.err.println("INVALID KEY: " + key);
+				Assert.unimplemented("INVALID KEY: " + key);
 			}
 			else if (key == _acceptorKey) {
-				// This must be a new node connecting.
-				Assert.assertTrue(SelectionKey.OP_ACCEPT == key.readyOps());
-				// This cannot be null if we matched the acceptor key.
-				Assert.assertTrue(null != _acceptorSocket);
-				SocketChannel newNode = _acceptorSocket.accept();
-				
-				// Configure this new node for our selection set - by default, it starts only waiting for read.
-				newNode.configureBlocking(false);
-				ConnectionState newState = new ConnectionState(newNode);
-				SelectionKey newKey = newNode.register(_selector, SelectionKey.OP_READ, newState);
-				NodeToken token = new NodeToken(newKey);
-				newState.token = token;
-				_connectedNodes.add(newKey);
-				// Notify the callbacks.
-				_callbackTarget.nodeDidConnect(token);
+				try {
+					_processAcceptorKey(key);
+				} catch (IOException e) {
+					// TODO:  Implement.
+					e.printStackTrace();
+					throw Assert.unimplemented(e.getLocalizedMessage());
+				}
 			} else {
 				// This is normal data movement so get the state out of the attachment.
 				ConnectionState state = (ConnectionState)key.attachment();
@@ -409,78 +413,126 @@ public class NetworkManager {
 				
 				// See what operation we wanted to perform.
 				if (key.isConnectable()) {
-					// Finish the connection, send the callback that an outbound connection was established, and switch
-					// its interested ops (normally just READ but WRITE is possible if data has already been written to
-					// the outgoing buffer.
-					// NOTE: Outbound connections are NOT added to _connectedNodes.
-					boolean isConnected = state.channel.finishConnect();
-					if (!isConnected) {
-						Assert.unimplemented("Does connection failure manifest here?");
+					try {
+						_processConnectableKey(key, state);
+					} catch (IOException e) {
+						// TODO:  Implement.
+						e.printStackTrace();
+						throw Assert.unimplemented(e.getLocalizedMessage());
 					}
-					int interestedOps = SelectionKey.OP_READ;
-					synchronized (state) {
-						if (state.toWrite.position() > 0) {
-							interestedOps |= SelectionKey.OP_WRITE;
-						}
-					}
-					key.interestOps(interestedOps);
-					_callbackTarget.outboundNodeConnected(state.token);
 				}
 				if (key.isReadable()) {
-					// Read into our buffer.
-					int newMessagesAvailable = 0;
-					synchronized (state) {
-						int originalPosition = state.toRead.position();
-						state.channel.read(state.toRead);
-						
-						if (0 == state.toRead.remaining()) {
-							// If this buffer is now full, stop reading.
-							key.interestOps(key.interestOps() & ~SelectionKey.OP_READ);
-						}
-						
-						// Determine if this read operation added a new completed message to the buffer.
-						ByteBuffer readOnly = state.toRead.asReadOnlyBuffer();
-						readOnly.flip();
-						boolean keepReading = true;
-						while (keepReading && ((readOnly.position() + Short.BYTES) <= readOnly.limit())) {
-							int size = Short.toUnsignedInt(readOnly.getShort());
-							if ((readOnly.position() + size) <= readOnly.limit()) {
-								readOnly.position(readOnly.position() + size);
-								// If we are now pointing after the original position, this must be a new message.
-								if (readOnly.position() > originalPosition) {
-									newMessagesAvailable += 1;
-								}
-							} else {
-								keepReading = false;
-							}
-						}
-					}
-					// Notify the callbacks of each new message.
-					for (int i = 0; i < newMessagesAvailable; ++i) {
-						_callbackTarget.nodeReadReady(state.token);
+					try {
+						_processReadableKey(key, state);
+					} catch (IOException e) {
+						// TODO:  Implement.
+						e.printStackTrace();
+						throw Assert.unimplemented(e.getLocalizedMessage());
 					}
 				}
 				if (key.isWritable()) {
-					// Write from our buffer.
-					boolean isBufferEmpty = false;
-					synchronized (state) {
-						state.toWrite.flip();
-						state.channel.write(state.toWrite);
-						state.toWrite.compact();
-						
-						isBufferEmpty = 0 == state.toWrite.position();
-						if (isBufferEmpty) {
-							// If this buffer is now empty, stop writing.
-							key.interestOps(key.interestOps() & ~SelectionKey.OP_WRITE);
-						}
-					}
-					if (isBufferEmpty) {
-						// We need to notify the callbacks that the buffer has fully drained.
-						_callbackTarget.nodeWriteReady(state.token);
+					try {
+						_processWritableKey(key, state);
+					} catch (IOException e) {
+						// TODO:  Implement.
+						e.printStackTrace();
+						throw Assert.unimplemented(e.getLocalizedMessage());
 					}
 				}
 			}
 			selectedKeys.remove();
+		}
+	}
+
+	private void _processAcceptorKey(SelectionKey key) throws IOException {
+		// This must be a new node connecting.
+		Assert.assertTrue(SelectionKey.OP_ACCEPT == key.readyOps());
+		// This cannot be null if we matched the acceptor key.
+		Assert.assertTrue(null != _acceptorSocket);
+		SocketChannel newNode = _acceptorSocket.accept();
+		
+		// Configure this new node for our selection set - by default, it starts only waiting for read.
+		newNode.configureBlocking(false);
+		ConnectionState newState = new ConnectionState(newNode);
+		SelectionKey newKey = newNode.register(_selector, SelectionKey.OP_READ, newState);
+		NodeToken token = new NodeToken(newKey);
+		newState.token = token;
+		_connectedNodes.add(newKey);
+		// Notify the callbacks.
+		_callbackTarget.nodeDidConnect(token);
+	}
+
+	private void _processConnectableKey(SelectionKey key, ConnectionState state) throws IOException {
+		// Finish the connection, send the callback that an outbound connection was established, and switch
+		// its interested ops (normally just READ but WRITE is possible if data has already been written to
+		// the outgoing buffer.
+		// NOTE: Outbound connections are NOT added to _connectedNodes.
+		boolean isConnected = state.channel.finishConnect();
+		if (!isConnected) {
+			Assert.unimplemented("Does connection failure manifest here?");
+		}
+		int interestedOps = SelectionKey.OP_READ;
+		synchronized (state) {
+			if (state.toWrite.position() > 0) {
+				interestedOps |= SelectionKey.OP_WRITE;
+			}
+		}
+		key.interestOps(interestedOps);
+		_callbackTarget.outboundNodeConnected(state.token);
+	}
+
+	private void _processReadableKey(SelectionKey key, ConnectionState state) throws IOException {
+		// Read into our buffer.
+		int newMessagesAvailable = 0;
+		synchronized (state) {
+			int originalPosition = state.toRead.position();
+			state.channel.read(state.toRead);
+			
+			if (0 == state.toRead.remaining()) {
+				// If this buffer is now full, stop reading.
+				key.interestOps(key.interestOps() & ~SelectionKey.OP_READ);
+			}
+			
+			// Determine if this read operation added a new completed message to the buffer.
+			ByteBuffer readOnly = state.toRead.asReadOnlyBuffer();
+			readOnly.flip();
+			boolean keepReading = true;
+			while (keepReading && ((readOnly.position() + Short.BYTES) <= readOnly.limit())) {
+				int size = Short.toUnsignedInt(readOnly.getShort());
+				if ((readOnly.position() + size) <= readOnly.limit()) {
+					readOnly.position(readOnly.position() + size);
+					// If we are now pointing after the original position, this must be a new message.
+					if (readOnly.position() > originalPosition) {
+						newMessagesAvailable += 1;
+					}
+				} else {
+					keepReading = false;
+				}
+			}
+		}
+		// Notify the callbacks of each new message.
+		for (int i = 0; i < newMessagesAvailable; ++i) {
+			_callbackTarget.nodeReadReady(state.token);
+		}
+	}
+
+	private void _processWritableKey(SelectionKey key, ConnectionState state) throws IOException {
+		// Write from our buffer.
+		boolean isBufferEmpty = false;
+		synchronized (state) {
+			state.toWrite.flip();
+			state.channel.write(state.toWrite);
+			state.toWrite.compact();
+			
+			isBufferEmpty = 0 == state.toWrite.position();
+			if (isBufferEmpty) {
+				// If this buffer is now empty, stop writing.
+				key.interestOps(key.interestOps() & ~SelectionKey.OP_WRITE);
+			}
+		}
+		if (isBufferEmpty) {
+			// We need to notify the callbacks that the buffer has fully drained.
+			_callbackTarget.nodeWriteReady(state.token);
 		}
 	}
 
