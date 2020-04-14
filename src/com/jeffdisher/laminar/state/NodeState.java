@@ -39,8 +39,14 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 	private ConsoleManager _consoleManager;
 
 	private RaftState _currentState;
-	// Note that we currently track both clients and listeners the same way (this may change in the future).
-	private final Map<ClientManager.ClientNode, ClientState> _connectedClients;
+	// Note that we track clients in 1 of 3 different states:  new, normal, listener.
+	// -new clients just connected and haven't yet sent a message so we don't know what they are doing.
+	// -normal clients are the kind which send mutative operations and wait for acks
+	// -listener clients are only listen to a stream of EventRecords
+	// All clients start in "new" and move to "normal" or "listener" after their first message.
+	private final Map<ClientManager.ClientNode, ClientState> _newClients;
+	private final Map<ClientManager.ClientNode, ClientState> _normalClients;
+	private final Map<ClientManager.ClientNode, ClientState> _listenerClients;
 	private final Map<Long, ClientCommitTuple> _pendingMessageCommits;
 	// This is a map of local offsets to the list of listener clients waiting for them.
 	// A key is only in this map if a load request for it is outstanding or it is an offset which hasn't yet been sent from a client.
@@ -58,7 +64,9 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 		_mainThread = Thread.currentThread();
 		// Note that we default to the LEADER state (typically forced into a FOLLOWER state when an existing LEADER attempts to append entries).
 		_currentState = RaftState.LEADER;
-		_connectedClients = new HashMap<>();
+		_newClients = new HashMap<>();
+		_normalClients = new HashMap<>();
+		_listenerClients = new HashMap<>();
 		_pendingMessageCommits = new HashMap<>();
 		_listenersWaitingOnLocalOffset = new HashMap<>();
 		// Global offsets are 1-indexed so the first one is 1L.
@@ -136,8 +144,8 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 		_commandQueue.put(new Runnable() {
 			@Override
 			public void run() {
-				// Add this client to our map, although we currently don't know anything about them.
-				_connectedClients.put(node, new ClientState());
+				// A fresh connection is a new client.
+				_newClients.put(node, new ClientState());
 			}});
 	}
 
@@ -146,8 +154,28 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 		_commandQueue.put(new Runnable() {
 			@Override
 			public void run() {
+				// A disconnect is a transition for all clients so try to remove from them all.
 				// Note that this node may still be in an active list but since we always resolve it against this map, we will fail to resolve it.
-				_connectedClients.remove(node);
+				// We add a check to make sure that this is consistent.
+				boolean removedNew = (null != _newClients.remove(node));
+				boolean removedNormal = (null != _normalClients.remove(node));
+				boolean removedListener = (null != _listenerClients.remove(node));
+				boolean removeConsistent = false;
+				if (removedNew) {
+					System.out.println("Disconnect new client");
+					removeConsistent = true;
+				}
+				if (removedNormal) {
+					Assert.assertTrue(!removeConsistent);
+					System.out.println("Disconnect normal client");
+					removeConsistent = true;
+				}
+				if (removedListener) {
+					Assert.assertTrue(!removeConsistent);
+					System.out.println("Disconnect listener client");
+					removeConsistent = true;
+				}
+				Assert.assertTrue(removeConsistent);
 			}});
 	}
 
@@ -157,25 +185,27 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 			@Override
 			public void run() {
 				// Set the writable flag or send a pending message.
-				ClientState state = _connectedClients.get(node);
-				// This cannot be null in direct response to a network callback.
-				Assert.assertTrue(null != state);
-				// Determine if this is a normal client or a listener.
-				if (null != state.clientId) {
+				// Clients start in the ready state so this couldn't be a new client (since we never sent them a message).
+				Assert.assertTrue(!_newClients.containsKey(node));
+				ClientState normalState = _normalClients.get(node);
+				ClientState listenerState = _listenerClients.get(node);
+				if (null != normalState) {
+					Assert.assertTrue(null == listenerState);
 					// Normal client.
 					// This can't already be writable.
-					Assert.assertTrue(!state.writable);
+					Assert.assertTrue(!normalState.writable);
 					// Check to see if there are any outgoing messages.  If so, just send the first.  Otherwise, set the writable flag.
-					if (state.outgoingMessages.isEmpty()) {
-						state.writable = true;
+					if (normalState.outgoingMessages.isEmpty()) {
+						normalState.writable = true;
 					} else {
-						ClientResponse toSend = state.outgoingMessages.remove(0);
+						ClientResponse toSend = normalState.outgoingMessages.remove(0);
 						_clientManager.send(node, toSend);
 					}
 				} else {
+					Assert.assertTrue(null != listenerState);
 					// Listener.
 					// The socket is now writable so either load or wait for the next event for this listener.
-					_backgroundSetupListenerForNextEvent(node, state);
+					_backgroundSetupListenerForNextEvent(node, listenerState);
 				}
 			}});
 	}
@@ -185,20 +215,41 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 		_commandQueue.put(new Runnable() {
 			@Override
 			public void run() {
-				// Read the message.
-				ClientState state = _connectedClients.get(node);
-				// This cannot be null in direct response to a network callback.
-				Assert.assertTrue(null != state);
-				// TODO:  It is possible that a listener has sent us this message so we need to detect that and disconnect them.
-				// Read the message and act on it.
+				// Check what state the client is in.
+				ClientState newState = _newClients.get(node);
+				ClientState normalState = _normalClients.get(node);
+				ClientState listenerState = _listenerClients.get(node);
 				ClientMessage incoming = _clientManager.receive(node);
 				
-				// We can do the nonce check here, before we enter the state machine for the specific message type/contents.
-				if (state.nextNonce == incoming.nonce) {
-					state.nextNonce += 1;
-					_backgroundHandleMessage(node, state, incoming);
+				if (null != newState) {
+					Assert.assertTrue(null == normalState);
+					Assert.assertTrue(null == listenerState);
+					
+					// We will ignore the nonce here but set it based on the new state of the connection.
+					boolean isNormal = _isNormalAfterBackgroundNewMessage(node, newState, incoming);
+					if (isNormal) {
+						newState.nextNonce = 1L;
+						_newClients.remove(node);
+						_normalClients.put(node, newState);
+					} else {
+						_newClients.remove(node);
+						_listenerClients.put(node, newState);
+					}
+				} else if (null != normalState) {
+					Assert.assertTrue(null == listenerState);
+					
+					// We can do the nonce check here, before we enter the state machine for the specific message type/contents.
+					if (normalState.nextNonce == incoming.nonce) {
+						normalState.nextNonce += 1;
+						_backgroundNormalMessage(node, normalState, incoming);
+					} else {
+						_backgroundEnqueueMessageToClient(node, ClientResponse.error(incoming.nonce));
+					}
 				} else {
-					_backgroundEnqueueMessageToClient(node, ClientResponse.error(incoming.nonce));
+					Assert.assertTrue(null != listenerState);
+					
+					// Once a listener is in the listener state, they should never send us another message.
+					Assert.unimplemented("TODO: Disconnect listener on invalid state transition");
 				}
 			}});
 	}
@@ -284,28 +335,25 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 	// </IConsoleManagerBackgroundCallbacks>
 
 
-	private void _backgroundHandleMessage(ClientNode client, ClientState state, ClientMessage incoming) {
+	private boolean _isNormalAfterBackgroundNewMessage(ClientNode client, ClientState state, ClientMessage incoming) {
+		boolean isNormalClient = true;
 		switch (incoming.type) {
 		case INVALID:
-			Assert.unreachable("Invalid message type");
+			Assert.unimplemented("Invalid message type - disconnect client");
 			break;
 		case HANDSHAKE:
 			// This is the first message a client sends us in order to make sure we know their UUID and the version is
 			// correct and any other options are supported.
 			ByteBuffer wrapper = ByteBuffer.wrap(incoming.contents);
 			UUID clientId = new UUID(wrapper.getLong(), wrapper.getLong());
-			if (null == state.clientId) {
-				state.clientId = clientId;
-				ClientResponse ack = ClientResponse.received(incoming.nonce);
-				_backgroundEnqueueMessageToClient(client, ack);
-				System.out.println("HANDSHAKE: " + state.clientId);
-				// Handshakes are committed immediately since they don't have any required persistence or synchronization across the cluster.
-				ClientResponse commit = ClientResponse.committed(incoming.nonce);
-				_backgroundEnqueueMessageToClient(client, commit);
-			} else {
-				// Tried to set the ID twice.
-				_backgroundEnqueueMessageToClient(client, ClientResponse.error(incoming.nonce));
-			}
+			state.clientId = clientId;
+			ClientResponse ack = ClientResponse.received(incoming.nonce);
+			_backgroundEnqueueMessageToClient(client, ack);
+			System.out.println("HANDSHAKE: " + state.clientId);
+			// Handshakes are committed immediately since they don't have any required persistence or synchronization across the cluster.
+			ClientResponse commit = ClientResponse.committed(incoming.nonce);
+			_backgroundEnqueueMessageToClient(client, commit);
+			isNormalClient = true;
 			break;
 		case LISTEN:
 			// This is the first message a client sends when they want to register as a listener.
@@ -319,31 +367,39 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 			state.lastSentLocalOffset = lastReceivedLocalOffset;
 			// Start the fetch or setup for the first event after the one they last had.
 			_backgroundSetupListenerForNextEvent(client, state);
+			isNormalClient = false;
+			break;
+		default:
+			Assert.unimplemented("This is an invalid message for this client type and should be disconnected");
+			break;
+		}
+		return isNormalClient;
+	}
+
+	private void _backgroundNormalMessage(ClientNode client, ClientState state, ClientMessage incoming) {
+		switch (incoming.type) {
+		case INVALID:
+			Assert.unimplemented("Invalid message type");
 			break;
 		case TEMP:
 			// This is just for initial testing:  send the received, log it, and send the commit.
 			// (client outgoing message list is unbounded so this is safe to do all at once).
-			if (null != state.clientId) {
-				ClientResponse ack = ClientResponse.received(incoming.nonce);
-				_backgroundEnqueueMessageToClient(client, ack);
-				System.out.println("GOT TEMP FROM " + state.clientId + ": \"" + new String(incoming.contents) + "\" (nonce " + incoming.nonce + ")");
-				// Create the EventRecord, add it to storage, and set up the commit to send once we get the notification that it is durable.
-				// (for now, we don't have per-topic streams or programmable topics so the localOffset is the same as the global).
-				long globalOffset = _nextGlobalOffset++;
-				long localOffset = globalOffset;
-				EventRecord record = EventRecord.generateRecord(globalOffset, localOffset, state.clientId, incoming.contents);
-				ClientResponse commit = ClientResponse.committed(incoming.nonce);
-				// Setup the record for the async response and send the commit to the disk.
-				// Note that both the client and the listeners are only notified of the committed event once it is durable.
-				_pendingMessageCommits.put(globalOffset, new ClientCommitTuple(client, commit));
-				_diskManager.commitEvent(record);
-			} else {
-				// The client didn't handshake yet.
-				_backgroundEnqueueMessageToClient(client, ClientResponse.error(incoming.nonce));
-			}
+			ClientResponse ack = ClientResponse.received(incoming.nonce);
+			_backgroundEnqueueMessageToClient(client, ack);
+			System.out.println("GOT TEMP FROM " + state.clientId + ": \"" + new String(incoming.contents) + "\" (nonce " + incoming.nonce + ")");
+			// Create the EventRecord, add it to storage, and set up the commit to send once we get the notification that it is durable.
+			// (for now, we don't have per-topic streams or programmable topics so the localOffset is the same as the global).
+			long globalOffset = _nextGlobalOffset++;
+			long localOffset = globalOffset;
+			EventRecord record = EventRecord.generateRecord(globalOffset, localOffset, state.clientId, incoming.contents);
+			ClientResponse commit = ClientResponse.committed(incoming.nonce);
+			// Setup the record for the async response and send the commit to the disk.
+			// Note that both the client and the listeners are only notified of the committed event once it is durable.
+			_pendingMessageCommits.put(globalOffset, new ClientCommitTuple(client, commit));
+			_diskManager.commitEvent(record);
 			break;
 		default:
-			Assert.unreachable("Default message case reached");
+			Assert.unimplemented("This is an invalid message for this client type and should be disconnected");
 			break;
 		}
 	}
@@ -353,7 +409,7 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 			@Override
 			public void run() {
 				// Look up the client to make sure they are still connected (messages to disconnected clients are just dropped).
-				ClientState state = _connectedClients.get(client);
+				ClientState state = _normalClients.get(client);
 				if (null != state) {
 					// See if the client is writable.
 					if (state.writable) {
@@ -389,7 +445,7 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 		List<ClientManager.ClientNode> waitingList = _listenersWaitingOnLocalOffset.remove(record.localOffset);
 		if (null != waitingList) {
 			for (ClientManager.ClientNode node : waitingList) {
-				ClientState listenerState = _connectedClients.get(node);
+				ClientState listenerState = _listenerClients.get(node);
 				// (make sure this is still connected)
 				if (null != listenerState) {
 					_clientManager.sendEventToListener(node, record);
