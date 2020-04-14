@@ -15,7 +15,6 @@ import com.jeffdisher.laminar.network.ClientResponse;
 public class ClientState {
 	public final List<ClientResponse> outgoingMessages = new LinkedList<>();
 	public boolean writable = true;
-	public int readableMessages = 0;
 	public UUID clientId = null;
 	public long nextNonce = 0;
 	// For listeners, this is the most recently sent local offset event.

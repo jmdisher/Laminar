@@ -41,10 +41,7 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 	private RaftState _currentState;
 	// Note that we currently track both clients and listeners the same way (this may change in the future).
 	private final Map<ClientManager.ClientNode, ClientState> _connectedClients;
-	private final List<ClientManager.ClientNode> _writableClients;
-	private final List<ClientManager.ClientNode> _readableClients;
 	private final Map<Long, ClientCommitTuple> _pendingMessageCommits;
-	private final List<ClientCommitTuple> _readyMessageCommits;
 	// This is a map of local offsets to the list of listener clients waiting for them.
 	// A key is only in this map if a load request for it is outstanding or it is an offset which hasn't yet been sent from a client.
 	// The map uses the ClientNode since these may have disconnected.
@@ -53,7 +50,8 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 	// (in the future, this will change to handle multiple topics).
 	private final Map<Long, List<ClientManager.ClientNode>> _listenersWaitingOnLocalOffset;
 	private long _nextGlobalOffset;
-	private volatile boolean _keepRunning;
+	private boolean _keepRunning;
+	private final UninterruptableQueue _commandQueue;
 
 	public NodeState() {
 		// We define the thread which instantiates us as "main".
@@ -61,16 +59,14 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 		// Note that we default to the LEADER state (typically forced into a FOLLOWER state when an existing LEADER attempts to append entries).
 		_currentState = RaftState.LEADER;
 		_connectedClients = new HashMap<>();
-		_writableClients = new LinkedList<>();
-		_readableClients = new LinkedList<>();
 		_pendingMessageCommits = new HashMap<>();
-		_readyMessageCommits = new LinkedList<>();
 		_listenersWaitingOnLocalOffset = new HashMap<>();
 		// Global offsets are 1-indexed so the first one is 1L.
 		_nextGlobalOffset = 1L;
+		_commandQueue = new UninterruptableQueue();
 	}
 
-	public synchronized void runUntilShutdown() {
+	public void runUntilShutdown() {
 		// This MUST be called on the main thread.
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		// Not fully configuring the instance is a programming error.
@@ -79,66 +75,17 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 		Assert.assertTrue(null != _diskManager);
 		Assert.assertTrue(null != _consoleManager);
 		
-		// For now, we will just wait until we get a "stop" command from the console.
+		// The design we use for the background thread is that it only responds to messages coming in from other threads.
+		// A BlockingQueue of Runnables is used for this communication and the thread's loop is just to keep polling for
+		// more elements until a global flag is cleared, causing it to terminate.
+		// The Runnables are inner classes which are allowed full access to the NodeState's internal state.  Aside from
+		// construction, and the queue, no other thread interacts with these state variables.
+		// (note that the global running flag is modified by a command to shutdown).
 		_keepRunning = true;
 		while (_keepRunning) {
-			// Wait for work.
-			// (note that the client data structures are all accessed under lock as well as the monitor wait).
-			while (_keepRunning && _writableClients.isEmpty() && _readableClients.isEmpty() && _readyMessageCommits.isEmpty()) {
-				try {
-					this.wait();
-				} catch (InterruptedException e) {
-					// We don't use interruption.
-					Assert.unexpected(e);
-				}
-			}
-			// Note:  This processing seems more complicated than it actually is so this may be converted into a
-			// Runnable queue, in the future.  This approach allows greater visibility into in-progress operations so it
-			// is being used, at least for now.
-			// See if we have any writing to do.
-			if (!_writableClients.isEmpty()) {
-				ClientManager.ClientNode client = _writableClients.remove(0);
-				ClientState state = _connectedClients.get(client);
-				// Note that the node may have disconnected since being put in the list so check that.
-				if (null != state) {
-					ClientResponse toSend = state.outgoingMessages.remove(0);
-					_clientManager.send(client, toSend);
-					state.writable = false;
-				}
-			}
-			// See if we have any reading to do.
-			if (!_readableClients.isEmpty()) {
-				ClientManager.ClientNode client = _readableClients.remove(0);
-				ClientState state = _connectedClients.get(client);
-				// Note that the node may have disconnected since being put in the list so check that.
-				if (null != state) {
-					// Read the message, re-enqueing the client if there are still more messages.
-					ClientMessage incoming = _clientManager.receive(client);
-					state.readableMessages -= 1;
-					if (state.readableMessages > 0) {
-						_readableClients.add(client);
-					}
-					
-					// Now, act on this message.
-					// (note that we are still under lock but we need to change the state of ClientState, which is protected by this lock).
-					// We can do the nonce check here, before we enter the state machine for the specific message type/contents.
-					if (state.nextNonce == incoming.nonce) {
-						state.nextNonce += 1;
-						_backgroundLockedHandleMessage(client, state, incoming);
-					} else {
-						_backgroundLockedEnqueueMessageToClient(client, state, ClientResponse.error(incoming.nonce));
-					}
-				}
-			}
-			// See if we have any commits to write back.
-			if (!_readyMessageCommits.isEmpty()) {
-				ClientCommitTuple tuple = _readyMessageCommits.remove(0);
-				// Verify that this client is still connected.
-				ClientState state = _connectedClients.get(tuple.client);
-				if (null != state) {
-					_backgroundLockedEnqueueMessageToClient(tuple.client, state, tuple.ack);
-				}
-			}
+			// Poll for the next work item.
+			Runnable next = _commandQueue.blockingGet();
+			next.run();
 		}
 	}
 
@@ -185,54 +132,75 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 
 	// <IClientManagerBackgroundCallbacks>
 	@Override
-	public synchronized void clientConnectedToUs(ClientManager.ClientNode node) {
-		// Add this client to our map, although we currently don't know anything about them.
-		_connectedClients.put(node, new ClientState());
-		// Even though this client starts as writable, we have no outgoing messages so we don't add this to _writableClients.
+	public void clientConnectedToUs(ClientManager.ClientNode node) {
+		_commandQueue.put(new Runnable() {
+			@Override
+			public void run() {
+				// Add this client to our map, although we currently don't know anything about them.
+				_connectedClients.put(node, new ClientState());
+			}});
 	}
 
 	@Override
-	public synchronized void clientDisconnectedFromUs(ClientManager.ClientNode node) {
-		// Note that this node may still be in an active list but since we always resolve it against this map, we will fail to resolve it.
-		_connectedClients.remove(node);
+	public void clientDisconnectedFromUs(ClientManager.ClientNode node) {
+		_commandQueue.put(new Runnable() {
+			@Override
+			public void run() {
+				// Note that this node may still be in an active list but since we always resolve it against this map, we will fail to resolve it.
+				_connectedClients.remove(node);
+			}});
 	}
 
 	@Override
-	public synchronized void clientWriteReady(ClientManager.ClientNode node) {
-		// Set the writable flag and add them to the _writableClients list, if they have messages to send.
-		ClientState state = _connectedClients.get(node);
-		// This cannot be null in direct response to a network callback.
-		Assert.assertTrue(null != state);
-		// Determine if this is a normal client or a listener.
-		if (null != state.clientId) {
-			// Normal client.
-			// This can't already be writable.
-			Assert.assertTrue(!state.writable);
-			state.writable = true;
-			if (!state.outgoingMessages.isEmpty()) {
-				_writableClients.add(node);
-				this.notifyAll();
-			}
-		} else {
-			// Listener.
-			// TODO:  Setting up the listener next event directly from the network callback is incorrect - this needs to be moved to the background thread.
-			_lockedHandleListenerNextEvent(node, state);
-		}
+	public void clientWriteReady(ClientManager.ClientNode node) {
+		_commandQueue.put(new Runnable() {
+			@Override
+			public void run() {
+				// Set the writable flag or send a pending message.
+				ClientState state = _connectedClients.get(node);
+				// This cannot be null in direct response to a network callback.
+				Assert.assertTrue(null != state);
+				// Determine if this is a normal client or a listener.
+				if (null != state.clientId) {
+					// Normal client.
+					// This can't already be writable.
+					Assert.assertTrue(!state.writable);
+					// Check to see if there are any outgoing messages.  If so, just send the first.  Otherwise, set the writable flag.
+					if (state.outgoingMessages.isEmpty()) {
+						state.writable = true;
+					} else {
+						ClientResponse toSend = state.outgoingMessages.remove(0);
+						_clientManager.send(node, toSend);
+					}
+				} else {
+					// Listener.
+					// The socket is now writable so either load or wait for the next event for this listener.
+					_backgroundSetupListenerForNextEvent(node, state);
+				}
+			}});
 	}
 
 	@Override
-	public synchronized void clientReadReady(ClientManager.ClientNode node) {
-		// Increment the readable count and add to the _readableClients, if they were previously at 0.
-		ClientState state = _connectedClients.get(node);
-		// This cannot be null in direct response to a network callback.
-		Assert.assertTrue(null != state);
-		// TODO:  It is possible that a listener has sent us this message so we need to detect that and disconnect them.
-		boolean shouldAddToList = (0 == state.readableMessages);
-		state.readableMessages += 1;
-		if (shouldAddToList) {
-			_readableClients.add(node);
-			this.notifyAll();
-		}
+	public void clientReadReady(ClientManager.ClientNode node) {
+		_commandQueue.put(new Runnable() {
+			@Override
+			public void run() {
+				// Read the message.
+				ClientState state = _connectedClients.get(node);
+				// This cannot be null in direct response to a network callback.
+				Assert.assertTrue(null != state);
+				// TODO:  It is possible that a listener has sent us this message so we need to detect that and disconnect them.
+				// Read the message and act on it.
+				ClientMessage incoming = _clientManager.receive(node);
+				
+				// We can do the nonce check here, before we enter the state machine for the specific message type/contents.
+				if (state.nextNonce == incoming.nonce) {
+					state.nextNonce += 1;
+					_backgroundHandleMessage(node, state, incoming);
+				} else {
+					_backgroundEnqueueMessageToClient(node, ClientResponse.error(incoming.nonce));
+				}
+			}});
 	}
 	// </IClientManagerBackgroundCallbacks>
 
@@ -276,36 +244,45 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 
 	// <IDiskManagerBackgroundCallbacks>
 	@Override
-	public synchronized void recordWasCommitted(EventRecord completed) {
-		System.out.println("RECORD WAS COMMITTED");
-		ClientCommitTuple tuple = _pendingMessageCommits.remove(completed.globalOffset);
-		// This was requested for the specific tuple so it can't be missing.
-		Assert.assertTrue(null != tuple);
-		_readyMessageCommits.add(tuple);
-		this.notifyAll();
+	public void recordWasCommitted(EventRecord completed) {
+		_commandQueue.put(new Runnable() {
+			@Override
+			public void run() {
+				ClientCommitTuple tuple = _pendingMessageCommits.remove(completed.globalOffset);
+				// This was requested for the specific tuple so it can't be missing.
+				Assert.assertTrue(null != tuple);
+				// Send the commit to the client..
+				_backgroundEnqueueMessageToClient(tuple.client, tuple.ack);
+			}});
 	}
 
 	@Override
-	public synchronized void recordWasFetched(EventRecord record) {
-		// See what listeners requested this.
-		// TODO:  Sending the listener events directly from the disk callback is incorrect - this needs to be moved to the background thread.
-		_lockedSendRecordToListeners(record);
+	public void recordWasFetched(EventRecord record) {
+		_commandQueue.put(new Runnable() {
+			@Override
+			public void run() {
+				// See what listeners requested this.
+				_backgroundSendRecordToListeners(record);
+			}});
 	}
 	// </IDiskManagerBackgroundCallbacks>
 
 	// <IConsoleManagerBackgroundCallbacks>
 	@Override
-	public synchronized void handleStopCommand() {
+	public void handleStopCommand() {
 		// This MUST NOT be called on the main thread.
 		Assert.assertTrue(Thread.currentThread() != _mainThread);
 		
-		_keepRunning = false;
-		this.notifyAll();
+		_commandQueue.put(new Runnable() {
+			@Override
+			public void run() {
+				_keepRunning = false;
+			}});
 	}
 	// </IConsoleManagerBackgroundCallbacks>
 
 
-	private void _backgroundLockedHandleMessage(ClientNode client, ClientState state, ClientMessage incoming) {
+	private void _backgroundHandleMessage(ClientNode client, ClientState state, ClientMessage incoming) {
 		switch (incoming.type) {
 		case INVALID:
 			Assert.unreachable("Invalid message type");
@@ -318,14 +295,14 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 			if (null == state.clientId) {
 				state.clientId = clientId;
 				ClientResponse ack = ClientResponse.received(incoming.nonce);
-				_backgroundLockedEnqueueMessageToClient(client, state, ack);
+				_backgroundEnqueueMessageToClient(client, ack);
 				System.out.println("HANDSHAKE: " + state.clientId);
 				// Handshakes are committed immediately since they don't have any required persistence or synchronization across the cluster.
 				ClientResponse commit = ClientResponse.committed(incoming.nonce);
-				_backgroundLockedEnqueueMessageToClient(client, state, commit);
+				_backgroundEnqueueMessageToClient(client, commit);
 			} else {
 				// Tried to set the ID twice.
-				_backgroundLockedEnqueueMessageToClient(client, state, ClientResponse.error(incoming.nonce));
+				_backgroundEnqueueMessageToClient(client, ClientResponse.error(incoming.nonce));
 			}
 			break;
 		case LISTEN:
@@ -338,14 +315,15 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 			}
 			// Update the client state.
 			state.lastSentLocalOffset = lastReceivedLocalOffset;
-			_lockedHandleListenerNextEvent(client, state);
+			// Start the fetch or setup for the first event after the one they last had.
+			_backgroundSetupListenerForNextEvent(client, state);
 			break;
 		case TEMP:
 			// This is just for initial testing:  send the received, log it, and send the commit.
 			// (client outgoing message list is unbounded so this is safe to do all at once).
 			if (null != state.clientId) {
 				ClientResponse ack = ClientResponse.received(incoming.nonce);
-				_backgroundLockedEnqueueMessageToClient(client, state, ack);
+				_backgroundEnqueueMessageToClient(client, ack);
 				System.out.println("GOT TEMP FROM " + state.clientId + ": \"" + new String(incoming.contents) + "\" (nonce " + incoming.nonce + ")");
 				// Create the EventRecord, add it to storage, and set up the commit to send once we get the notification that it is durable.
 				// (for now, we don't have per-topic streams or programmable topics so the localOffset is the same as the global).
@@ -357,10 +335,10 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 				_pendingMessageCommits.put(globalOffset, new ClientCommitTuple(client, commit));
 				_diskManager.commitEvent(record);
 				// See if any listeners want this.
-				_lockedSendRecordToListeners(record);
+				_backgroundSendRecordToListeners(record);
 			} else {
 				// The client didn't handshake yet.
-				_backgroundLockedEnqueueMessageToClient(client, state, ClientResponse.error(incoming.nonce));
+				_backgroundEnqueueMessageToClient(client, ClientResponse.error(incoming.nonce));
 			}
 			break;
 		default:
@@ -369,15 +347,27 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 		}
 	}
 
-	private void _backgroundLockedEnqueueMessageToClient(ClientNode client, ClientState state, ClientResponse ack) {
-		boolean willBecomeWritable = state.writable && state.outgoingMessages.isEmpty();
-		state.outgoingMessages.add(ack);
-		if (willBecomeWritable) {
-			_writableClients.add(client);
-		}
+	private void _backgroundEnqueueMessageToClient(ClientNode client, ClientResponse ack) {
+		_commandQueue.put(new Runnable() {
+			@Override
+			public void run() {
+				// Look up the client to make sure they are still connected (messages to disconnected clients are just dropped).
+				ClientState state = _connectedClients.get(client);
+				if (null != state) {
+					// See if the client is writable.
+					if (state.writable) {
+						// Just write the message.
+						_clientManager.send(client, ack);
+						state.writable = false;
+					} else {
+						// Writing not yet available so add this to the list.
+						state.outgoingMessages.add(ack);
+					}
+				}
+			}});
 	}
 
-	private void _lockedHandleListenerNextEvent(ClientNode client, ClientState state) {
+	private void _backgroundSetupListenerForNextEvent(ClientNode client, ClientState state) {
 		// See if there is a pending request for this offset.
 		long nextLocalOffset = state.lastSentLocalOffset + 1;
 		List<ClientManager.ClientNode> waitingList = _listenersWaitingOnLocalOffset.get(nextLocalOffset);
@@ -394,7 +384,7 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 		waitingList.add(client);
 	}
 
-	private void _lockedSendRecordToListeners(EventRecord record) {
+	private void _backgroundSendRecordToListeners(EventRecord record) {
 		List<ClientManager.ClientNode> waitingList = _listenersWaitingOnLocalOffset.remove(record.localOffset);
 		if (null != waitingList) {
 			for (ClientManager.ClientNode node : waitingList) {
