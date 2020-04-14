@@ -9,14 +9,24 @@ import com.jeffdisher.laminar.network.ClientResponse;
 
 /**
  * The information required to track the state of a single connected client.
- * Note that we track all of new clients, normal clients, and listeners using these structures.
- * Only a normal client will have a non-null clientId while both new clients and listeners will have null.
+ * This only tracks information related to normal client state.  New clients have no state and listeners use
+ * ListenerState.
  */
 public class ClientState {
 	public final List<ClientResponse> outgoingMessages = new LinkedList<>();
 	public boolean writable = true;
-	public UUID clientId = null;
-	public long nextNonce = 0;
-	// For listeners, this is the most recently sent local offset event.
-	public long lastSentLocalOffset = 0;
+	public final UUID clientId;
+	public long nextNonce;
+
+	/**
+	 * Creates a new normal client state with the given clientId and nextNonce.  The nonce is typically set to 1L but
+	 * this is left open for future reconnect logic where a client may want to tell us its nonce.
+	 * 
+	 * @param clientId The UUID of this client.
+	 * @param nextNonce The next nonce the client is expected to send.
+	 */
+	public ClientState(UUID clientId, long nextNonce) {
+		this.clientId = clientId;
+		this.nextNonce = nextNonce;
+	}
 }

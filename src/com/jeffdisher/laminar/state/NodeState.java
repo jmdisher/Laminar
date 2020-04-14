@@ -2,9 +2,11 @@ package com.jeffdisher.laminar.state;
 
 import java.nio.ByteBuffer;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 import com.jeffdisher.laminar.console.ConsoleManager;
@@ -44,9 +46,9 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 	// -normal clients are the kind which send mutative operations and wait for acks
 	// -listener clients are only listen to a stream of EventRecords
 	// All clients start in "new" and move to "normal" or "listener" after their first message.
-	private final Map<ClientManager.ClientNode, ClientState> _newClients;
+	private final Set<ClientManager.ClientNode> _newClients;
 	private final Map<ClientManager.ClientNode, ClientState> _normalClients;
-	private final Map<ClientManager.ClientNode, ClientState> _listenerClients;
+	private final Map<ClientManager.ClientNode, ListenerState> _listenerClients;
 	private final Map<Long, ClientCommitTuple> _pendingMessageCommits;
 	// This is a map of local offsets to the list of listener clients waiting for them.
 	// A key is only in this map if a load request for it is outstanding or it is an offset which hasn't yet been sent from a client.
@@ -64,7 +66,7 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 		_mainThread = Thread.currentThread();
 		// Note that we default to the LEADER state (typically forced into a FOLLOWER state when an existing LEADER attempts to append entries).
 		_currentState = RaftState.LEADER;
-		_newClients = new HashMap<>();
+		_newClients = new HashSet<>();
 		_normalClients = new HashMap<>();
 		_listenerClients = new HashMap<>();
 		_pendingMessageCommits = new HashMap<>();
@@ -145,7 +147,7 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 			@Override
 			public void run() {
 				// A fresh connection is a new client.
-				_newClients.put(node, new ClientState());
+				_newClients.add(node);
 			}});
 	}
 
@@ -157,7 +159,7 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 				// A disconnect is a transition for all clients so try to remove from them all.
 				// Note that this node may still be in an active list but since we always resolve it against this map, we will fail to resolve it.
 				// We add a check to make sure that this is consistent.
-				boolean removedNew = (null != _newClients.remove(node));
+				boolean removedNew = _newClients.remove(node);
 				boolean removedNormal = (null != _normalClients.remove(node));
 				boolean removedListener = (null != _listenerClients.remove(node));
 				boolean removeConsistent = false;
@@ -186,9 +188,9 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 			public void run() {
 				// Set the writable flag or send a pending message.
 				// Clients start in the ready state so this couldn't be a new client (since we never sent them a message).
-				Assert.assertTrue(!_newClients.containsKey(node));
+				Assert.assertTrue(!_newClients.contains(node));
 				ClientState normalState = _normalClients.get(node);
-				ClientState listenerState = _listenerClients.get(node);
+				ListenerState listenerState = _listenerClients.get(node);
 				if (null != normalState) {
 					Assert.assertTrue(null == listenerState);
 					// Normal client.
@@ -216,25 +218,18 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 			@Override
 			public void run() {
 				// Check what state the client is in.
-				ClientState newState = _newClients.get(node);
+				boolean isNew = _newClients.contains(node);
 				ClientState normalState = _normalClients.get(node);
-				ClientState listenerState = _listenerClients.get(node);
+				ListenerState listenerState = _listenerClients.get(node);
 				ClientMessage incoming = _clientManager.receive(node);
 				
-				if (null != newState) {
+				if (isNew) {
 					Assert.assertTrue(null == normalState);
 					Assert.assertTrue(null == listenerState);
 					
-					// We will ignore the nonce here but set it based on the new state of the connection.
-					boolean isNormal = _isNormalAfterBackgroundNewMessage(node, newState, incoming);
-					if (isNormal) {
-						newState.nextNonce = 1L;
-						_newClients.remove(node);
-						_normalClients.put(node, newState);
-					} else {
-						_newClients.remove(node);
-						_listenerClients.put(node, newState);
-					}
+					// We will ignore the nonce on a new connection.
+					// Note that the client maps are modified by this helper.
+					_backgroundTransitionNewConnectionState(node, incoming);
 				} else if (null != normalState) {
 					Assert.assertTrue(null == listenerState);
 					
@@ -335,27 +330,30 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 	// </IConsoleManagerBackgroundCallbacks>
 
 
-	private boolean _isNormalAfterBackgroundNewMessage(ClientNode client, ClientState state, ClientMessage incoming) {
-		boolean isNormalClient = true;
+	private void _backgroundTransitionNewConnectionState(ClientNode client, ClientMessage incoming) {
 		switch (incoming.type) {
 		case INVALID:
 			Assert.unimplemented("Invalid message type - disconnect client");
 			break;
-		case HANDSHAKE:
+		case HANDSHAKE: {
 			// This is the first message a client sends us in order to make sure we know their UUID and the version is
 			// correct and any other options are supported.
 			ByteBuffer wrapper = ByteBuffer.wrap(incoming.contents);
 			UUID clientId = new UUID(wrapper.getLong(), wrapper.getLong());
-			state.clientId = clientId;
+			// Create the new state and change the connection state in the maps.
+			ClientState state = new ClientState(clientId, 1L);
+			boolean didRemove = _newClients.remove(client);
+			Assert.assertTrue(didRemove);
+			_normalClients.put(client, state);
 			ClientResponse ack = ClientResponse.received(incoming.nonce);
 			_backgroundEnqueueMessageToClient(client, ack);
 			System.out.println("HANDSHAKE: " + state.clientId);
 			// Handshakes are committed immediately since they don't have any required persistence or synchronization across the cluster.
 			ClientResponse commit = ClientResponse.committed(incoming.nonce);
 			_backgroundEnqueueMessageToClient(client, commit);
-			isNormalClient = true;
 			break;
-		case LISTEN:
+		}
+		case LISTEN: {
 			// This is the first message a client sends when they want to register as a listener.
 			// In this case, they won't send any other messages to us and just expect a constant stream of raw EventRecords to be sent to them.
 			// Note that this message overloads the nonce as the last received local offset.
@@ -363,17 +361,19 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 			if ((lastReceivedLocalOffset < 0L) || (lastReceivedLocalOffset >= _nextGlobalOffset)) {
 				Assert.unimplemented("This listener is invalid so disconnect it");
 			}
-			// Update the client state.
-			state.lastSentLocalOffset = lastReceivedLocalOffset;
+			// Create the new state and change the connection state in the maps.
+			ListenerState state = new ListenerState(lastReceivedLocalOffset);
+			boolean didRemove = _newClients.remove(client);
+			Assert.assertTrue(didRemove);
+			_listenerClients.put(client, state);
 			// Start the fetch or setup for the first event after the one they last had.
 			_backgroundSetupListenerForNextEvent(client, state);
-			isNormalClient = false;
 			break;
+		}
 		default:
 			Assert.unimplemented("This is an invalid message for this client type and should be disconnected");
 			break;
 		}
-		return isNormalClient;
 	}
 
 	private void _backgroundNormalMessage(ClientNode client, ClientState state, ClientMessage incoming) {
@@ -424,7 +424,7 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 			}});
 	}
 
-	private void _backgroundSetupListenerForNextEvent(ClientNode client, ClientState state) {
+	private void _backgroundSetupListenerForNextEvent(ClientNode client, ListenerState state) {
 		// See if there is a pending request for this offset.
 		long nextLocalOffset = state.lastSentLocalOffset + 1;
 		List<ClientManager.ClientNode> waitingList = _listenersWaitingOnLocalOffset.get(nextLocalOffset);
@@ -445,7 +445,7 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 		List<ClientManager.ClientNode> waitingList = _listenersWaitingOnLocalOffset.remove(record.localOffset);
 		if (null != waitingList) {
 			for (ClientManager.ClientNode node : waitingList) {
-				ClientState listenerState = _listenerClients.get(node);
+				ListenerState listenerState = _listenerClients.get(node);
 				// (make sure this is still connected)
 				if (null != listenerState) {
 					_clientManager.sendEventToListener(node, record);
