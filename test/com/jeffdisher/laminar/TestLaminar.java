@@ -12,6 +12,7 @@ import java.util.concurrent.CountDownLatch;
 
 import org.junit.Assert;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -93,9 +94,6 @@ class TestLaminar {
 		};
 		runner.start();
 		
-		// HACK:  Wait for start.
-		Thread.sleep(2000);
-		
 		try (ClientConnection client = ClientConnection.open(new InetSocketAddress("localhost", 2002))) {
 			ClientResult result = client.sendTemp("Hello World!".getBytes());
 			result.waitForReceived();
@@ -129,9 +127,6 @@ class TestLaminar {
 		CountDownLatch beforeLatch = new CountDownLatch(1);
 		ListenerThread beforeListener = new ListenerThread(address, message, beforeLatch);
 		beforeListener.start();
-		
-		// HACK:  Wait for start.
-		Thread.sleep(2000);
 		
 		try (ClientConnection client = ClientConnection.open(address)) {
 			ClientResult result = client.sendTemp(message);
@@ -175,9 +170,6 @@ class TestLaminar {
 		runner.start();
 		InetSocketAddress address = new InetSocketAddress("localhost", 2002);
 		
-		// HACK:  Wait for start.
-		Thread.sleep(2000);
-		
 		try (ClientConnection client = ClientConnection.open(address)) {
 			ClientResult result1 = client.sendTemp(message);
 			ClientResult result2 = client.sendTemp(message);
@@ -191,6 +183,22 @@ class TestLaminar {
 		// Shut down.
 		feeder.println("stop");
 		runner.join();
+	}
+
+	@Test
+	void testClientFailedConnection() throws Throwable {
+		byte[] message = "Hello World!".getBytes();
+		InetSocketAddress address = new InetSocketAddress("localhost", 2002);
+		
+		try (ClientConnection client = ClientConnection.open(address)) {
+			// Even though we aren't yet connected, the client can technically still attempt to send messages.
+			client.sendTemp(message);
+			// HACK:  Wait for the connection to fail.
+			Thread.sleep(500);
+			Assertions.assertThrows(IOException.class, () -> {
+				client.checkConnection();
+			});
+		}
 	}
 
 

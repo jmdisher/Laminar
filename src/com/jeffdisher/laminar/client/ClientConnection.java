@@ -57,13 +57,14 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 		if (null == server) {
 			throw new IllegalArgumentException("Address cannot be null");
 		}
-		ClientConnection connection = new ClientConnection();
+		ClientConnection connection = new ClientConnection(server);
 		connection._network.startAndWaitForReady();
 		connection._network.createOutgoingConnection(server);
 		return connection;
 	}
 
 
+	private final InetSocketAddress _serverAddress;
 	private final NetworkManager _network;
 	private final UUID _clientId;
 	// The handshake response is what the client waits on before sending messages.
@@ -80,7 +81,14 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 	private final Map<Long, ClientResult> _inFlightMessages;
 	private long _nextNonce;
 
-	private ClientConnection() throws IOException {
+	// Due to reconnection requirements, it is possible to fail a connection but not want to bring down the system.
+	// Therefore, we will continue reconnection attempts, until told to close.  Unless we have an active connection, we
+	// store a reference to the most recent failure we observed during connection, for external informational purposes.
+	private IOException _currentConnectionFailure;
+	private IOException _mostRecentConnectionFailure;
+
+	private ClientConnection(InetSocketAddress server) throws IOException {
+		_serverAddress = server;
 		_network = NetworkManager.outboundOnly(this);
 		_clientId = UUID.randomUUID();
 		_outgoingMessages = new LinkedList<>();
@@ -126,6 +134,24 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 		return _clientId;
 	}
 
+	/**
+	 * Allows the client code to check the current state of the connection to the cluster.
+	 * This is required since the connection normally tries to reestablish itself, when a connection drops or can't be
+	 * created.
+	 * In some cases of client misconfiguration, a total cluster failure, or a serious network problem, this may result
+	 * in clients freezing for non-obvious reasons.  This method exists to allow a view into that state.
+	 * 
+	 * @return True if the client believes that a network connection exists.  False if a reconnection is in progress.
+	 * @throws IOException If the connection or reconnection has been failing, this is the last error observed.
+	 */
+	public synchronized boolean checkConnection() throws IOException {
+		boolean isNetworkUp = (null != _connection);
+		if (!isNetworkUp && (null != _mostRecentConnectionFailure)) {
+			throw _mostRecentConnectionFailure;
+		}
+		return isNetworkUp;
+	}
+
 	// <INetworkManagerBackgroundCallbacks>
 	@Override
 	public void nodeDidConnect(NodeToken node) {
@@ -157,7 +183,8 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 	public synchronized void outboundNodeConnected(NodeToken node) {
 		Assert.assertTrue(null == _connection);
 		_connection = node;
-		System.out.println("CLIENT " + _clientId + " CONNECTED");
+		// Clear any now-stale connection error.
+		_mostRecentConnectionFailure = null;
 		// Every connection starts writable.
 		_canWrite = true;
 		this.notifyAll();
@@ -170,9 +197,11 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 	}
 
 	@Override
-	public void outboundNodeConnectionFailed(NodeToken token, IOException cause) {
+	public synchronized void outboundNodeConnectionFailed(NodeToken token, IOException cause) {
 		Assert.assertTrue(null == _connection);
-		throw Assert.unimplemented("TODO: Implement connection failure handling");
+		// Store the cause and interrupt the background thread so it will attempt a reconnect.
+		_currentConnectionFailure = cause;
+		this.notifyAll();
 	}
 	// </INetworkManagerBackgroundCallbacks>
 
@@ -199,7 +228,7 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 			
 			// Wait for something to do.
 			synchronized (this) {
-				while (_keepRunning && (0 == _pendingMessages) && (_outgoingMessages.isEmpty() || !_canWrite)) {
+				while (_keepRunning && (0 == _pendingMessages) && (_outgoingMessages.isEmpty() || !_canWrite) && (null == _currentConnectionFailure)) {
 					try {
 						this.wait();
 					} catch (InterruptedException e) {
@@ -215,6 +244,23 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 					// Currently, we only send a single message at a time but this will be made more aggressive in the future.
 					messageToWrite = _outgoingMessages.remove(0);
 					_canWrite = false;
+				}
+				if (null != _currentConnectionFailure) {
+					// This happens when a connect or reconnect failure was observed.  Due to reconnection requirements,
+					// we just want to try again until this succeeds or we are told to close.
+					// We consume the connection failure and move it to _mostRecentConnectionFailure so it is available
+					// for the client code's information.
+					
+					// There can be no current connection if there is a connection failure.
+					Assert.assertTrue(null == _connection);
+					try {
+						_network.createOutgoingConnection(_serverAddress);
+					} catch (IOException e) {
+						// We are just restarting something we already did so a failure here would mean something big changed.
+						throw Assert.unexpected(e);
+					}
+					_mostRecentConnectionFailure = _currentConnectionFailure;
+					_currentConnectionFailure = null;
 				}
 			}
 			
