@@ -201,26 +201,55 @@ class TestLaminar {
 		}
 	}
 
+	@Test
+	void testListenerFailedConnection() throws Throwable {
+		InetSocketAddress address = new InetSocketAddress("localhost", 2002);
+		CountDownLatch latch = new CountDownLatch(1);
+		ListenerThread listener = new ListenerThread(address, null, latch);
+		listener.start();
+		// HACK:  Wait for the connection to fail.
+		Thread.sleep(500);
+		Assertions.assertThrows(IOException.class, () -> {
+			listener.listener.checkConnection();
+		});
+		// Shut it down and observe the we did see the null returned.
+		listener.listener.close();
+		latch.await();
+		listener.join();
+	}
+
 
 	private static class ListenerThread extends Thread {
-		private final InetSocketAddress _address;
 		private final byte[] _message;
 		private final CountDownLatch _latch;
+		public final ListenerConnection listener;
 		
-		public ListenerThread(InetSocketAddress address, byte[] message, CountDownLatch latch) {
-			_address = address;
+		public ListenerThread(InetSocketAddress address, byte[] message, CountDownLatch latch) throws IOException {
 			_message = message;
 			_latch = latch;
+			// We want to expose the connection so tests can request it shut down.
+			this.listener = ListenerConnection.open(address);
 		}
 		
 		@Override
 		public void run() {
-			try(ListenerConnection listener = ListenerConnection.open(_address)) {
-				EventRecord record = listener.pollForNextEvent(0L);
-				// We only expect the one.
-				Assert.assertEquals(1L, record.localOffset);
-				Assert.assertArrayEquals(_message, record.payload);
+			try {
+				EventRecord record = this.listener.pollForNextEvent(0L);
+				if (null == _message) {
+					// We expected failure.
+					Assert.assertNull(record);
+				} else {
+					// We only expect the one.
+					Assert.assertEquals(1L, record.localOffset);
+					Assert.assertArrayEquals(_message, record.payload);
+				}
 				_latch.countDown();
+				// This might be a redundant close so wrap it.
+				try {
+					this.listener.close();
+				} catch (IllegalStateException e) {
+					// This happens in cases where we initiated an external close.
+				}
 			} catch (IOException | InterruptedException e) {
 				Assert.fail(e.getLocalizedMessage());
 			}

@@ -47,21 +47,33 @@ public class ListenerConnection implements Closeable, INetworkManagerBackgroundC
 		if (null == server) {
 			throw new IllegalArgumentException("Address cannot be null");
 		}
-		ListenerConnection connection = new ListenerConnection();
+		ListenerConnection connection = new ListenerConnection(server);
 		connection._network.startAndWaitForReady();
 		connection._network.createOutgoingConnection(server);
 		return connection;
 	}
 
 
+	private final InetSocketAddress _serverAddress;
 	private final NetworkManager _network;
 	private NodeToken _connection;
 
-	private volatile boolean _keepRunning;
+	private boolean _keepRunning;
+	// Since we are using the user's thread to perform the poll and we must stop polling before stopping the network
+	// so we set a flag when the user's thread is in the polling loop in order to coordinate the shutdown properly.
+	// (if this were our own thread, we would join, instead).
+	private boolean _isPollActive;
 	private boolean _didSendListen;
 	private int _pendingMessages;
 
-	private ListenerConnection() throws IOException {
+	// Due to reconnection requirements, it is possible to fail a connection but not want to bring down the system.
+	// Therefore, we will continue reconnection attempts, until told to close.  Unless we have an active connection, we
+	// store a reference to the most recent failure we observed during connection, for external informational purposes.
+	private IOException _currentConnectionFailure;
+	private IOException _mostRecentConnectionFailure;
+
+	private ListenerConnection(InetSocketAddress server) throws IOException {
+		_serverAddress = server;
 		_network = NetworkManager.outboundOnly(this);
 		_keepRunning = true;
 		// We "sent" listen until a new connection opens and then it is set to false.
@@ -79,36 +91,36 @@ public class ListenerConnection implements Closeable, INetworkManagerBackgroundC
 	 */
 	public synchronized EventRecord pollForNextEvent(long previousLocalOffset) throws InterruptedException {
 		EventRecord record = null;
-		while (_keepRunning && (null == record)) {
-			// Wait until we are ready to take some action.  Cases to exit:
-			// -told to stop (!_keepRunning)
-			// -we haven't yet sent the "listen" message on a new connection
-			// -connection is open and we haven't sent the listen
-			// -we have pending messages to send
-			while (_keepRunning && _didSendListen && (0 == _pendingMessages)) {
-				this.wait();
-			}
-			
-			if (!_didSendListen) {
-				// The connection opened but we haven't send the listen message.
-				ClientMessage listen = ClientMessage.listen(previousLocalOffset);
-				boolean didSend = _network.trySendMessage(_connection, listen.serialize());
-				// We had the _canWrite, so this can't fail.
-				Assert.assertTrue(didSend);
-				_didSendListen = true;
-			}
-			if (_pendingMessages > 0) {
-				// Grab a message, decode it, and return it.
-				byte[] message = _network.readWaitingMessage(_connection);
-				// (we know this must have been available).
-				Assert.assertTrue(null != message);
-				_pendingMessages -= 1;
-				
-				// Currently, we only send a single EventRecord per payload, not in any message container.
-				record = EventRecord.deserialize(message);
+		_isPollActive = true;
+		try {
+			record = _doLockedPollForNextEvent(previousLocalOffset, record);
+		} finally {
+			_isPollActive = false;
+			// If we are shutting down, notify anyone who might be waiting for us to rationalize the state of these flags.
+			if (!_keepRunning) {
+				this.notifyAll();
 			}
 		}
 		return record;
+	}
+
+	/**
+	 * Allows the client code to check the current state of the connection to the cluster.
+	 * This is required since the connection normally tries to reestablish itself, when a connection drops or can't be
+	 * created.
+	 * In some cases of listener misconfiguration, a total cluster failure, or a serious network problem, this may
+	 * result in listeners running silent when they actually should be seeing new events.  This method exists to allow a
+	 * view into that state.
+	 * 
+	 * @return True if the listener believes that a network connection exists.  False if a reconnection is in progress.
+	 * @throws IOException If the connection or reconnection has been failing, this is the last error observed.
+	 */
+	public synchronized boolean checkConnection() throws IOException {
+		boolean isNetworkUp = (null != _connection);
+		if (!isNetworkUp && (null != _mostRecentConnectionFailure)) {
+			throw _mostRecentConnectionFailure;
+		}
+		return isNetworkUp;
 	}
 
 	// <INetworkManagerBackgroundCallbacks>
@@ -143,19 +155,22 @@ public class ListenerConnection implements Closeable, INetworkManagerBackgroundC
 		_connection = node;
 		// Reset our need to send the listen.
 		_didSendListen = false;
+		// Clear any now-stale connection error.
+		_mostRecentConnectionFailure = null;
 		this.notifyAll();
 	}
 
 	@Override
-	public synchronized void outboundNodeDisconnected(NodeToken node) {
+	public void outboundNodeDisconnected(NodeToken node) {
 		Assert.assertTrue(_connection == node);
-		_connection = null;
+		throw Assert.unimplemented("TODO: Implement along-side reconnect logic");
 	}
 
 	@Override
-	public void outboundNodeConnectionFailed(NodeToken token, IOException cause) {
+	public synchronized void outboundNodeConnectionFailed(NodeToken token, IOException cause) {
 		Assert.assertTrue(null == _connection);
-		throw Assert.unimplemented("TODO: Implement connection failure handling");
+		_currentConnectionFailure = cause;
+		this.notifyAll();
 	}
 	// </INetworkManagerBackgroundCallbacks>
 
@@ -164,7 +179,68 @@ public class ListenerConnection implements Closeable, INetworkManagerBackgroundC
 		synchronized (this) {
 			_keepRunning = false;
 			this.notifyAll();
+			boolean interrupt = false;
+			while (_isPollActive) {
+				try {
+					this.wait();
+				} catch (InterruptedException e) {
+					// This operation isn't interruptable but we will restore the state when done.
+					interrupt = true;
+				}
+			}
+			if (interrupt) {
+				Thread.currentThread().interrupt();
+			}
 		}
 		_network.stopAndWaitForTermination();
+	}
+
+
+	private EventRecord _doLockedPollForNextEvent(long previousLocalOffset, EventRecord record)
+			throws InterruptedException, AssertionError {
+		while (_keepRunning && (null == record)) {
+			System.out.println(">Running");
+			// Wait until we are ready to take some action.  Cases to exit:
+			// -told to stop (!_keepRunning)
+			// -we haven't yet sent the "listen" message on a new connection
+			// -connection is open and we haven't sent the listen
+			// -there is a connection failure
+			// -we have pending messages to send
+			while (_keepRunning && _didSendListen && (null == _currentConnectionFailure) && (0 == _pendingMessages)) {
+				this.wait();
+			}
+			
+			if (!_didSendListen) {
+				// The connection opened but we haven't send the listen message.
+				ClientMessage listen = ClientMessage.listen(previousLocalOffset);
+				boolean didSend = _network.trySendMessage(_connection, listen.serialize());
+				// We had the _canWrite, so this can't fail.
+				Assert.assertTrue(didSend);
+				_didSendListen = true;
+			}
+			if (null != _currentConnectionFailure) {
+				// The connection failed - save the failure and restart the connection attempt.
+				// (in the future, this will be rolled into broader reconnect logic).
+				try {
+					_network.createOutgoingConnection(_serverAddress);
+				} catch (IOException e) {
+					// We are just restarting something we already did so a failure here would mean something big changed.
+					throw Assert.unexpected(e);
+				}
+				_mostRecentConnectionFailure = _currentConnectionFailure;
+				_currentConnectionFailure = null;
+			}
+			if (_pendingMessages > 0) {
+				// Grab a message, decode it, and return it.
+				byte[] message = _network.readWaitingMessage(_connection);
+				// (we know this must have been available).
+				Assert.assertTrue(null != message);
+				_pendingMessages -= 1;
+				
+				// Currently, we only send a single EventRecord per payload, not in any message container.
+				record = EventRecord.deserialize(message);
+			}
+		}
+		return record;
 	}
 }
