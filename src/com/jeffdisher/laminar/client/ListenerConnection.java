@@ -58,15 +58,14 @@ public class ListenerConnection implements Closeable, INetworkManagerBackgroundC
 	private NodeToken _connection;
 
 	private volatile boolean _keepRunning;
-	private boolean _canWrite;
 	private boolean _didSendListen;
 	private int _pendingMessages;
 
 	private ListenerConnection() throws IOException {
 		_network = NetworkManager.outboundOnly(this);
 		_keepRunning = true;
-		_canWrite = false;
-		_didSendListen = false;
+		// We "sent" listen until a new connection opens and then it is set to false.
+		_didSendListen = true;
 		_pendingMessages = 0;
 	}
 
@@ -79,28 +78,24 @@ public class ListenerConnection implements Closeable, INetworkManagerBackgroundC
 	 * @throws InterruptedException If the calling thread received an interrupt.
 	 */
 	public synchronized EventRecord pollForNextEvent(long previousLocalOffset) throws InterruptedException {
-		// Wait until we are ready to take some action.
-		while (_keepRunning && !_canWrite && !_didSendListen) {
-			this.wait();
-		}
-		
-		// See if we need to set up the connection.
-		// Note:  Once reconnect logic is added, the interaction with setup and blocking read will need to change.
-		if (!_didSendListen && _canWrite) {
-			// Send the listen message.
-			ClientMessage listen = ClientMessage.listen(previousLocalOffset);
-			boolean didSend = _network.trySendMessage(_connection, listen.serialize());
-			// We had the _canWrite, so this can't fail.
-			Assert.assertTrue(didSend);
-			// We reset these flags in case the user interrupts this and wants to resume, later.
-			_didSendListen = true;
-			_canWrite = false;
-		}
-		
 		EventRecord record = null;
 		while (_keepRunning && (null == record)) {
-			while (_keepRunning && (0 == _pendingMessages)) {
+			// Wait until we are ready to take some action.  Cases to exit:
+			// -told to stop (!_keepRunning)
+			// -we haven't yet sent the "listen" message on a new connection
+			// -connection is open and we haven't sent the listen
+			// -we have pending messages to send
+			while (_keepRunning && _didSendListen && (0 == _pendingMessages)) {
 				this.wait();
+			}
+			
+			if (!_didSendListen) {
+				// The connection opened but we haven't send the listen message.
+				ClientMessage listen = ClientMessage.listen(previousLocalOffset);
+				boolean didSend = _network.trySendMessage(_connection, listen.serialize());
+				// We had the _canWrite, so this can't fail.
+				Assert.assertTrue(didSend);
+				_didSendListen = true;
 			}
 			if (_pendingMessages > 0) {
 				// Grab a message, decode it, and return it.
@@ -128,11 +123,9 @@ public class ListenerConnection implements Closeable, INetworkManagerBackgroundC
 	}
 
 	@Override
-	public synchronized void nodeWriteReady(NodeToken node) {
+	public void nodeWriteReady(NodeToken node) {
 		Assert.assertTrue(_connection == node);
-		// We still handle this flag, even thought it doesn't currently matter for the listener (it only sends one message).
-		_canWrite = true;
-		this.notifyAll();
+		// We don't do anything with this message (might in the future).
 	}
 
 	@Override
@@ -148,8 +141,8 @@ public class ListenerConnection implements Closeable, INetworkManagerBackgroundC
 	public synchronized void outboundNodeConnected(NodeToken node) {
 		Assert.assertTrue(null == _connection);
 		_connection = node;
-		// Every connection starts writable.
-		_canWrite = true;
+		// Reset our need to send the listen.
+		_didSendListen = false;
 		this.notifyAll();
 	}
 
