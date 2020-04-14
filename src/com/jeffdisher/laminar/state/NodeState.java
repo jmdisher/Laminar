@@ -253,6 +253,8 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 				Assert.assertTrue(null != tuple);
 				// Send the commit to the client..
 				_backgroundEnqueueMessageToClient(tuple.client, tuple.ack);
+				// See if any listeners want this.
+				_backgroundSendRecordToListeners(completed);
 			}});
 	}
 
@@ -332,10 +334,9 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 				EventRecord record = EventRecord.generateRecord(globalOffset, localOffset, state.clientId, incoming.contents);
 				ClientResponse commit = ClientResponse.committed(incoming.nonce);
 				// Setup the record for the async response and send the commit to the disk.
+				// Note that both the client and the listeners are only notified of the committed event once it is durable.
 				_pendingMessageCommits.put(globalOffset, new ClientCommitTuple(client, commit));
 				_diskManager.commitEvent(record);
-				// See if any listeners want this.
-				_backgroundSendRecordToListeners(record);
 			} else {
 				// The client didn't handshake yet.
 				_backgroundEnqueueMessageToClient(client, ClientResponse.error(incoming.nonce));
