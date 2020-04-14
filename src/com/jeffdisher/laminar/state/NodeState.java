@@ -134,8 +134,9 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 			if (!_readyMessageCommits.isEmpty()) {
 				ClientCommitTuple tuple = _readyMessageCommits.remove(0);
 				// Verify that this client is still connected.
-				if (_connectedClients.containsKey(tuple.client)) {
-					_backgroundLockedEnqueueMessageToClient(tuple.client, tuple.state, tuple.ack);
+				ClientState state = _connectedClients.get(tuple.client);
+				if (null != state) {
+					_backgroundLockedEnqueueMessageToClient(tuple.client, state, tuple.ack);
 				}
 			}
 		}
@@ -353,7 +354,7 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 				EventRecord record = EventRecord.generateRecord(globalOffset, localOffset, state.clientId, incoming.contents);
 				ClientResponse commit = ClientResponse.committed(incoming.nonce);
 				// Setup the record for the async response and send the commit to the disk.
-				_pendingMessageCommits.put(globalOffset, new ClientCommitTuple(client, state, commit));
+				_pendingMessageCommits.put(globalOffset, new ClientCommitTuple(client, commit));
 				_diskManager.commitEvent(record);
 				// See if any listeners want this.
 				_lockedSendRecordToListeners(record);
@@ -415,12 +416,10 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 	 */
 	private static class ClientCommitTuple {
 		public final ClientNode client;
-		public final ClientState state;
 		public final ClientResponse ack;
 		
-		public ClientCommitTuple(ClientNode client, ClientState state, ClientResponse ack) {
+		public ClientCommitTuple(ClientNode client, ClientResponse ack) {
 			this.client = client;
-			this.state = state;
 			this.ack = ack;
 		}
 	}
