@@ -146,6 +146,9 @@ public class NetworkManager {
 	/**
 	 * Attempts to write the given message payload to the outgoing buffer, failing if the buffer can't fit the payload.
 	 * Note that, if this returns false, the caller should wait for nodeWriteReady.
+	 * In the case of an asynchronous disconnect, this method may still return true even if it knows that the message
+	 * will never be written to the network.  This to hide the inherent race in network interactions from the caller.
+	 * They will get the same answer they _could_ have received if the call happened a few microseconds earlier.
 	 * 
 	 * @param target The node where the message should be sent.
 	 * @param payload The message payload to send.
@@ -176,7 +179,8 @@ public class NetworkManager {
 				buffer.putShort(size);
 				buffer.put(payload);
 				
-				if (willNeedWriteInterest) {
+				// Note that we only want to enable writing if we weren't already in a writing state and if the connection hasn't closed.
+				if (willNeedWriteInterest && !state.isClosed) {
 					// If the buffer _was_ empty, we know we now need to change the interested ops.
 					// Note that it is safe to write this thread, even though the background is consuming it (according
 					// to docs).
@@ -221,7 +225,8 @@ public class NetworkManager {
 					buffer.get(message);
 					buffer.compact();
 					
-					if (willNeedReadInterest) {
+					// Note that we only want to enable reading if we weren't already in a reading state and if the connection hasn't closed.
+					if (willNeedReadInterest && !state.isClosed) {
 						// If the buffer was full, we now need to re-add the reading interest.
 						// Note that it is safe to write this thread, even though the background is consuming it
 						// (according to docs).
@@ -393,11 +398,9 @@ public class NetworkManager {
 		Iterator<SelectionKey> selectedKeys = _selector.selectedKeys().iterator();
 		while (selectedKeys.hasNext()) {
 			SelectionKey key = selectedKeys.next();
-			if (!key.isValid()) {
-				// TODO:  Determine if this is how read/write failures on a closed connection are detected or if this is just us seeing the echo of something _we_ disconnected.
-				Assert.unimplemented("INVALID KEY: " + key);
-			}
-			else if (key == _acceptorKey) {
+			// The key "isValid" will only be set false by our attempts to cancel on disconnect, below in this method, but it should start out valid.
+			Assert.assertTrue(key.isValid());
+			if (key == _acceptorKey) {
 				try {
 					_processAcceptorKey(key);
 				} catch (IOException e) {
@@ -421,23 +424,11 @@ public class NetworkManager {
 						throw Assert.unimplemented(e.getLocalizedMessage());
 					}
 				}
-				if (key.isReadable()) {
-					try {
-						_processReadableKey(key, state);
-					} catch (IOException e) {
-						// TODO:  Implement.
-						e.printStackTrace();
-						throw Assert.unimplemented(e.getLocalizedMessage());
-					}
+				if (key.isValid() && key.isReadable()) {
+					_processReadableKey(key, state);
 				}
-				if (key.isWritable()) {
-					try {
-						_processWritableKey(key, state);
-					} catch (IOException e) {
-						// TODO:  Implement.
-						e.printStackTrace();
-						throw Assert.unimplemented(e.getLocalizedMessage());
-					}
+				if (key.isValid() && key.isWritable()) {
+					_processWritableKey(key, state);
 				}
 			}
 			selectedKeys.remove();
@@ -481,56 +472,105 @@ public class NetworkManager {
 		_callbackTarget.outboundNodeConnected(state.token);
 	}
 
-	private void _processReadableKey(SelectionKey key, ConnectionState state) throws IOException {
+	private void _processReadableKey(SelectionKey key, ConnectionState state) {
 		// Read into our buffer.
 		int newMessagesAvailable = 0;
 		synchronized (state) {
 			int originalPosition = state.toRead.position();
-			state.channel.read(state.toRead);
-			
-			if (0 == state.toRead.remaining()) {
-				// If this buffer is now full, stop reading.
-				key.interestOps(key.interestOps() & ~SelectionKey.OP_READ);
+			boolean isStillValid = true;
+			try {
+				state.channel.read(state.toRead);
+			} catch (IOException e) {
+				// This is typically a "Connection reset by peer".
+				// We just want to close the connection, cancel the key, and send the callback.
+				// NOTE:  The buffer may already have fully-loaded message frames for which we already notified the
+				// callback target so we will need to close the port, cancel the key, remove this from our list of open
+				// connections, and set the state to be closed so that we won't try to re-enable it when they consume
+				// the message.
+				try {
+					state.channel.close();
+				} catch (IOException e1) {
+					// This is just book-keeping so it can't fail.
+					Assert.unexpected(e1);
+				}
+				key.cancel();
+				_connectedNodes.remove(key);
+				state.isClosed = true;
+				_callbackTarget.nodeDidDisconnect(state.token);
+				isStillValid = false;
 			}
 			
-			// Determine if this read operation added a new completed message to the buffer.
-			ByteBuffer readOnly = state.toRead.asReadOnlyBuffer();
-			readOnly.flip();
-			boolean keepReading = true;
-			while (keepReading && ((readOnly.position() + Short.BYTES) <= readOnly.limit())) {
-				int size = Short.toUnsignedInt(readOnly.getShort());
-				if ((readOnly.position() + size) <= readOnly.limit()) {
-					readOnly.position(readOnly.position() + size);
-					// If we are now pointing after the original position, this must be a new message.
-					if (readOnly.position() > originalPosition) {
-						newMessagesAvailable += 1;
+			if (isStillValid) {
+				if (0 == state.toRead.remaining()) {
+					// If this buffer is now full, stop reading.
+					key.interestOps(key.interestOps() & ~SelectionKey.OP_READ);
+				}
+				
+				// Determine if this read operation added a new completed message to the buffer.
+				ByteBuffer readOnly = state.toRead.asReadOnlyBuffer();
+				readOnly.flip();
+				boolean keepReading = true;
+				while (keepReading && ((readOnly.position() + Short.BYTES) <= readOnly.limit())) {
+					int size = Short.toUnsignedInt(readOnly.getShort());
+					if ((readOnly.position() + size) <= readOnly.limit()) {
+						readOnly.position(readOnly.position() + size);
+						// If we are now pointing after the original position, this must be a new message.
+						if (readOnly.position() > originalPosition) {
+							newMessagesAvailable += 1;
+						}
+					} else {
+						keepReading = false;
 					}
-				} else {
-					keepReading = false;
 				}
 			}
 		}
 		// Notify the callbacks of each new message.
 		for (int i = 0; i < newMessagesAvailable; ++i) {
+			// Just to prove that we are doing this correctly and didn't re-order something, above, make sure this is still open.
+			Assert.assertTrue(!state.isClosed);
 			_callbackTarget.nodeReadReady(state.token);
 		}
 	}
 
-	private void _processWritableKey(SelectionKey key, ConnectionState state) throws IOException {
+	private void _processWritableKey(SelectionKey key, ConnectionState state) {
 		// Write from our buffer.
 		boolean isBufferEmpty = false;
 		synchronized (state) {
 			state.toWrite.flip();
-			state.channel.write(state.toWrite);
-			state.toWrite.compact();
+			boolean isStillValid = true;
+			try {
+				state.channel.write(state.toWrite);
+			} catch (IOException e) {
+				// This is typically a "Broken pipe".
+				// We just want to close the connection, cancel the key, and send the callback.
+				// Note that we may have already told the caller that we were write-ready and they may, in fact, already
+				// be in the middle of a call to write a message, blocked on this monitor.  We will just record that the
+				// channel is closed so their interaction won't try to re-enable the write selector.
+				try {
+					state.channel.close();
+				} catch (IOException e1) {
+					// This is just book-keeping so it can't fail.
+					Assert.unexpected(e1);
+				}
+				key.cancel();
+				_connectedNodes.remove(key);
+				state.isClosed = true;
+				_callbackTarget.nodeDidDisconnect(state.token);
+				isStillValid = false;
+			}
 			
-			isBufferEmpty = 0 == state.toWrite.position();
-			if (isBufferEmpty) {
-				// If this buffer is now empty, stop writing.
-				key.interestOps(key.interestOps() & ~SelectionKey.OP_WRITE);
+			if (isStillValid) {
+				state.toWrite.compact();
+				isBufferEmpty = 0 == state.toWrite.position();
+				if (isBufferEmpty) {
+					// If this buffer is now empty, stop writing.
+					key.interestOps(key.interestOps() & ~SelectionKey.OP_WRITE);
+				}
 			}
 		}
 		if (isBufferEmpty) {
+			// Just to prove that we are doing this correctly and didn't re-order something, above, make sure this is still open.
+			Assert.assertTrue(!state.isClosed);
 			// We need to notify the callbacks that the buffer has fully drained.
 			_callbackTarget.nodeWriteReady(state.token);
 		}
@@ -549,6 +589,8 @@ public class NetworkManager {
 		public final ByteBuffer toWrite = ByteBuffer.allocate(BUFFER_SIZE_BYTES);
 		// Token is written after the key is created.
 		public NodeToken token;
+		// We set this closed flag if the connection is closed and can still be read but cannot be enqueued for more reading.
+		public boolean isClosed;
 		
 		public ConnectionState(SocketChannel channel) {
 			this.channel = channel;

@@ -155,6 +155,44 @@ class TestLaminar {
 		runner.join();
 	}
 
+	@Test
+	void testClientForceDisconnect() throws Throwable {
+		byte[] message = "Hello World!".getBytes();
+		// Here, we start up, connect a client, send one message, wait for it to commit, observe listener behaviour, then shut everything down.
+		PipedOutputStream outStream = new PipedOutputStream();
+		PipedInputStream inStream = new PipedInputStream(outStream);
+		PrintStream feeder = new PrintStream(outStream);
+		System.setIn(inStream);
+		
+		// We need to run the Laminar process in a thread it will control and then sleep for startup.
+		// (this way of using sleep for timing is a hack but this will eventually be made into a more reliable integration test, probably outside of JUnit).
+		Thread runner = new Thread() {
+			@Override
+			public void run() {
+				Laminar.main(new String[] {"--client", "2002", "--cluster", "2003", "--data", "/tmp/laminar"});
+			}
+		};
+		runner.start();
+		InetSocketAddress address = new InetSocketAddress("localhost", 2002);
+		
+		// HACK:  Wait for start.
+		Thread.sleep(2000);
+		
+		try (ClientConnection client = ClientConnection.open(address)) {
+			ClientResult result1 = client.sendTemp(message);
+			ClientResult result2 = client.sendTemp(message);
+			ClientResult result3 = client.sendTemp(message);
+			result1.waitForReceived();
+			result2.waitForReceived();
+			result3.waitForReceived();
+			// By this point, we know the server has received the messages so close and see how they handle this.
+		}
+		
+		// Shut down.
+		feeder.println("stop");
+		runner.join();
+	}
+
 
 	private static class ListenerThread extends Thread {
 		private final InetSocketAddress _address;
