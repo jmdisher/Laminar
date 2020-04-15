@@ -23,8 +23,8 @@ class TestDiskManager {
 	 */
 	@Test
 	void testSimpleWriteAndFetch() throws Throwable {
-		EventRecord event1 = EventRecord.generateRecord(1L, 1L, UUID.randomUUID(), new byte[] {1});
-		EventRecord event2 = EventRecord.generateRecord(2L, 2L, UUID.randomUUID(), new byte[] {1});
+		EventRecord event1 = EventRecord.generateRecord(1L, 1L, UUID.randomUUID(), 1L, new byte[] {1});
+		EventRecord event2 = EventRecord.generateRecord(2L, 2L, UUID.randomUUID(), 2L, new byte[] {1});
 		CountDownLatch commitLatch = new CountDownLatch(2);
 		CountDownLatch fetchLatch = new CountDownLatch(1);
 		LatchedCallbacks callbacks = new LatchedCallbacks(commitLatch, fetchLatch);

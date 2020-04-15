@@ -18,13 +18,15 @@ import com.jeffdisher.laminar.utils.Assert;
  * input event.
  */
 public class EventRecord {
-	public static EventRecord generateRecord(long globalOffset, long localOffset, UUID clientId, byte[] payload) {
+	public static EventRecord generateRecord(long globalOffset, long localOffset, UUID clientId, long clientNonce, byte[] payload) {
 		// Currently, we only support matching global and local offsets (these are just here to get the shape in place).
 		Assert.assertTrue(globalOffset == localOffset);
 		// The offsets must be positive.
 		Assert.assertTrue(globalOffset > 0L);
 		Assert.assertTrue(localOffset > 0L);
-		return new EventRecord(globalOffset, localOffset, clientId, payload);
+		Assert.assertTrue(null != clientId);
+		Assert.assertTrue(clientNonce >= 0L);
+		return new EventRecord(globalOffset, localOffset, clientId, clientNonce, payload);
 	}
 
 	public static EventRecord deserialize(byte[] serialized) {
@@ -32,31 +34,35 @@ public class EventRecord {
 		long globalOffset = wrapper.getLong();
 		long localOffset = wrapper.getLong();
 		UUID clientId = new UUID(wrapper.getLong(), wrapper.getLong());
+		long clientNonce = wrapper.getLong();
 		byte[] payload = new byte[wrapper.remaining()];
 		wrapper.get(payload);
-		return new EventRecord(globalOffset, localOffset, clientId, payload);
+		return new EventRecord(globalOffset, localOffset, clientId, clientNonce, payload);
 	}
 
 
 	public final long globalOffset;
 	public final long localOffset;
 	public final UUID clientId;
+	public final long clientNonce;
 	public final byte[] payload;
 	
-	private EventRecord(long globalOffset, long localOffset, UUID clientId, byte[] payload) {
+	private EventRecord(long globalOffset, long localOffset, UUID clientId, long clientNonce, byte[] payload) {
 		this.globalOffset = globalOffset;
 		this.localOffset = localOffset;
 		this.clientId = clientId;
+		this.clientNonce = clientNonce;
 		this.payload = payload;
 	}
 
 	public byte[] serialize() {
-		byte[] buffer = new byte[Long.BYTES + Long.BYTES + (2 * Long.BYTES) + this.payload.length];
+		byte[] buffer = new byte[Long.BYTES + Long.BYTES + (2 * Long.BYTES) + Long.BYTES + this.payload.length];
 		ByteBuffer wrapper = ByteBuffer.wrap(buffer);
 		wrapper
 			.putLong(this.globalOffset)
 			.putLong(this.localOffset)
 			.putLong(this.clientId.getMostSignificantBits()).putLong(this.clientId.getLeastSignificantBits())
+			.putLong(this.clientNonce)
 			.put(this.payload)
 		;
 		return buffer;

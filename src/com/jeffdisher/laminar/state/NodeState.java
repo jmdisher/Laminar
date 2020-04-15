@@ -397,7 +397,7 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 			// (for now, we don't have per-topic streams or programmable topics so the localOffset is the same as the global).
 			long globalOffset = _nextGlobalOffset++;
 			long localOffset = globalOffset;
-			EventRecord record = EventRecord.generateRecord(globalOffset, localOffset, state.clientId, incoming.contents);
+			EventRecord record = EventRecord.generateRecord(globalOffset, localOffset, state.clientId, incoming.nonce, incoming.contents);
 			ClientResponse commit = ClientResponse.committed(incoming.nonce);
 			// Setup the record for the async response and send the commit to the disk.
 			// Note that both the client and the listeners are only notified of the committed event once it is durable.
