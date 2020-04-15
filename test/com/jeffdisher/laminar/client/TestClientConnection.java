@@ -5,12 +5,13 @@ import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.SocketChannel;
-import java.util.UUID;
 
 import org.junit.Assert;
 import org.junit.jupiter.api.Test;
 
 import com.jeffdisher.laminar.network.ClientMessage;
+import com.jeffdisher.laminar.network.ClientMessagePayload_Handshake;
+import com.jeffdisher.laminar.network.ClientMessagePayload_Temp;
 import com.jeffdisher.laminar.network.ClientMessageType;
 import com.jeffdisher.laminar.network.ClientResponse;
 
@@ -47,9 +48,7 @@ class TestClientConnection {
 			// This should be the handshake.
 			Assert.assertEquals(ClientMessageType.HANDSHAKE, handshake.type);
 			Assert.assertEquals(0L, handshake.nonce);
-			Assert.assertEquals(2 * Long.BYTES, handshake.contents.length);
-			ByteBuffer uuidBuffer = ByteBuffer.wrap(handshake.contents);
-			Assert.assertEquals(connection.getClientId(), new UUID(uuidBuffer.getLong(), uuidBuffer.getLong()));
+			Assert.assertEquals(connection.getClientId(), ((ClientMessagePayload_Handshake)handshake.payload).clientId);
 			// Send the received and committed.
 			_sendReceived(server, handshake.nonce);
 			_sendCommitted(server, handshake.nonce);
@@ -66,7 +65,7 @@ class TestClientConnection {
 			ClientMessage observed = ClientMessage.deserialize(raw);
 			Assert.assertEquals(ClientMessageType.TEMP, observed.type);
 			Assert.assertEquals(1L, observed.nonce);
-			Assert.assertArrayEquals(payload, observed.contents);
+			Assert.assertArrayEquals(payload, ((ClientMessagePayload_Temp)observed.payload).contents);
 			// Send the received from the server.
 			_sendReceived(server, observed.nonce);
 			// Wait for it on the client.

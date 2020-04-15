@@ -54,7 +54,7 @@ class TestClientManager {
 		ClientMessage output = manager.receive(callbacks.recentConnection);
 		Assert.assertEquals(message.type, output.type);
 		Assert.assertEquals(message.nonce, output.nonce);
-		Assert.assertArrayEquals(message.contents, output.contents);
+		Assert.assertArrayEquals(((ClientMessagePayload_Temp)message.payload).contents, ((ClientMessagePayload_Temp)output.payload).contents);
 		
 		manager.stopAndWaitForTermination();
 	}

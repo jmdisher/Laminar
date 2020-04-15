@@ -21,7 +21,7 @@ class TestClientMessage {
 		ClientMessage output = ClientMessage.deserialize(serialized);
 		Assert.assertEquals(input.type, output.type);
 		Assert.assertEquals(input.nonce, output.nonce);
-		Assert.assertArrayEquals(input.contents, output.contents);
+		Assert.assertEquals(((ClientMessagePayload_Handshake)input.payload).clientId, ((ClientMessagePayload_Handshake)output.payload).clientId);
 	}
 
 	@Test
@@ -33,7 +33,7 @@ class TestClientMessage {
 		ClientMessage output = ClientMessage.deserialize(serialized);
 		Assert.assertEquals(input.type, output.type);
 		Assert.assertEquals(input.nonce, output.nonce);
-		Assert.assertArrayEquals(input.contents, output.contents);
+		// No contents to compare on LISTEN.
 	}
 
 	@Test
@@ -46,6 +46,6 @@ class TestClientMessage {
 		ClientMessage output = ClientMessage.deserialize(serialized);
 		Assert.assertEquals(input.type, output.type);
 		Assert.assertEquals(input.nonce, output.nonce);
-		Assert.assertArrayEquals(input.contents, output.contents);
+		Assert.assertArrayEquals(((ClientMessagePayload_Temp)input.payload).contents, ((ClientMessagePayload_Temp)output.payload).contents);
 	}
 }

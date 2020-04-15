@@ -8,6 +8,10 @@ import com.jeffdisher.laminar.utils.Assert;
 
 /**
  * High-level representation of a message to be sent FROM the client TO a server.
+ * Note that the design of this is compositional:  ClientMessage contains the common elements of the client->server
+ * message protocol but contains an instance of IClientMessagePayload as its payload.  Callers will need to down-cast
+ * to their specific cases but can then use it in a high-level and type-safe way, without manually dealing with the raw
+ * bytes.
  */
 public class ClientMessage {
 	/**
@@ -23,12 +27,8 @@ public class ClientMessage {
 	public static ClientMessage handshake(long nonce, UUID clientId) {
 		// We know that the handshake nonce _MUST_ be 0.
 		Assert.assertTrue(0L == nonce);
-		// For now, we just serialize the UUID via longs.
-		byte[] buffer = ByteBuffer.allocate(2 * Long.BYTES)
-				.putLong(clientId.getMostSignificantBits())
-				.putLong(clientId.getLeastSignificantBits())
-				.array();
-		return new ClientMessage(ClientMessageType.HANDSHAKE, nonce, buffer);
+		
+		return new ClientMessage(ClientMessageType.HANDSHAKE, nonce, ClientMessagePayload_Handshake.create(clientId));
 	}
 
 	/**
@@ -43,7 +43,7 @@ public class ClientMessage {
 		Assert.assertTrue(previousLocalOffset >= 0L);
 		
 		// Note that we overload the usual "nonce" field for the previousLocalOffset, since the messages are otherwise the same.
-		return new ClientMessage(ClientMessageType.LISTEN, previousLocalOffset, new byte[0]);
+		return new ClientMessage(ClientMessageType.LISTEN, previousLocalOffset, ClientMessagePayload_Listen.create());
 	}
 
 	/**
@@ -55,7 +55,7 @@ public class ClientMessage {
 	 * @return A new ClientMessage instance.
 	 */
 	public static ClientMessage temp(long nonce, byte[] message) {
-		return new ClientMessage(ClientMessageType.TEMP, nonce, message);
+		return new ClientMessage(ClientMessageType.TEMP, nonce, ClientMessagePayload_Temp.create(message));
 	}
 
 	/**
@@ -65,22 +65,41 @@ public class ClientMessage {
 	 * @return The deserialized ClientMessage instance.
 	 */
 	public static ClientMessage deserialize(byte[] serialized) {
-		ClientMessageType type = ClientMessageType.values()[serialized[0]];
-		long nonce = ByteBuffer.wrap(serialized, 1, Long.BYTES).getLong();
-		byte[] contents = new byte[serialized.length - Byte.BYTES - Long.BYTES];
-		System.arraycopy(serialized, Byte.BYTES + Long.BYTES, contents, 0, contents.length);
-		return new ClientMessage(type, nonce, contents);
+		ByteBuffer buffer = ByteBuffer.wrap(serialized);
+		int ordinal = (int) buffer.get();
+		if (ordinal >= ClientMessageType.values().length) {
+			throw Assert.unimplemented("Handle corrupt message");
+		}
+		ClientMessageType type = ClientMessageType.values()[ordinal];
+		long nonce = buffer.getLong();
+		IClientMessagePayload payload;
+		switch (type) {
+		case HANDSHAKE:
+			payload = ClientMessagePayload_Handshake.deserialize(buffer);
+			break;
+		case INVALID:
+			throw Assert.unimplemented("Handle invalid deserialization");
+		case LISTEN:
+			payload = ClientMessagePayload_Listen.deserialize(buffer);
+			break;
+		case TEMP:
+			payload = ClientMessagePayload_Temp.deserialize(buffer);
+			break;
+		default:
+			throw Assert.unreachable("Unmatched deserialization type");
+		}
+		return new ClientMessage(type, nonce, payload);
 	}
 
 
 	public final ClientMessageType type;
 	public final long nonce;
-	public final byte[] contents;
+	public final IClientMessagePayload payload;
 	
-	private ClientMessage(ClientMessageType type, long nonce, byte[] contents) {
+	private ClientMessage(ClientMessageType type, long nonce, IClientMessagePayload payload) {
 		this.type = type;
 		this.nonce = nonce;
-		this.contents = contents;
+		this.payload = payload;
 	}
 
 	/**
@@ -89,10 +108,13 @@ public class ClientMessage {
 	 * @return The serialized representation of the receiver.
 	 */
 	public byte[] serialize() {
-		byte[] serialized = new byte[Byte.BYTES + Long.BYTES + contents.length];
-		serialized[0] = (byte)this.type.ordinal();
-		ByteBuffer.wrap(serialized, 1, Long.BYTES).putLong(this.nonce);
-		System.arraycopy(contents, 0, serialized, Byte.BYTES + Long.BYTES, contents.length);
+		byte[] serialized = new byte[Byte.BYTES + Long.BYTES + payload.serializedSize()];
+		ByteBuffer buffer = ByteBuffer.wrap(serialized);
+		buffer
+			.put((byte)this.type.ordinal())
+			.putLong(this.nonce)
+			;
+		payload.serializeInto(buffer);
 		return serialized;
 	}
 }

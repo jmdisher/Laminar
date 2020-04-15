@@ -1,6 +1,5 @@
 package com.jeffdisher.laminar.state;
 
-import java.nio.ByteBuffer;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedList;
@@ -16,6 +15,8 @@ import com.jeffdisher.laminar.disk.IDiskManagerBackgroundCallbacks;
 import com.jeffdisher.laminar.network.ClientManager;
 import com.jeffdisher.laminar.network.ClientManager.ClientNode;
 import com.jeffdisher.laminar.network.ClientMessage;
+import com.jeffdisher.laminar.network.ClientMessagePayload_Handshake;
+import com.jeffdisher.laminar.network.ClientMessagePayload_Temp;
 import com.jeffdisher.laminar.network.ClientResponse;
 import com.jeffdisher.laminar.network.ClusterManager;
 import com.jeffdisher.laminar.network.IClientManagerBackgroundCallbacks;
@@ -344,8 +345,7 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 		case HANDSHAKE: {
 			// This is the first message a client sends us in order to make sure we know their UUID and the version is
 			// correct and any other options are supported.
-			ByteBuffer wrapper = ByteBuffer.wrap(incoming.contents);
-			UUID clientId = new UUID(wrapper.getLong(), wrapper.getLong());
+			UUID clientId = ((ClientMessagePayload_Handshake)incoming.payload).clientId;
 			// Create the new state and change the connection state in the maps.
 			ClientState state = new ClientState(clientId, 1L);
 			boolean didRemove = _newClients.remove(client);
@@ -392,12 +392,13 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 			// (client outgoing message list is unbounded so this is safe to do all at once).
 			ClientResponse ack = ClientResponse.received(incoming.nonce);
 			_backgroundEnqueueMessageToClient(client, ack);
-			System.out.println("GOT TEMP FROM " + state.clientId + ": \"" + new String(incoming.contents) + "\" (nonce " + incoming.nonce + ")");
+			byte[] contents = ((ClientMessagePayload_Temp)incoming.payload).contents;
+			System.out.println("GOT TEMP FROM " + state.clientId + ": \"" + new String(contents) + "\" (nonce " + incoming.nonce + ")");
 			// Create the EventRecord, add it to storage, and set up the commit to send once we get the notification that it is durable.
 			// (for now, we don't have per-topic streams or programmable topics so the localOffset is the same as the global).
 			long globalOffset = _nextGlobalOffset++;
 			long localOffset = globalOffset;
-			EventRecord record = EventRecord.generateRecord(globalOffset, localOffset, state.clientId, incoming.nonce, incoming.contents);
+			EventRecord record = EventRecord.generateRecord(globalOffset, localOffset, state.clientId, incoming.nonce, contents);
 			ClientResponse commit = ClientResponse.committed(incoming.nonce);
 			// Setup the record for the async response and send the commit to the disk.
 			// Note that both the client and the listeners are only notified of the committed event once it is durable.
