@@ -58,7 +58,7 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 			throw new IllegalArgumentException("Address cannot be null");
 		}
 		ClientConnection connection = new ClientConnection(server);
-		connection._network.startAndWaitForReady();
+		connection._network.startAndWaitForReady("ClientConnection");
 		connection._network.createOutgoingConnection(server);
 		return connection;
 	}
@@ -103,6 +103,7 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 		};
 		// Note that it is normally poor form to start the thread in the constructor but this is a private constructor
 		// so the matter is 6 vs 1/2 dozen and this is more direct.
+		_backgroundThread.setName("Laminar client (" + server + ")");
 		_backgroundThread.start();
 		
 		// (we will always queue up our handshake since this is a new client connection).

@@ -65,6 +65,7 @@ public class DiskManager {
 	 */
 	public void startAndWaitForReady() {
 		_keepRunning = true;
+		_background.setName("Laminar disk");
 		_background.start();
 	}
 

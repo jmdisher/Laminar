@@ -31,7 +31,7 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 	 * Starts the underlying network connection, allowing clients to connect to it.
 	 */
 	public void startAndWaitForReady() {
-		_networkManager.startAndWaitForReady();
+		_networkManager.startAndWaitForReady("ClientManager");
 	}
 
 	/**

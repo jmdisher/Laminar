@@ -48,7 +48,7 @@ public class ListenerConnection implements Closeable, INetworkManagerBackgroundC
 			throw new IllegalArgumentException("Address cannot be null");
 		}
 		ListenerConnection connection = new ListenerConnection(server);
-		connection._network.startAndWaitForReady();
+		connection._network.startAndWaitForReady("ListenerConnection");
 		connection._network.createOutgoingConnection(server);
 		return connection;
 	}

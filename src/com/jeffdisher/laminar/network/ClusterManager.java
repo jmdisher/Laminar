@@ -25,7 +25,7 @@ public class ClusterManager implements INetworkManagerBackgroundCallbacks {
 	}
 
 	public void startAndWaitForReady() {
-		_networkManager.startAndWaitForReady();
+		_networkManager.startAndWaitForReady("ClusterManager");
 	}
 
 	public void stopAndWaitForTermination() {

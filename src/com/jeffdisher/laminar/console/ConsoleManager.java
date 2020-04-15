@@ -50,6 +50,7 @@ public class ConsoleManager {
 				}
 			}
 		};
+		_background.setName("Laminar console");
 		_background.start();
 	}
 

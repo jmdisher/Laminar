@@ -23,7 +23,7 @@ class TestNetworkManager {
 		ServerSocketChannel socket = createSocket(PORT_BASE + 1);
 		LatchedCallbacks callbacks = new LatchedCallbacks(null, null, null, null, null, null, null);
 		NetworkManager server = NetworkManager.bidirectional(socket, callbacks);
-		server.startAndWaitForReady();
+		server.startAndWaitForReady("test");
 		server.stopAndWaitForTermination();
 	}
 
@@ -38,7 +38,7 @@ class TestNetworkManager {
 		CountDownLatch disconnectLatch = new CountDownLatch(1);
 		LatchedCallbacks callbacks = new LatchedCallbacks(connectLatch, readLatch, writeLatch, disconnectLatch, null, null, null);
 		NetworkManager server = NetworkManager.bidirectional(socket, callbacks);
-		server.startAndWaitForReady();
+		server.startAndWaitForReady("test");
 		
 		try (Socket client = new Socket("localhost", port)) {
 			connectLatch.await();
@@ -86,9 +86,9 @@ class TestNetworkManager {
 		serverLogic.startThreadForManager(serverManager);
 		clientLogic1.startThreadForManager(clientManager1);
 		clientLogic2.startThreadForManager(clientManager2);
-		serverManager.startAndWaitForReady();
-		clientManager1.startAndWaitForReady();
-		clientManager2.startAndWaitForReady();
+		serverManager.startAndWaitForReady("test");
+		clientManager1.startAndWaitForReady("test");
+		clientManager2.startAndWaitForReady("test");
 		
 		NodeToken token1 = clientManager1.createOutgoingConnection(new InetSocketAddress(serverPort));
 		NodeToken token2 = clientManager2.createOutgoingConnection(new InetSocketAddress(serverPort));
@@ -123,7 +123,7 @@ class TestNetworkManager {
 		CountDownLatch disconnectLatch = new CountDownLatch(1);
 		LatchedCallbacks callbacks = new LatchedCallbacks(connectLatch, readLatch, writeLatch, disconnectLatch, null, null, null);
 		NetworkManager server = NetworkManager.bidirectional(socket, callbacks);
-		server.startAndWaitForReady();
+		server.startAndWaitForReady("test");
 		
 		CountDownLatch client_connectLatch = new CountDownLatch(1);
 		CountDownLatch client_readLatch = new CountDownLatch(1);
@@ -131,7 +131,7 @@ class TestNetworkManager {
 		CountDownLatch client_disconnectLatch = new CountDownLatch(1);
 		LatchedCallbacks client_callbacks = new LatchedCallbacks(null, client_readLatch, client_writeLatch, null, client_connectLatch, client_disconnectLatch, null);
 		NetworkManager client = NetworkManager.outboundOnly(client_callbacks);
-		client.startAndWaitForReady();
+		client.startAndWaitForReady("test");
 		
 		client.createOutgoingConnection(new InetSocketAddress(port));
 		// Make sure the server saw the connection and the client saw it complete.
@@ -167,7 +167,7 @@ class TestNetworkManager {
 		CountDownLatch outboundFailureLatch = new CountDownLatch(1);
 		LatchedCallbacks client_callbacks = new LatchedCallbacks(null, null, null, null, null, null, outboundFailureLatch);
 		NetworkManager client = NetworkManager.outboundOnly(client_callbacks);
-		client.startAndWaitForReady();
+		client.startAndWaitForReady("test");
 		
 		client.createOutgoingConnection(new InetSocketAddress(badPort));
 		// Observe the failure.

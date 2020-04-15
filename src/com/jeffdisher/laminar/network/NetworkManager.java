@@ -105,7 +105,7 @@ public class NetworkManager {
 		_callbackTarget = callbackTarget;
 	}
 
-	public void startAndWaitForReady() {
+	public void startAndWaitForReady(String consumer) {
 		_keepRunning = true;
 		_background = new Thread() {
 			@Override
@@ -113,6 +113,7 @@ public class NetworkManager {
 				_backgroundThreadMain();
 			}
 		};
+		_background.setName("Laminar network - " + consumer);
 		_background.start();
 	}
 
