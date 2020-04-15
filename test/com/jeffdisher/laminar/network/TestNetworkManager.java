@@ -96,8 +96,8 @@ class TestNetworkManager {
 		latch.await();
 		
 		// Close the connections.
-		clientManager1.closeOutgoingConnection(token1);
-		clientManager2.closeOutgoingConnection(token2);
+		clientManager1.closeConnection(token1);
+		clientManager2.closeConnection(token2);
 		
 		// Shut everything down.
 		serverManager.stopAndWaitForTermination();
@@ -161,6 +161,64 @@ class TestNetworkManager {
 		client_callbacks.outboundFailureLatch.await();
 		
 		client.stopAndWaitForTermination();
+	}
+
+	@Test
+	void testExplicitDisconnects() throws Throwable {
+		// We will create 2 servers, have them connect to each other, and observe explicit closures on either side.
+		int port1 = PORT_BASE + 7;
+		int port2 = PORT_BASE + 8;
+		InetSocketAddress address1 = new InetSocketAddress(port1);
+		InetSocketAddress address2 = new InetSocketAddress(port2);
+		
+		LatchedCallbacks callbacks1 = new LatchedCallbacks();
+		NetworkManager server1 = NetworkManager.bidirectional(createSocket(port1), callbacks1);
+		server1.startAndWaitForReady("test-server-1");
+		
+		LatchedCallbacks callbacks2 = new LatchedCallbacks();
+		NetworkManager server2 = NetworkManager.bidirectional(createSocket(port2), callbacks2);
+		server2.startAndWaitForReady("test-server-2");
+		
+		// Create 1 connection from each, to the other, and capture the incoming tokens.
+		NodeToken out1 = server1.createOutgoingConnection(address2);
+		NodeToken out2 = server2.createOutgoingConnection(address1);
+		callbacks1.connectLatch.await();
+		callbacks2.connectLatch.await();
+		NodeToken in1 = callbacks1.recentIncomingConnection;
+		NodeToken in2 = callbacks2.recentIncomingConnection;
+		
+		// We now close out1, twice, and try to send a message on it to verify no errors on double-close and that the message is still allowed to send since the socket was already writable.
+		server1.closeConnection(out1);
+		server1.closeConnection(out1);
+		// Note that the send will still succeed since the socket was known to be writable before the close started.
+		boolean didSend = server1.trySendMessage(out1, new byte[] {1,2,3});
+		Assert.assertTrue(didSend);
+		
+		// Try to write onto in2 (the other side of out1_1) and make sure we observe the disconnect.
+		didSend = server2.trySendMessage(in2, new byte[] {1,2,3});
+		Assert.assertTrue(didSend);
+		callbacks2.disconnectLatch.await();
+		
+		// We can now attempt to write to in2 or close it, ourselves, but it will have no effect.
+		didSend = server2.trySendMessage(in2, new byte[] {1,2,3});
+		Assert.assertTrue(didSend);
+		server2.closeConnection(in2);
+		
+		// We now repeat this operation, but with the other pair of sockets to verify incoming/outgoing work the same way.
+		server1.closeConnection(in1);
+		server1.closeConnection(in1);
+		// Note that the send will still succeed since the socket was known to be writable before the close started.
+		didSend = server1.trySendMessage(in1, new byte[] {1,2,3});
+		Assert.assertTrue(didSend);
+		didSend = server2.trySendMessage(out2, new byte[] {1,2,3});
+		Assert.assertTrue(didSend);
+		callbacks2.outboundDisconnectLatch.await();
+		didSend = server2.trySendMessage(out2, new byte[] {1,2,3});
+		Assert.assertTrue(didSend);
+		server2.closeConnection(out2);
+		
+		server1.stopAndWaitForTermination();
+		server2.stopAndWaitForTermination();
 	}
 
 

@@ -33,8 +33,9 @@ class TestClientManager {
 		int port = PORT_BASE + 1;
 		ServerSocketChannel socket = createSocket(port);
 		CountDownLatch connectLatch = new CountDownLatch(1);
+		CountDownLatch disconnectLatch = new CountDownLatch(1);
 		CountDownLatch readLatch = new CountDownLatch(1);
-		LatchedCallbacks callbacks = new LatchedCallbacks(connectLatch, null, null, readLatch);
+		LatchedCallbacks callbacks = new LatchedCallbacks(connectLatch, disconnectLatch, null, readLatch);
 		ClientManager manager = new ClientManager(socket, callbacks);
 		manager.startAndWaitForReady();
 		
@@ -49,6 +50,7 @@ class TestClientManager {
 			toServer.write(frame);
 			readLatch.await();
 		}
+		disconnectLatch.await();
 		ClientMessage output = manager.receive(callbacks.recentConnection);
 		Assert.assertEquals(message.type, output.type);
 		Assert.assertEquals(message.nonce, output.nonce);
@@ -65,8 +67,9 @@ class TestClientManager {
 		int port = PORT_BASE + 2;
 		ServerSocketChannel socket = createSocket(port);
 		CountDownLatch connectLatch = new CountDownLatch(1);
+		CountDownLatch disconnectLatch = new CountDownLatch(1);
 		CountDownLatch writeLatch = new CountDownLatch(1);
-		LatchedCallbacks callbacks = new LatchedCallbacks(connectLatch, null, writeLatch, null);
+		LatchedCallbacks callbacks = new LatchedCallbacks(connectLatch, disconnectLatch, writeLatch, null);
 		ClientManager manager = new ClientManager(socket, callbacks);
 		manager.startAndWaitForReady();
 		
@@ -94,6 +97,7 @@ class TestClientManager {
 			Assert.assertEquals(commit.type, deserialized.type);
 			Assert.assertEquals(commit.nonce, deserialized.nonce);
 		}
+		disconnectLatch.await();
 		
 		manager.stopAndWaitForTermination();
 	}
@@ -106,8 +110,9 @@ class TestClientManager {
 		int port = PORT_BASE + 3;
 		ServerSocketChannel socket = createSocket(port);
 		CountDownLatch connectLatch = new CountDownLatch(1);
+		CountDownLatch disconnectLatch = new CountDownLatch(1);
 		CountDownLatch writeLatch = new CountDownLatch(1);
-		LatchedCallbacks callbacks = new LatchedCallbacks(connectLatch, null, writeLatch, null);
+		LatchedCallbacks callbacks = new LatchedCallbacks(connectLatch, disconnectLatch, writeLatch, null);
 		ClientManager manager = new ClientManager(socket, callbacks);
 		manager.startAndWaitForReady();
 		
@@ -137,6 +142,7 @@ class TestClientManager {
 			Assert.assertEquals(record.clientId, deserialized.clientId);
 			Assert.assertArrayEquals(record.payload, deserialized.payload);
 		}
+		disconnectLatch.await();
 		
 		manager.stopAndWaitForTermination();
 	}

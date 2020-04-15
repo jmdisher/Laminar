@@ -296,7 +296,14 @@ public class NetworkManager {
 		return token;
 	}
 
-	public void closeOutgoingConnection(NodeToken token) throws IOException {
+	/**
+	 * Request that a given connection, be it incoming or outgoing, be forcibly closed.
+	 * If the connection is already closed, this has no effect (as it is possible for an error to asynchronously
+	 * initiate a close in a way which would race with these explicit attempts), and sends no disconnected callbacks.
+	 * 
+	 * @param token The connection to close.
+	 */
+	public void closeConnection(NodeToken token) {
 		if (!_keepRunning) {
 			throw new IllegalStateException("Background thread not running");
 		}
@@ -325,8 +332,14 @@ public class NetworkManager {
 			}
 		}
 		// By this point, we can proceed to close the channel (symmetry with the opening of the channel).
-		channel.close();
+		try {
+			channel.close();
+		} catch (IOException e) {
+			// If there is an exception on close, we just abandon the socket.
+			// It isn't clear what causes of this exist which aren't equivalent to it already being closed.
+		}
 	}
+
 
 	private void _backgroundThreadMain() {
 		while (_keepRunning) {
@@ -363,7 +376,7 @@ public class NetworkManager {
 	private synchronized void _backgroundCheckHandoff() {
 		if (null != _handoff_newConnection) {
 			// Register this connection, pass back the token, and notify them.
-			ConnectionState newState = new ConnectionState(_handoff_newConnection);
+			ConnectionState newState = new ConnectionState(_handoff_newConnection, true);
 			SelectionKey newKey;
 			try {
 				newKey = _handoff_newConnection.register(_selector, SelectionKey.OP_CONNECT, newState);
@@ -388,6 +401,8 @@ public class NetworkManager {
 			SelectionKey key = _handoff_closeConnection.actualKey;
 			_connectedNodes.remove(key);
 			key.cancel();
+			// Since we are cancelling the key here, we also need to set the closed flag on the corresponding state.
+			((ConnectionState)key.attachment()).isClosed = true;
 			// (note that we only cancel the registration - closing the socket is done in the calling thread).
 			
 			_handoff_closeConnection = null;
@@ -444,7 +459,7 @@ public class NetworkManager {
 			// Changing this state shouldn't involve an IOException so flag that as fatal, if it happens.
 			throw Assert.unexpected(e);
 		}
-		ConnectionState newState = new ConnectionState(newNode);
+		ConnectionState newState = new ConnectionState(newNode, false);
 		SelectionKey newKey;
 		try {
 			newKey = newNode.register(_selector, SelectionKey.OP_READ, newState);
@@ -463,7 +478,6 @@ public class NetworkManager {
 		// Finish the connection, send the callback that an outbound connection was established, and switch
 		// its interested ops (normally just READ but WRITE is possible if data has already been written to
 		// the outgoing buffer.
-		// NOTE: Outbound connections are NOT added to _connectedNodes.
 		boolean isConnected;
 		try {
 			isConnected = state.channel.finishConnect();
@@ -504,24 +518,13 @@ public class NetworkManager {
 			int originalPosition = state.toRead.position();
 			boolean isStillValid = true;
 			try {
-				state.channel.read(state.toRead);
+				int read = state.channel.read(state.toRead);
+				if (-1 == read) {
+					// If the remote side closes the connection, this typically returns a -1 as an EOF.
+					isStillValid = false;
+				}
 			} catch (IOException e) {
 				// This is typically a "Connection reset by peer".
-				// We just want to close the connection, cancel the key, and send the callback.
-				// NOTE:  The buffer may already have fully-loaded message frames for which we already notified the
-				// callback target so we will need to close the port, cancel the key, remove this from our list of open
-				// connections, and set the state to be closed so that we won't try to re-enable it when they consume
-				// the message.
-				try {
-					state.channel.close();
-				} catch (IOException e1) {
-					// This is just book-keeping so it can't fail.
-					Assert.unexpected(e1);
-				}
-				key.cancel();
-				_connectedNodes.remove(key);
-				state.isClosed = true;
-				_callbackTarget.nodeDidDisconnect(state.token);
 				isStillValid = false;
 			}
 			
@@ -547,6 +550,26 @@ public class NetworkManager {
 						keepReading = false;
 					}
 				}
+			} else {
+				// We just want to close the connection, cancel the key, and send the callback.
+				// NOTE:  The buffer may already have fully-loaded message frames for which we already notified the
+				// callback target so we will need to close the port, cancel the key, remove this from our list of open
+				// connections, and set the state to be closed so that we won't try to re-enable it when they consume
+				// the message.
+				try {
+					state.channel.close();
+				} catch (IOException e1) {
+					// This is just book-keeping so it can't fail.
+					Assert.unexpected(e1);
+				}
+				key.cancel();
+				_connectedNodes.remove(key);
+				state.isClosed = true;
+				if (state.isOutgoing) {
+					_callbackTarget.outboundNodeDisconnected(state.token);
+				} else {
+					_callbackTarget.nodeDidDisconnect(state.token);
+				}
 			}
 		}
 		// Notify the callbacks of each new message.
@@ -564,7 +587,9 @@ public class NetworkManager {
 			state.toWrite.flip();
 			boolean isStillValid = true;
 			try {
-				state.channel.write(state.toWrite);
+				int written = state.channel.write(state.toWrite);
+				// If this returns no writes, it means this is in a state we can't interpret.
+				Assert.assertTrue(written > 0);
 			} catch (IOException e) {
 				// This is typically a "Broken pipe".
 				// We just want to close the connection, cancel the key, and send the callback.
@@ -610,6 +635,7 @@ public class NetworkManager {
 		// Note that a channel is available directly from the SelectionKey but it is the wrong type so this is here to
 		// avoid a down-cast (might switch to that later on but this keeps it clear).
 		public final SocketChannel channel;
+		public final boolean isOutgoing;  //False will be incoming.
 		public final ByteBuffer toRead = ByteBuffer.allocate(BUFFER_SIZE_BYTES);
 		public final ByteBuffer toWrite = ByteBuffer.allocate(BUFFER_SIZE_BYTES);
 		// Token is written after the key is created.
@@ -617,8 +643,9 @@ public class NetworkManager {
 		// We set this closed flag if the connection is closed and can still be read but cannot be enqueued for more reading.
 		public boolean isClosed;
 		
-		public ConnectionState(SocketChannel channel) {
+		public ConnectionState(SocketChannel channel, boolean isOutgoing) {
 			this.channel = channel;
+			this.isOutgoing = isOutgoing;
 		}
 	}
 
