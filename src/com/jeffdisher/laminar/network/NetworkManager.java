@@ -32,6 +32,16 @@ import com.jeffdisher.laminar.utils.Assert;
  * 2)  Changing the interested operations of an existing registration _appears_ to be safe and not blocked by an ongoing
  *  select operation so we will still change those on the outside.  This may be unreliable and the documentation states
  *  that this is implementation-dependent so this may chance in the future.
+ * 
+ * Locking strategy:
+ * -we always lock on the entire NetworkManager's monitor even though finer-grained is possible (individual
+ *  ConnectionState).
+ * -this is done just to simplify the mental model around this.  Nothing expensive or blocking is done in these locked
+ *  sections so the lock splitting would be an unnecessary cost.
+ * -all instance variables are only touched by the internal/background thread, with the exception of "_handoff_*"
+ *  variables and the ConnectionState objects resolved by public interface calls (corresponding NodeToken and
+ *  SelectorKey are immutable relationships).
+ * -no lock is held over a call to callback target.
  */
 public class NetworkManager {
 	// We will use 64 KiB buffers since we will impose a message size limit less than this.
@@ -169,7 +179,7 @@ public class NetworkManager {
 		
 		boolean didSend = false;
 		ConnectionState state = (ConnectionState) target.actualKey.attachment();
-		synchronized (state) {
+		synchronized (this) {
 			// See if there is enough space in the buffer for this message.
 			int spaceRequired = payload.length + Short.BYTES;
 			// The check above made sure that this size can fit, but it may show up as negative on the Java side.
@@ -213,7 +223,7 @@ public class NetworkManager {
 		
 		byte[] message = null;
 		ConnectionState state = (ConnectionState) sender.actualKey.attachment();
-		synchronized (state) {
+		synchronized (this) {
 			// Read the size.
 			ByteBuffer buffer = state.toRead;
 			if (buffer.position() >= Short.BYTES) {
@@ -353,7 +363,7 @@ public class NetworkManager {
 			}
 			// We are often just woken up to update the set of interested operations so this may be empty.
 			if (selectedKeyCount > 0) {
-				_processSelectedKeys();
+				_backgroundProcessSelectedKeys();
 			}
 			// Note that the keys' interested operations are updated by processing why they were selected or when an
 			// external caller changes the state so we don't need to go through them, again.
@@ -410,14 +420,14 @@ public class NetworkManager {
 		}
 	}
 
-	private void _processSelectedKeys() {
+	private void _backgroundProcessSelectedKeys() {
 		Iterator<SelectionKey> selectedKeys = _selector.selectedKeys().iterator();
 		while (selectedKeys.hasNext()) {
 			SelectionKey key = selectedKeys.next();
 			// The key "isValid" will only be set false by our attempts to cancel on disconnect, below in this method, but it should start out valid.
 			Assert.assertTrue(key.isValid());
 			if (key == _acceptorKey) {
-				_processAcceptorKey(key);
+				_backgroundProcessAcceptorKey(key);
 			} else {
 				// This is normal data movement so get the state out of the attachment.
 				ConnectionState state = (ConnectionState)key.attachment();
@@ -426,20 +436,20 @@ public class NetworkManager {
 				
 				// See what operation we wanted to perform.
 				if (key.isConnectable()) {
-					_processConnectableKey(key, state);
+					_backgroundProcessConnectableKey(key, state);
 				}
 				if (key.isValid() && key.isReadable()) {
-					_processReadableKey(key, state);
+					_backgroundProcessReadableKey(key, state);
 				}
 				if (key.isValid() && key.isWritable()) {
-					_processWritableKey(key, state);
+					_backgroundProcessWritableKey(key, state);
 				}
 			}
 			selectedKeys.remove();
 		}
 	}
 
-	private void _processAcceptorKey(SelectionKey key) {
+	private void _backgroundProcessAcceptorKey(SelectionKey key) {
 		// This must be a new node connecting.
 		Assert.assertTrue(SelectionKey.OP_ACCEPT == key.readyOps());
 		// This cannot be null if we matched the acceptor key.
@@ -474,7 +484,7 @@ public class NetworkManager {
 		_callbackTarget.nodeDidConnect(token);
 	}
 
-	private void _processConnectableKey(SelectionKey key, ConnectionState state) {
+	private void _backgroundProcessConnectableKey(SelectionKey key, ConnectionState state) {
 		// Finish the connection, send the callback that an outbound connection was established, and switch
 		// its interested ops (normally just READ but WRITE is possible if data has already been written to
 		// the outgoing buffer.
@@ -501,7 +511,7 @@ public class NetworkManager {
 		}
 		if (isConnected) {
 			int interestedOps = SelectionKey.OP_READ;
-			synchronized (state) {
+			synchronized (this) {
 				if (state.toWrite.position() > 0) {
 					interestedOps |= SelectionKey.OP_WRITE;
 				}
@@ -511,10 +521,10 @@ public class NetworkManager {
 		}
 	}
 
-	private void _processReadableKey(SelectionKey key, ConnectionState state) {
+	private void _backgroundProcessReadableKey(SelectionKey key, ConnectionState state) {
 		// Read into our buffer.
 		int newMessagesAvailable = 0;
-		synchronized (state) {
+		synchronized (this) {
 			int originalPosition = state.toRead.position();
 			boolean isStillValid = true;
 			try {
@@ -580,10 +590,11 @@ public class NetworkManager {
 		}
 	}
 
-	private void _processWritableKey(SelectionKey key, ConnectionState state) {
+	private void _backgroundProcessWritableKey(SelectionKey key, ConnectionState state) {
 		// Write from our buffer.
 		boolean isBufferEmpty = false;
-		synchronized (state) {
+		NodeToken notifyDisconnect = null;
+		synchronized (this) {
 			state.toWrite.flip();
 			boolean isStillValid = true;
 			try {
@@ -605,7 +616,7 @@ public class NetworkManager {
 				key.cancel();
 				_connectedNodes.remove(key);
 				state.isClosed = true;
-				_callbackTarget.nodeDidDisconnect(state.token);
+				notifyDisconnect = state.token;
 				isStillValid = false;
 			}
 			
@@ -618,11 +629,15 @@ public class NetworkManager {
 				}
 			}
 		}
+		// Now that we are out of lock, notify the callback target.
 		if (isBufferEmpty) {
 			// Just to prove that we are doing this correctly and didn't re-order something, above, make sure this is still open.
 			Assert.assertTrue(!state.isClosed);
 			// We need to notify the callbacks that the buffer has fully drained.
 			_callbackTarget.nodeWriteReady(state.token);
+		}
+		if (null != notifyDisconnect) {
+			_callbackTarget.nodeDidDisconnect(notifyDisconnect);
 		}
 	}
 
