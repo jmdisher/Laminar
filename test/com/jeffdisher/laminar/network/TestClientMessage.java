@@ -12,9 +12,8 @@ import org.junit.jupiter.api.Test;
 class TestClientMessage {
 	@Test
 	void testHandshakeMessage() throws Throwable {
-		long nonce = 0L;
 		UUID uuid = UUID.randomUUID();
-		ClientMessage input = ClientMessage.handshake(nonce, uuid);
+		ClientMessage input = ClientMessage.handshake(uuid);
 		byte[] serialized = input.serialize();
 		int uuidSize = (2 * Long.BYTES);
 		Assert.assertEquals(Byte.BYTES + Long.BYTES + uuidSize, serialized.length);

@@ -36,6 +36,7 @@ class TestClientConnection {
 			// Accept the connection (we will use blocking mode for the emulated side).
 			SocketChannel server = socket.accept();
 			server.configureBlocking(true);
+			long lastCommitGlobalOffset = 0L;
 			
 			// Read the handshake.
 			ByteBuffer handshakeBuffer = ByteBuffer.allocate(Short.BYTES + Byte.BYTES + Long.BYTES + (2 * Long.BYTES));
@@ -45,13 +46,13 @@ class TestClientConnection {
 			byte[] raw = new byte[handshakeBuffer.getShort()];
 			handshakeBuffer.get(raw);
 			ClientMessage handshake = ClientMessage.deserialize(raw);
-			// This should be the handshake.
+			// This should be the handshake (handshake nonce is undefined so it uses -1L).
 			Assert.assertEquals(ClientMessageType.HANDSHAKE, handshake.type);
-			Assert.assertEquals(0L, handshake.nonce);
+			Assert.assertEquals(-1L, handshake.nonce);
 			Assert.assertEquals(connection.getClientId(), ((ClientMessagePayload_Handshake)handshake.payload).clientId);
 			// Send the received and committed.
-			_sendReceived(server, handshake.nonce);
-			_sendCommitted(server, handshake.nonce);
+			_sendReceived(server, handshake.nonce, lastCommitGlobalOffset);
+			_sendCommitted(server, handshake.nonce, lastCommitGlobalOffset);
 			
 			// Send the message.
 			ClientResult result = connection.sendTemp(payload);
@@ -67,11 +68,11 @@ class TestClientConnection {
 			Assert.assertEquals(1L, observed.nonce);
 			Assert.assertArrayEquals(payload, ((ClientMessagePayload_Temp)observed.payload).contents);
 			// Send the received from the server.
-			_sendReceived(server, observed.nonce);
+			_sendReceived(server, observed.nonce, lastCommitGlobalOffset);
 			// Wait for it on the client.
 			result.waitForReceived();
 			// Send the commit on the server.
-			_sendCommitted(server, observed.nonce);
+			_sendCommitted(server, observed.nonce, lastCommitGlobalOffset);
 			// Wait for it on the client.
 			result.waitForCommitted();
 		}
@@ -86,9 +87,7 @@ class TestClientConnection {
 		return socket;
 	}
 
-	private void _sendReceived(SocketChannel server, long nonce) throws IOException {
-		// For this test, we fake the global commit offset from the nonce.
-		long lastCommitGlobalOffset = nonce;
+	private void _sendReceived(SocketChannel server, long nonce, long lastCommitGlobalOffset) throws IOException {
 		ClientResponse received = ClientResponse.received(nonce, lastCommitGlobalOffset);
 		byte[] raw = received.serialize();
 		ByteBuffer writeBuffer = ByteBuffer.allocate(Short.BYTES + raw.length);
@@ -98,9 +97,7 @@ class TestClientConnection {
 		Assert.assertEquals(writeBuffer.position(), didWrite);
 	}
 
-	private void _sendCommitted(SocketChannel server, long nonce) throws IOException {
-		// For this test, we fake the global commit offset from the nonce.
-		long lastCommitGlobalOffset = nonce;
+	private void _sendCommitted(SocketChannel server, long nonce, long lastCommitGlobalOffset) throws IOException {
 		ClientResponse committed = ClientResponse.committed(nonce, lastCommitGlobalOffset);
 		byte[] raw = committed.serialize();
 		ByteBuffer writeBuffer = ByteBuffer.allocate(Short.BYTES + raw.length);

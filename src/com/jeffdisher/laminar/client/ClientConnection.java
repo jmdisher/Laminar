@@ -96,7 +96,8 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 		_clientId = UUID.randomUUID();
 		_outgoingMessages = new LinkedList<>();
 		_inFlightMessages = new HashMap<>();
-		_nextNonce = 0L;
+		// First message has nonce of 1L.
+		_nextNonce = 1L;
 		_keepRunning = true;
 		_backgroundThread = new Thread() {
 			@Override
@@ -110,7 +111,7 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 		_backgroundThread.start();
 		
 		// (we will always queue up our handshake since this is a new client connection).
-		ClientMessage handshake = ClientMessage.handshake(_nextNonce++, _clientId);
+		ClientMessage handshake = ClientMessage.handshake(_clientId);
 		_handshakeResult = new ClientResult(handshake);
 		_outgoingMessages.add(_handshakeResult);
 	}

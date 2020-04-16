@@ -15,20 +15,18 @@ import com.jeffdisher.laminar.utils.Assert;
  */
 public class ClientMessage {
 	/**
+	 * The first message sent by a new client to tell the server its ID and that it is starting from scratch.
+	 * The server will assume that its nonce is currently 0L and its first message will have nonce 1L.
 	 * Note that the client handshake is an outlier in overall behaviour since it doesn't really have a nonce, nor do
 	 * received and committed really make sense for it.  It is a core part of the message protocol, not the event
 	 * stream.
-	 * Due to this difference, it may be changed into a special-case, later on, if this causes problems/confusion.
 	 * 
-	 * @param nonce Per-client nonce (must be 0 since this is the first call).
 	 * @param clientId The UUID of the client.
 	 * @return A new ClientMessageInstance.
 	 */
-	public static ClientMessage handshake(long nonce, UUID clientId) {
-		// We know that the handshake nonce _MUST_ be 0.
-		Assert.assertTrue(0L == nonce);
-		
-		return new ClientMessage(ClientMessageType.HANDSHAKE, nonce, ClientMessagePayload_Handshake.create(clientId));
+	public static ClientMessage handshake(UUID clientId) {
+		// We pass -1L for the nonce just to make it clear it shouldn't be interpreted by the server.
+		return new ClientMessage(ClientMessageType.HANDSHAKE, -1L, ClientMessagePayload_Handshake.create(clientId));
 	}
 
 	/**
