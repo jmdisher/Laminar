@@ -80,6 +80,9 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 	// NOTE:  _inFlightMessages can ONLY be accessed by _backgroundThread.
 	private final Map<Long, ClientResult> _inFlightMessages;
 	private long _nextNonce;
+	// We store the last global commit the server sends us in responses so we can ask what happened since then, when
+	// reconnecting.  It is only read or written by _backgroundThread.
+	private long _lastCommitGlobalOffset;
 
 	// Due to reconnection requirements, it is possible to fail a connection but not want to bring down the system.
 	// Therefore, we will continue reconnection attempts, until told to close.  Unless we have an active connection, we
@@ -267,7 +270,7 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 			
 			// Do whatever we can.
 			if (canRead) {
-				_readAndDispatchMessage();
+				_backgroundReadAndDispatchMessage();
 			}
 			if (null != messageToWrite) {
 				_serializeAndWriteMessage(messageToWrite);
@@ -275,13 +278,19 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 		}
 	}
 
-	private void _readAndDispatchMessage() {
+	private void _backgroundReadAndDispatchMessage() {
 		byte[] message = _network.readWaitingMessage(_connection);
 		// We were told this was here so it can't fail.
 		Assert.assertTrue(null != message);
 		
 		// Decode this.
 		ClientResponse deserialized = ClientResponse.deserialize(message);
+		// Update the global commit offset.
+		// This number can stay the same or increase, but a decrease means the cluster is horribly broken (or is a different cluster).
+		if (deserialized.lastCommitGlobalOffset < this._lastCommitGlobalOffset) {
+			throw Assert.unimplemented("Determine how to handle the case of the server giving us a dangerously wrong answer");
+		}
+		this._lastCommitGlobalOffset = deserialized.lastCommitGlobalOffset;
 		// Find the corresponding in-flight message and set its state.
 		ClientResult result = _inFlightMessages.get(deserialized.nonce);
 		switch (deserialized.type) {

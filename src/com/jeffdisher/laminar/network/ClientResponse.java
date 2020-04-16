@@ -15,8 +15,8 @@ public class ClientResponse {
 	 * @param nonce Per-client nonce of the message which caused the error.
 	 * @return A new ClientResponse instance.
 	 */
-	public static ClientResponse error(long nonce) {
-		return new ClientResponse(ClientResponseType.ERROR, nonce);
+	public static ClientResponse error(long nonce, long lastCommitGlobalOffset) {
+		return new ClientResponse(ClientResponseType.ERROR, nonce, lastCommitGlobalOffset);
 	}
 
 	/**
@@ -27,8 +27,8 @@ public class ClientResponse {
 	 * @param nonce Per-client nonce of the message being acknowledged.
 	 * @return A new ClientResponse instance.
 	 */
-	public static ClientResponse received(long nonce) {
-		return new ClientResponse(ClientResponseType.RECEIVED, nonce);
+	public static ClientResponse received(long nonce, long lastCommitGlobalOffset) {
+		return new ClientResponse(ClientResponseType.RECEIVED, nonce, lastCommitGlobalOffset);
 	}
 
 	/**
@@ -41,8 +41,8 @@ public class ClientResponse {
 	 * @param nonce Per-client nonce of the message being acknowledged.
 	 * @return A new ClientResponse instance.
 	 */
-	public static ClientResponse committed(long nonce) {
-		return new ClientResponse(ClientResponseType.COMMITTED, nonce);
+	public static ClientResponse committed(long nonce, long lastCommitGlobalOffset) {
+		return new ClientResponse(ClientResponseType.COMMITTED, nonce, lastCommitGlobalOffset);
 	}
 
 	/**
@@ -52,18 +52,22 @@ public class ClientResponse {
 	 * @return The deserialized ClientResponse instance.
 	 */
 	public static ClientResponse deserialize(byte[] serialized) {
-		ClientResponseType type = ClientResponseType.values()[serialized[0]];
-		long nonce = ByteBuffer.wrap(serialized, 1, Long.BYTES).getLong();
-		return new ClientResponse(type, nonce);
+		ByteBuffer wrapper = ByteBuffer.wrap(serialized);
+		ClientResponseType type = ClientResponseType.values()[(int)wrapper.get()];
+		long nonce = wrapper.getLong();
+		long lastCommitGlobalOffset = wrapper.getLong();
+		return new ClientResponse(type, nonce, lastCommitGlobalOffset);
 	}
 
 
 	public final ClientResponseType type;
 	public final long nonce;
+	public final long lastCommitGlobalOffset;
 
-	private ClientResponse(ClientResponseType type, long nonce) {
+	private ClientResponse(ClientResponseType type, long nonce, long lastCommitGlobalOffset) {
 		this.type = type;
 		this.nonce = nonce;
+		this.lastCommitGlobalOffset = lastCommitGlobalOffset;
 	}
 
 	/**
@@ -72,9 +76,11 @@ public class ClientResponse {
 	 * @return The serialized representation of the receiver.
 	 */
 	public byte[] serialize() {
-		byte[] serialized = new byte[Byte.BYTES + Long.BYTES];
-		serialized[0] = (byte)this.type.ordinal();
-		ByteBuffer.wrap(serialized, 1, Long.BYTES).putLong(this.nonce);
-		return serialized;
+		ByteBuffer buffer = ByteBuffer.allocate(Byte.BYTES + Long.BYTES + Long.BYTES);
+		return buffer
+				.put((byte)this.type.ordinal())
+				.putLong(this.nonce)
+				.putLong(this.lastCommitGlobalOffset)
+				.array();
 	}
 }

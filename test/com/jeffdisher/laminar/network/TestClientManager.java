@@ -62,7 +62,7 @@ class TestClientManager {
 	@Test
 	void testSendCommitResponse() throws Throwable {
 		// Create a commit response.
-		ClientResponse commit = ClientResponse.committed(1L);
+		ClientResponse commit = ClientResponse.committed(1L, 1L);
 		// Create a server.
 		int port = PORT_BASE + 2;
 		ServerSocketChannel socket = createSocket(port);
@@ -96,6 +96,7 @@ class TestClientManager {
 			ClientResponse deserialized = ClientResponse.deserialize(raw);
 			Assert.assertEquals(commit.type, deserialized.type);
 			Assert.assertEquals(commit.nonce, deserialized.nonce);
+			Assert.assertEquals(commit.lastCommitGlobalOffset, deserialized.lastCommitGlobalOffset);
 		}
 		disconnectLatch.await();
 		

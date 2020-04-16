@@ -11,33 +11,39 @@ class TestClientResponse {
 	@Test
 	void testError() throws Throwable {
 		long nonce = 1000;
-		ClientResponse input = ClientResponse.error(nonce);
+		long lastCommitGlobalOffset = 1L;
+		ClientResponse input = ClientResponse.error(nonce, lastCommitGlobalOffset);
 		byte[] serialized = input.serialize();
-		Assert.assertEquals(Byte.BYTES + Long.BYTES, serialized.length);
+		Assert.assertEquals(Byte.BYTES + Long.BYTES + Long.BYTES, serialized.length);
 		ClientResponse output = ClientResponse.deserialize(serialized);
 		Assert.assertEquals(input.type, output.type);
 		Assert.assertEquals(input.nonce, output.nonce);
+		Assert.assertEquals(input.lastCommitGlobalOffset, output.lastCommitGlobalOffset);
 	}
 
 	@Test
 	void testReceived() throws Throwable {
 		long nonce = 1000;
-		ClientResponse input = ClientResponse.received(nonce);
+		long lastCommitGlobalOffset = 1L;
+		ClientResponse input = ClientResponse.received(nonce, lastCommitGlobalOffset);
 		byte[] serialized = input.serialize();
-		Assert.assertEquals(Byte.BYTES + Long.BYTES, serialized.length);
+		Assert.assertEquals(Byte.BYTES + Long.BYTES + Long.BYTES, serialized.length);
 		ClientResponse output = ClientResponse.deserialize(serialized);
 		Assert.assertEquals(input.type, output.type);
 		Assert.assertEquals(input.nonce, output.nonce);
+		Assert.assertEquals(input.lastCommitGlobalOffset, output.lastCommitGlobalOffset);
 	}
 
 	@Test
 	void testCommitted() throws Throwable {
 		long nonce = 1000;
-		ClientResponse input = ClientResponse.committed(nonce);
+		long lastCommitGlobalOffset = 1L;
+		ClientResponse input = ClientResponse.committed(nonce, lastCommitGlobalOffset);
 		byte[] serialized = input.serialize();
-		Assert.assertEquals(Byte.BYTES + Long.BYTES, serialized.length);
+		Assert.assertEquals(Byte.BYTES + Long.BYTES + Long.BYTES, serialized.length);
 		ClientResponse output = ClientResponse.deserialize(serialized);
 		Assert.assertEquals(input.type, output.type);
 		Assert.assertEquals(input.nonce, output.nonce);
+		Assert.assertEquals(input.lastCommitGlobalOffset, output.lastCommitGlobalOffset);
 	}
 }

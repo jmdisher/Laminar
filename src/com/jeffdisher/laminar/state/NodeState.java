@@ -58,7 +58,10 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 	// This also means that there is currently no asynchronous load/send on the listener path as it is fully lock-step between network and disk.  This will be changed later.
 	// (in the future, this will change to handle multiple topics).
 	private final Map<Long, List<ClientManager.ClientNode>> _listenersWaitingOnLocalOffset;
+	// The next global offset to assign to an incoming message.
 	private long _nextGlobalOffset;
+	// The global offset most recently committed to disk (used to keep both the clients and other nodes in sync).
+	private long _lastCommitGlobalOffset;
 	private boolean _keepRunning;
 	private final UninterruptableQueue _commandQueue;
 
@@ -239,7 +242,7 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 						normalState.nextNonce += 1;
 						_backgroundNormalMessage(node, normalState, incoming);
 					} else {
-						_backgroundEnqueueMessageToClient(node, ClientResponse.error(incoming.nonce));
+						_backgroundEnqueueMessageToClient(node, ClientResponse.error(incoming.nonce, _lastCommitGlobalOffset));
 					}
 				} else {
 					Assert.assertTrue(null != listenerState);
@@ -301,6 +304,11 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 		_commandQueue.put(new Runnable() {
 			@Override
 			public void run() {
+				// Update our global commit offset (set this first since other methods we are calling might want to read for common state).
+				// We setup this commit so it must be sequential (this is a good check to make sure the commits aren't being re-ordered in the disk layer, too).
+				Assert.assertTrue((_lastCommitGlobalOffset + 1) == completed.globalOffset);
+				_lastCommitGlobalOffset = completed.globalOffset;
+				// Look up the tuple so we know which clients and listeners should be told about the commit.
 				ClientCommitTuple tuple = _pendingMessageCommits.remove(completed.globalOffset);
 				// This was requested for the specific tuple so it can't be missing.
 				Assert.assertTrue(null != tuple);
@@ -351,11 +359,11 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 			boolean didRemove = _newClients.remove(client);
 			Assert.assertTrue(didRemove);
 			_normalClients.put(client, state);
-			ClientResponse ack = ClientResponse.received(incoming.nonce);
+			ClientResponse ack = ClientResponse.received(incoming.nonce, _lastCommitGlobalOffset);
 			_backgroundEnqueueMessageToClient(client, ack);
 			System.out.println("HANDSHAKE: " + state.clientId);
 			// Handshakes are committed immediately since they don't have any required persistence or synchronization across the cluster.
-			ClientResponse commit = ClientResponse.committed(incoming.nonce);
+			ClientResponse commit = ClientResponse.committed(incoming.nonce, _lastCommitGlobalOffset);
 			_backgroundEnqueueMessageToClient(client, commit);
 			break;
 		}
@@ -390,7 +398,7 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 		case TEMP:
 			// This is just for initial testing:  send the received, log it, and send the commit.
 			// (client outgoing message list is unbounded so this is safe to do all at once).
-			ClientResponse ack = ClientResponse.received(incoming.nonce);
+			ClientResponse ack = ClientResponse.received(incoming.nonce, _lastCommitGlobalOffset);
 			_backgroundEnqueueMessageToClient(client, ack);
 			byte[] contents = ((ClientMessagePayload_Temp)incoming.payload).contents;
 			System.out.println("GOT TEMP FROM " + state.clientId + ": \"" + new String(contents) + "\" (nonce " + incoming.nonce + ")");
@@ -399,7 +407,7 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 			long globalOffset = _nextGlobalOffset++;
 			long localOffset = globalOffset;
 			EventRecord record = EventRecord.generateRecord(globalOffset, localOffset, state.clientId, incoming.nonce, contents);
-			ClientResponse commit = ClientResponse.committed(incoming.nonce);
+			ClientResponse commit = ClientResponse.committed(incoming.nonce, _lastCommitGlobalOffset);
 			// Setup the record for the async response and send the commit to the disk.
 			// Note that both the client and the listeners are only notified of the committed event once it is durable.
 			_pendingMessageCommits.put(globalOffset, new ClientCommitTuple(client, commit));

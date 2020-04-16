@@ -87,7 +87,9 @@ class TestClientConnection {
 	}
 
 	private void _sendReceived(SocketChannel server, long nonce) throws IOException {
-		ClientResponse received = ClientResponse.received(nonce);
+		// For this test, we fake the global commit offset from the nonce.
+		long lastCommitGlobalOffset = nonce;
+		ClientResponse received = ClientResponse.received(nonce, lastCommitGlobalOffset);
 		byte[] raw = received.serialize();
 		ByteBuffer writeBuffer = ByteBuffer.allocate(Short.BYTES + raw.length);
 		writeBuffer.putShort((short)raw.length).put(raw);
@@ -97,7 +99,9 @@ class TestClientConnection {
 	}
 
 	private void _sendCommitted(SocketChannel server, long nonce) throws IOException {
-		ClientResponse committed = ClientResponse.committed(nonce);
+		// For this test, we fake the global commit offset from the nonce.
+		long lastCommitGlobalOffset = nonce;
+		ClientResponse committed = ClientResponse.committed(nonce, lastCommitGlobalOffset);
 		byte[] raw = committed.serialize();
 		ByteBuffer writeBuffer = ByteBuffer.allocate(Short.BYTES + raw.length);
 		writeBuffer.putShort((short)raw.length).put(raw);
