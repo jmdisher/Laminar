@@ -50,9 +50,8 @@ class TestClientConnection {
 			Assert.assertEquals(ClientMessageType.HANDSHAKE, handshake.type);
 			Assert.assertEquals(-1L, handshake.nonce);
 			Assert.assertEquals(connection.getClientId(), ((ClientMessagePayload_Handshake)handshake.payload).clientId);
-			// Send the received and committed.
-			_sendReceived(server, handshake.nonce, lastCommitGlobalOffset);
-			_sendCommitted(server, handshake.nonce, lastCommitGlobalOffset);
+			// Send the ready.
+			_sendReady(server, 1L, lastCommitGlobalOffset);
 			
 			// Send the message.
 			ClientResult result = connection.sendTemp(payload);
@@ -79,6 +78,45 @@ class TestClientConnection {
 		socket.close();
 	}
 
+	/**
+	 * In this test, we will emulate the behaviour of the server responding to a handshake to verify that the
+	 * CLIENT_READY unblocks waitForConnection on the client.
+	 */
+	@Test
+	void testWaitForConnection() throws Throwable {
+		// Create a server socket.
+		int port = PORT_BASE + 2;
+		ServerSocketChannel socket = createSocket(port);
+		
+		// Start the client.
+		try (ClientConnection connection = ClientConnection.open(new InetSocketAddress("localhost", port))) {
+			// Accept the connection (we will use blocking mode for the emulated side).
+			SocketChannel server = socket.accept();
+			server.configureBlocking(true);
+			long lastCommitGlobalOffset = 0L;
+			
+			// Read the handshake.
+			ByteBuffer handshakeBuffer = ByteBuffer.allocate(Short.BYTES + Byte.BYTES + Long.BYTES + (2 * Long.BYTES));
+			int didRead = server.read(handshakeBuffer);
+			Assert.assertEquals(handshakeBuffer.position(), didRead);
+			handshakeBuffer.flip();
+			byte[] raw = new byte[handshakeBuffer.getShort()];
+			handshakeBuffer.get(raw);
+			ClientMessage handshake = ClientMessage.deserialize(raw);
+			// This should be the handshake (handshake nonce is undefined so it uses -1L).
+			Assert.assertEquals(ClientMessageType.HANDSHAKE, handshake.type);
+			Assert.assertEquals(-1L, handshake.nonce);
+			Assert.assertEquals(connection.getClientId(), ((ClientMessagePayload_Handshake)handshake.payload).clientId);
+			// Send the ready.
+			_sendReady(server, 1L, lastCommitGlobalOffset);
+			
+			// Now, wait for that to reach the client.
+			connection.waitForConnection();
+			Assert.assertTrue(connection.checkConnection());
+		}
+		socket.close();
+	}
+
 
 	private ServerSocketChannel createSocket(int port) throws IOException {
 		ServerSocketChannel socket = ServerSocketChannel.open();
@@ -99,6 +137,16 @@ class TestClientConnection {
 
 	private void _sendCommitted(SocketChannel server, long nonce, long lastCommitGlobalOffset) throws IOException {
 		ClientResponse committed = ClientResponse.committed(nonce, lastCommitGlobalOffset);
+		byte[] raw = committed.serialize();
+		ByteBuffer writeBuffer = ByteBuffer.allocate(Short.BYTES + raw.length);
+		writeBuffer.putShort((short)raw.length).put(raw);
+		writeBuffer.flip();
+		int didWrite = server.write(writeBuffer);
+		Assert.assertEquals(writeBuffer.position(), didWrite);
+	}
+
+	private void _sendReady(SocketChannel server, long expectedNonce, long lastCommitGlobalOffset) throws IOException {
+		ClientResponse committed = ClientResponse.clientReady(expectedNonce, lastCommitGlobalOffset);
 		byte[] raw = committed.serialize();
 		ByteBuffer writeBuffer = ByteBuffer.allocate(Short.BYTES + raw.length);
 		writeBuffer.putShort((short)raw.length).put(raw);

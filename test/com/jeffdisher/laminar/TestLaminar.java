@@ -218,6 +218,42 @@ class TestLaminar {
 		listener.join();
 	}
 
+	@Test
+	void testSimpleClientWaitForConnection() throws Throwable {
+		// Here, we start up, connect a client, send one message, wait for it to commit, then shut everything down.
+		PipedOutputStream outStream = new PipedOutputStream();
+		PipedInputStream inStream = new PipedInputStream(outStream);
+		PrintStream feeder = new PrintStream(outStream);
+		System.setIn(inStream);
+		
+		// We need to run the Laminar process in a thread it will control and then sleep for startup.
+		// (this way of using sleep for timing is a hack but this will eventually be made into a more reliable integration test, probably outside of JUnit).
+		Thread runner = new Thread() {
+			@Override
+			public void run() {
+				Laminar.main(new String[] {"--client", "2002", "--cluster", "2003", "--data", "/tmp/laminar"});
+			}
+		};
+		runner.start();
+		
+		// It should always be harmless to wait for connection over and over so just do that here.
+		try (ClientConnection client = ClientConnection.open(new InetSocketAddress("localhost", 2002))) {
+			client.waitForConnection();
+			Assert.assertTrue(client.checkConnection());
+			ClientResult result = client.sendTemp("Hello World!".getBytes());
+			client.waitForConnection();
+			Assert.assertTrue(client.checkConnection());
+			result.waitForReceived();
+			client.waitForConnection();
+			Assert.assertTrue(client.checkConnection());
+			result.waitForCommitted();
+			client.waitForConnection();
+			Assert.assertTrue(client.checkConnection());
+		}
+		feeder.println("stop");
+		runner.join();
+	}
+
 
 	private static class ListenerThread extends Thread {
 		private final byte[] _message;

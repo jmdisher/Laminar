@@ -359,12 +359,11 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 			boolean didRemove = _newClients.remove(client);
 			Assert.assertTrue(didRemove);
 			_normalClients.put(client, state);
-			ClientResponse ack = ClientResponse.received(incoming.nonce, _lastCommitGlobalOffset);
-			_backgroundEnqueueMessageToClient(client, ack);
+			
+			// The HANDSHAKE is special so we return CLIENT_READY instead of a RECEIVED and COMMIT (which is otherwise all we send).
+			ClientResponse ready = ClientResponse.clientReady(state.nextNonce, _lastCommitGlobalOffset);
 			System.out.println("HANDSHAKE: " + state.clientId);
-			// Handshakes are committed immediately since they don't have any required persistence or synchronization across the cluster.
-			ClientResponse commit = ClientResponse.committed(incoming.nonce, _lastCommitGlobalOffset);
-			_backgroundEnqueueMessageToClient(client, commit);
+			_backgroundEnqueueMessageToClient(client, ready);
 			break;
 		}
 		case LISTEN: {

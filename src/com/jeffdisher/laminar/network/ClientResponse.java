@@ -13,10 +13,24 @@ public class ClientResponse {
 	 * The client connection is forced to close but the client probably needs to close and restart.
 	 * 
 	 * @param nonce Per-client nonce of the message which caused the error.
+	 * @param lastCommitGlobalOffset The most recent global message offset which was committed on the server.
 	 * @return A new ClientResponse instance.
 	 */
 	public static ClientResponse error(long nonce, long lastCommitGlobalOffset) {
 		return new ClientResponse(ClientResponseType.ERROR, nonce, lastCommitGlobalOffset);
+	}
+
+	/**
+	 * Creates a "client ready" response.
+	 * This response is sent by the server when it receives a HANDSHAKE from a new client.  It means that the client can
+	 * begin sending new messages.
+	 * 
+	 * @param expectedNextNonce The nonce the server is expecting the client to use on its next message.
+	 * @param lastCommitGlobalOffset The most recent global message offset which was committed on the server.
+	 * @return A new ClientResponse instance.
+	 */
+	public static ClientResponse clientReady(long expectedNextNonce, long lastCommitGlobalOffset) {
+		return new ClientResponse(ClientResponseType.CLIENT_READY, expectedNextNonce, lastCommitGlobalOffset);
 	}
 
 	/**
@@ -25,6 +39,7 @@ public class ClientResponse {
 	 * received by the leader of the cluster.
 	 * 
 	 * @param nonce Per-client nonce of the message being acknowledged.
+	 * @param lastCommitGlobalOffset The most recent global message offset which was committed on the server.
 	 * @return A new ClientResponse instance.
 	 */
 	public static ClientResponse received(long nonce, long lastCommitGlobalOffset) {
@@ -39,6 +54,7 @@ public class ClientResponse {
 	 * to the client, it is now guaranteed to happen.
 	 * 
 	 * @param nonce Per-client nonce of the message being acknowledged.
+	 * @param lastCommitGlobalOffset The most recent global message offset which was committed on the server.
 	 * @return A new ClientResponse instance.
 	 */
 	public static ClientResponse committed(long nonce, long lastCommitGlobalOffset) {

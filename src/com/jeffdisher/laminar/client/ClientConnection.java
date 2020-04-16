@@ -67,9 +67,6 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 	private final InetSocketAddress _serverAddress;
 	private final NetworkManager _network;
 	private final UUID _clientId;
-	// The handshake response is what the client waits on before sending messages.
-	// (this is final until we implement the reconnect logic where this will be modified to wait for full reconnect)
-	private final ClientResult _handshakeResult;
 	private NodeToken _connection;
 
 	private volatile boolean _keepRunning;
@@ -79,6 +76,13 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 	private final List<ClientResult> _outgoingMessages;
 	// NOTE:  _inFlightMessages can ONLY be accessed by _backgroundThread.
 	private final Map<Long, ClientResult> _inFlightMessages;
+	// This is part of the connection state machine - once a connection is established, we need to ask the internal
+	// thread to send a handshake.  This also means that a single write is allowed, although _canWrite wasn't set for
+	// general use.
+	private boolean _handshakeRequired;
+	// We keep track of whether or not we have received the CLIENT_READY message so callers can ask if the network is
+	// "up" and to ensure we don't write while still waiting for state sync.
+	private boolean _isClientReady;
 	private long _nextNonce;
 	// We store the last global commit the server sends us in responses so we can ask what happened since then, when
 	// reconnecting.  It is only read or written by _backgroundThread.
@@ -109,16 +113,13 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 		// so the matter is 6 vs 1/2 dozen and this is more direct.
 		_backgroundThread.setName("Laminar client (" + server + ")");
 		_backgroundThread.start();
-		
-		// (we will always queue up our handshake since this is a new client connection).
-		ClientMessage handshake = ClientMessage.handshake(_clientId);
-		_handshakeResult = new ClientResult(handshake);
-		_outgoingMessages.add(_handshakeResult);
 	}
 
-	public void waitForConnection() throws InterruptedException {
-		// We just wait for the result of the handshake (the commit is synthesized on the server so it is the same as received).
-		_handshakeResult.waitForCommitted();
+	public synchronized void waitForConnection() throws InterruptedException {
+		// Wait until we get a CLIENT_READY message on this connection.
+		while (!_isClientReady) {
+			this.wait();
+		}
 	}
 
 	public synchronized ClientResult sendTemp(byte[] payload) {
@@ -145,12 +146,15 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 	 * created.
 	 * In some cases of client misconfiguration, a total cluster failure, or a serious network problem, this may result
 	 * in clients freezing for non-obvious reasons.  This method exists to allow a view into that state.
+	 * This is similar to waitForConnection() but it blocks while this method would just return false (or throw).  The
+	 * main distinction is in use-case:  waitForConnection() is useful for bootstrapping client logic while this is more
+	 * about an informational health check if something is wrong at the network level.
 	 * 
 	 * @return True if the client believes that a network connection exists.  False if a reconnection is in progress.
 	 * @throws IOException If the connection or reconnection has been failing, this is the last error observed.
 	 */
 	public synchronized boolean checkConnection() throws IOException {
-		boolean isNetworkUp = (null != _connection);
+		boolean isNetworkUp = _isClientReady;
 		if (!isNetworkUp && (null != _mostRecentConnectionFailure)) {
 			throw _mostRecentConnectionFailure;
 		}
@@ -190,8 +194,8 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 		_connection = node;
 		// Clear any now-stale connection error.
 		_mostRecentConnectionFailure = null;
-		// Every connection starts writable.
-		_canWrite = true;
+		// We immediately send our handshake and wait for CLIENT_READY (so we don't set the _canWrite since claim it).
+		_handshakeRequired = true;
 		this.notifyAll();
 	}
 
@@ -199,6 +203,8 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 	public synchronized void outboundNodeDisconnected(NodeToken node) {
 		Assert.assertTrue(_connection == node);
 		_connection = null;
+		// We will also need to reconnect and wait for CLIENT_READY so the client isn't ready.
+		_isClientReady = false;
 	}
 
 	@Override
@@ -229,11 +235,13 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 	private void _backgroundThreadMain() {
 		while (_keepRunning) {
 			boolean canRead = false;
+			ClientMessage handshakeToSend = null;
 			ClientResult messageToWrite = null;
 			
 			// Wait for something to do.
 			synchronized (this) {
-				while (_keepRunning && (0 == _pendingMessages) && (_outgoingMessages.isEmpty() || !_canWrite) && (null == _currentConnectionFailure)) {
+				// Note that we don't consider that we have anything to write until we have something in the outgoing list and the writable flag is set and the client is ready.
+				while (_keepRunning && (0 == _pendingMessages) && (_outgoingMessages.isEmpty() || !_canWrite || !_isClientReady) && (null == _currentConnectionFailure) && !_handshakeRequired) {
 					try {
 						this.wait();
 					} catch (InterruptedException e) {
@@ -245,7 +253,7 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 					_pendingMessages -= 1;
 					canRead = true;
 				}
-				if (!_outgoingMessages.isEmpty() && _canWrite) {
+				if (!_outgoingMessages.isEmpty() && _canWrite && _isClientReady) {
 					// Currently, we only send a single message at a time but this will be made more aggressive in the future.
 					messageToWrite = _outgoingMessages.remove(0);
 					_canWrite = false;
@@ -267,6 +275,10 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 					_mostRecentConnectionFailure = _currentConnectionFailure;
 					_currentConnectionFailure = null;
 				}
+				if (_handshakeRequired) {
+					handshakeToSend = ClientMessage.handshake(_clientId);
+					_handshakeRequired = false;
+				}
 			}
 			
 			// Do whatever we can.
@@ -274,7 +286,10 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 				_backgroundReadAndDispatchMessage();
 			}
 			if (null != messageToWrite) {
-				_serializeAndWriteMessage(messageToWrite);
+				_sendMessageInWrapper(messageToWrite);
+			}
+			if (null != handshakeToSend) {
+				_serializeAndSendMessage(handshakeToSend);
 			}
 		}
 	}
@@ -298,6 +313,14 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 		case INVALID:
 			Assert.unreachable("Invalid response type");
 			break;
+		case CLIENT_READY:
+			// This means that we are able to start sending normal messages.
+			// TODO:  Move this synchronized elsewhere - this is just to make the waitForConnection case work until this can be reshaped.
+			synchronized(this) {
+				_isClientReady = true;
+				this.notifyAll();
+			}
+			break;
 		case RECEIVED:
 			result.setReceived();
 			break;
@@ -312,13 +335,19 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 		}
 	}
 
-	private void _serializeAndWriteMessage(ClientResult messageToWrite) {
+	private void _sendMessageInWrapper(ClientResult wrapper) {
+		// Unwrap the message.
+		ClientMessage messageToWrite = wrapper.message;
+		_serializeAndSendMessage(messageToWrite);
+		// We also need to track this as an in-flight message.
+		_inFlightMessages.put(messageToWrite.nonce, wrapper);
+	}
+
+	private void _serializeAndSendMessage(ClientMessage messageToWrite) {
 		// Serialize the message.
-		byte[] serialized = messageToWrite.message.serialize();
+		byte[] serialized = messageToWrite.serialize();
 		boolean didSend = _network.trySendMessage(_connection, serialized);
 		// We only wrote in response to the buffer being empty so this can't fail.
 		Assert.assertTrue(didSend);
-		// We also need to track this as an in-flight message.
-		_inFlightMessages.put(messageToWrite.message.nonce, messageToWrite);
 	}
 }

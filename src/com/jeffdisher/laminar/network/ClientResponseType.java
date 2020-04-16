@@ -14,6 +14,11 @@ public enum ClientResponseType {
 	 */
 	ERROR,
 	/**
+	 * Sent by the server in response to a HANDSHAKE message to notify the client that it is cleared to start sending
+	 * new messages.
+	 */
+	CLIENT_READY,
+	/**
 	 * Means that at least the cluster leader has observed the message and determined its global order.
 	 */
 	RECEIVED,
