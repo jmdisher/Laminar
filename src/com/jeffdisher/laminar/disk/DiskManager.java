@@ -6,6 +6,7 @@ import java.util.LinkedList;
 import java.util.List;
 
 import com.jeffdisher.laminar.types.EventRecord;
+import com.jeffdisher.laminar.types.MutationRecord;
 import com.jeffdisher.laminar.utils.Assert;
 
 
@@ -27,13 +28,18 @@ public class DiskManager {
 
 	// These are all accessed under monitor.
 	private boolean _keepRunning;
-	// Note that these events need to be written twice:  once as the input "global" event and again as the per-topic "commit" event.
-	// In the future, this will further parameterized to support AVM-synthesized commit events (since they are NOT in the input but ARE in the topics).
+	// We track the incoming commits in 2 lists:  one for the "global" mutations and one for the "local" events.
+	// NOTE:  In the future, the events need to be organized by topic (they don't store their topic, internally).
+	private final List<MutationRecord> _incomingCommitMutations;
 	private final List<EventRecord> _incomingCommitEvents;
-	// (this is a good example of something which will need to be split for "global" ad "per-topic" event namespaces).
+	// We track fetch requests in 2 lists:  one for the "global" mutations and one for the "local" events.
+	// NOTE:  In the future, the events need to be organized by topic (since they are stored in different topics).
+	private final List<Long> _incomingFetchMutationRequests;
 	private final List<Long> _incomingFetchEventRequests;
 
 	// Only accessed by background thread (current virtual "disk").
+	// NOTE:  In the future, the events need to be organized by topic.
+	private final List<MutationRecord> _committedMutationVirtualDisk;
 	private final List<EventRecord> _committedEventVirtualDisk;
 
 	public DiskManager(File dataDirectory, IDiskManagerBackgroundCallbacks callbackTarget) {
@@ -53,10 +59,15 @@ public class DiskManager {
 		};
 		
 		_keepRunning = false;
+		_incomingCommitMutations = new LinkedList<>();
 		_incomingCommitEvents = new LinkedList<>();
+		_incomingFetchMutationRequests = new LinkedList<>();
 		_incomingFetchEventRequests = new LinkedList<>();
+		_committedMutationVirtualDisk = new LinkedList<>();
 		_committedEventVirtualDisk = new LinkedList<>();
-		// (we introduce a null to the virtual disk since it must be 1-indexed)
+		
+		// (we introduce a null to all virtual disk extents since they must be 1-indexed)
+		_committedMutationVirtualDisk.add(null);
 		_committedEventVirtualDisk.add(null);
 	}
 
@@ -86,6 +97,18 @@ public class DiskManager {
 	}
 
 	/**
+	 * Request that the given mutation be asynchronously committed.
+	 * 
+	 * @param event The mutation to commit.
+	 */
+	public synchronized void commitMutation(MutationRecord event) {
+		// Make sure this isn't reentrant.
+		Assert.assertTrue(Thread.currentThread() != _background);
+		_incomingCommitMutations.add(event);
+		this.notifyAll();
+	}
+
+	/**
 	 * Request that the given event be asynchronously committed.
 	 * NOTE:  This will be changed to per-topic commit, in the future.
 	 * 
@@ -95,6 +118,18 @@ public class DiskManager {
 		// Make sure this isn't reentrant.
 		Assert.assertTrue(Thread.currentThread() != _background);
 		_incomingCommitEvents.add(event);
+		this.notifyAll();
+	}
+
+	/**
+	 * Requests that the mutation with the associated global offset be asynchronously fetched.
+	 * 
+	 * @param globalOffset The offset of the mutation to load.
+	 */
+	public synchronized void fetchMutation(long globalOffset) {
+		// Make sure this isn't reentrant.
+		Assert.assertTrue(Thread.currentThread() != _background);
+		_incomingFetchMutationRequests.add(globalOffset);
 		this.notifyAll();
 	}
 
@@ -117,11 +152,15 @@ public class DiskManager {
 		// (this would also avoiding needing multiple intermediary containers and structures)
 		Work work = _backgroundWaitForWork();
 		while (null != work) {
-			if (null != work.commitEvent) {
+			if (null != work.commitMutation) {
+				_committedMutationVirtualDisk.add(work.commitMutation);
+				_callbackTarget.mutationWasCommitted(work.commitMutation);
+			}
+			else if (null != work.commitEvent) {
 				_committedEventVirtualDisk.add(work.commitEvent);
 				_callbackTarget.eventWasCommitted(work.commitEvent);
 			}
-			else if (0L != work.fetchEvent) {
+			else if (0L != work.fetchMutation) {
 				// This design might change but we currently "push" the fetched data over the background callback instead
 				// of telling the caller that it is available and that they must request it.
 				// The reason for this is that keeping it here would represent a sort of logical cache which the DiskManager
@@ -129,6 +168,10 @@ public class DiskManager {
 				// (this is because it would not be able to evict the element until the caller was "done" with it)
 				// In the future, this layer almost definitely will have a cache but it will be an LRU physical cache which
 				// is not required to satisfy all requests.
+				MutationRecord record = _committedMutationVirtualDisk.get((int)work.fetchMutation);
+				_callbackTarget.mutationWasFetched(record);
+			}
+			else if (0L != work.fetchEvent) {
 				EventRecord record = _committedEventVirtualDisk.get((int)work.fetchEvent);
 				_callbackTarget.eventWasFetched(record);
 			}
@@ -137,7 +180,7 @@ public class DiskManager {
 	}
 
 	private synchronized Work _backgroundWaitForWork() {
-		while (_keepRunning && _incomingCommitEvents.isEmpty() && _incomingFetchEventRequests.isEmpty()) {
+		while (_keepRunning && _incomingCommitEvents.isEmpty() && _incomingCommitMutations.isEmpty() && _incomingFetchEventRequests.isEmpty() && _incomingFetchMutationRequests.isEmpty()) {
 			try {
 				this.wait();
 			} catch (InterruptedException e) {
@@ -149,8 +192,12 @@ public class DiskManager {
 		if (_keepRunning) {
 			if (!_incomingCommitEvents.isEmpty()) {
 				todo = Work.commitEvent(_incomingCommitEvents.remove(0));
+			} else if (!_incomingCommitMutations.isEmpty()) {
+				todo = Work.commitMutation(_incomingCommitMutations.remove(0));
 			} else if (!_incomingFetchEventRequests.isEmpty()) {
 				todo = Work.fetchEvent(_incomingFetchEventRequests.remove(0));
+			} else if (!_incomingFetchMutationRequests.isEmpty()) {
+				todo = Work.fetchMutation(_incomingFetchMutationRequests.remove(0));
 			}
 		}
 		return todo;
@@ -161,18 +208,28 @@ public class DiskManager {
 	 * A simple tuple used to pass back work from the synchronized wait loop.
 	 */
 	private static class Work {
+		public static Work commitMutation(MutationRecord toCommit) {
+			return new Work(toCommit, null, 0L, 0L);
+		}
 		public static Work commitEvent(EventRecord toCommit) {
-			return new Work(toCommit, 0L);
+			return new Work(null, toCommit, 0L, 0L);
+		}
+		public static Work fetchMutation(long toFetch) {
+			return new Work(null, null, toFetch, 0L);
 		}
 		public static Work fetchEvent(long toFetch) {
-			return new Work(null, toFetch);
+			return new Work(null, null, 0L, toFetch);
 		}
 		
+		public final MutationRecord commitMutation;
 		public final EventRecord commitEvent;
+		public final long fetchMutation;
 		public final long fetchEvent;
 		
-		private Work(EventRecord commitEvent, long fetchEvent) {
+		private Work(MutationRecord commitMutation, EventRecord commitEvent, long fetchMutation, long fetchEvent) {
+			this.commitMutation = commitMutation;
 			this.commitEvent = commitEvent;
+			this.fetchMutation = fetchMutation;
 			this.fetchEvent = fetchEvent;
 		}
 	}

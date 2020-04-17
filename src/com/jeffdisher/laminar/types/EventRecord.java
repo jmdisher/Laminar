@@ -7,15 +7,10 @@ import com.jeffdisher.laminar.utils.Assert;
 
 
 /**
- * The logical representation of an event in the stream.  This form is the same for received and committed events and
- * is also the form the listener receives.
- * Note that records have a distinct notion of global and local offsets:
- * -global is only used for the input event stream:  client writing an event or leader appending to a follower
- * -local is only used for committed events:  the offset within that specific output topic
- * The reason for this distinction is that programmable topics can map a single input event to zero or many output
- * events and the listeners need to be able to address them.
- * Note that all input events have a 0 localOffset but all committed events have the globalOffset of their originating
- * input event.
+ * See {@link MutationRecord} for a description of the distinction between MutationRecord and EventRecord.
+ * 
+ * This class represents the logical representation of the event, as well as its physical
+ * serialization/deserialization logic.
  */
 public class EventRecord {
 	public static EventRecord generateRecord(long globalOffset, long localOffset, UUID clientId, long clientNonce, byte[] payload) {
