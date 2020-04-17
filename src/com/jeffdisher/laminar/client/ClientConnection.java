@@ -3,10 +3,10 @@ package com.jeffdisher.laminar.client;
 import java.io.Closeable;
 import java.io.IOException;
 import java.net.InetSocketAddress;
-import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
-import java.util.Map;
+import java.util.SortedMap;
+import java.util.TreeMap;
 import java.util.UUID;
 
 import com.jeffdisher.laminar.network.ClientMessage;
@@ -74,8 +74,9 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 	private int _pendingMessages;
 	private boolean _canWrite;
 	private final List<ClientResult> _outgoingMessages;
+	// _inFlightMessages must be sorted since we traverse the keys in-order at the start and end of reconnect.
 	// NOTE:  _inFlightMessages can ONLY be accessed by _backgroundThread.
-	private final Map<Long, ClientResult> _inFlightMessages;
+	private final SortedMap<Long, ClientResult> _inFlightMessages;
 	// This is part of the connection state machine - once a connection is established, we need to ask the internal
 	// thread to send a handshake.  This also means that a single write is allowed, although _canWrite wasn't set for
 	// general use.
@@ -93,13 +94,15 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 	// store a reference to the most recent failure we observed during connection, for external informational purposes.
 	private IOException _currentConnectionFailure;
 	private IOException _mostRecentConnectionFailure;
+	// (track whether or not we ever disconnect in order to determine if the next connect is a new connect or reconnect)
+	private boolean _hasDisconnectedEver;
 
 	private ClientConnection(InetSocketAddress server) throws IOException {
 		_serverAddress = server;
 		_network = NetworkManager.outboundOnly(this);
 		_clientId = UUID.randomUUID();
 		_outgoingMessages = new LinkedList<>();
-		_inFlightMessages = new HashMap<>();
+		_inFlightMessages = new TreeMap<>();
 		// First message has nonce of 1L.
 		_nextNonce = 1L;
 		_keepRunning = true;
@@ -205,6 +208,11 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 		_connection = null;
 		// We will also need to reconnect and wait for CLIENT_READY so the client isn't ready.
 		_isClientReady = false;
+		// We record that a disconnect happened so our next connection attempt is a reconnect.
+		_hasDisconnectedEver = true;
+		// TODO:  Find a way to observe the disconnect or report the exception, consistently.
+		_currentConnectionFailure = new IOException("Closed");
+		this.notifyAll();
 	}
 
 	@Override
@@ -276,7 +284,19 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 					_currentConnectionFailure = null;
 				}
 				if (_handshakeRequired) {
-					handshakeToSend = ClientMessage.handshake(_clientId);
+					// If we have ever been disconnected, this is a reconnect, otherwise the _outgoing messages are just the client jumping the gun.
+					if (_hasDisconnectedEver) {
+						// Reconnect.
+						// We need to send the lowest nonce we don't yet know committed (if any past this did commit, the server will update its state for us when it synthesizes the commits).
+						// Note that, if there are no in-flight messages, this is a degenerate reconnect where the server will send us nothing.
+						long lowestPossibleNextNonce = _inFlightMessages.isEmpty()
+								? _nextNonce
+								: _inFlightMessages.firstKey();
+						handshakeToSend = ClientMessage.reconnect(lowestPossibleNextNonce, _clientId, _lastCommitGlobalOffset);
+					} else {
+						// New connection.
+						handshakeToSend = ClientMessage.handshake(_clientId);
+					}
 					_handshakeRequired = false;
 				}
 			}
@@ -313,8 +333,20 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 		case INVALID:
 			Assert.unreachable("Invalid response type");
 			break;
+		case ERROR:
+			Assert.unimplemented("TODO:  Determine how to handle ERROR responses");
+			break;
 		case CLIENT_READY:
 			// This means that we are able to start sending normal messages.
+			// Between the RECONNECT and this message, the server re-sent synthesized received and committed messsages
+			// from the lastCommitGlobalOffset we set them so they know the nonce of the next message we will send.
+			// Now, all we have to do is take any remaining in-flight messages (those not satisfied by the sythesized
+			// messages) and push them onto the front of outgoing messages, in the correct nonce order.  Then we can set
+			// _isClientReady and the normal logic should play out as though nothing was wrong.
+			
+			// We rely on the SortedMap returning a sorted collection of values whose iterator returns them in ascending order of corresponding keys.
+			_outgoingMessages.addAll(0, _inFlightMessages.values());
+			_inFlightMessages.clear();
 			// TODO:  Move this synchronized elsewhere - this is just to make the waitForConnection case work until this can be reshaped.
 			synchronized(this) {
 				_isClientReady = true;

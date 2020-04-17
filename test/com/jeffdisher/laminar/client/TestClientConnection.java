@@ -5,12 +5,16 @@ import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.SocketChannel;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.UUID;
 
 import org.junit.Assert;
 import org.junit.jupiter.api.Test;
 
 import com.jeffdisher.laminar.network.ClientMessage;
 import com.jeffdisher.laminar.network.ClientMessagePayload_Handshake;
+import com.jeffdisher.laminar.network.ClientMessagePayload_Reconnect;
 import com.jeffdisher.laminar.network.ClientMessagePayload_Temp;
 import com.jeffdisher.laminar.network.ClientMessageType;
 import com.jeffdisher.laminar.network.ClientResponse;
@@ -117,6 +121,84 @@ class TestClientConnection {
 		socket.close();
 	}
 
+	/**
+	 * This test will use one client connected to a faked-up server.  It will send several messages, the first few will
+	 * commit, the next few will only receive, and the next few will get no response.
+	 * One will also be sent after the disconnect in order to observe the disconnect (a keep-alive needs to be added).
+	 * We will then disconnect the client from the server side and observe what the client does when it reconnects and
+	 * the server will send back the same cached instances it already sent.
+	 * We will then send a few more messages.  If all of them arrive at the server, in the right order, with no
+	 * duplicates, then the test will be considered passed.
+	 */
+	@Test
+	void testHeavyReconnect() throws Throwable {
+		// Create a server socket.
+		int port = PORT_BASE + 3;
+		long baseMutationOffset = 1000L;
+		ServerSocketChannel socket = createSocket(port);
+		FakeServer fakeServer = new FakeServer(socket, baseMutationOffset);
+		
+		// Start the client.
+		try (ClientConnection connection = ClientConnection.open(new InetSocketAddress("localhost", port))) {
+			ClientResult[] results = new ClientResult[10];
+			fakeServer.handleConnect();
+			
+			// Send normal messages.
+			results[0] = connection.sendTemp(new byte[]{101});
+			fakeServer.processNextMessage(true, true, true);
+			results[1] = connection.sendTemp(new byte[]{102});
+			fakeServer.processNextMessage(true, true, true);
+			results[2] = connection.sendTemp(new byte[]{103});
+			fakeServer.processNextMessage(true, true, true);
+			
+			// Send messages not committed, last not even written.
+			results[3] = connection.sendTemp(new byte[]{104});
+			fakeServer.processNextMessage(true, true, false);
+			results[4] = connection.sendTemp(new byte[]{105});
+			fakeServer.processNextMessage(true, true, false);
+			results[5] = connection.sendTemp(new byte[]{106});
+			fakeServer.processNextMessage(true, false, false);
+			
+			// Send messages with no response.
+			results[6] = connection.sendTemp(new byte[]{107});
+			fakeServer.processNextMessage(false, false, false);
+			results[7] = connection.sendTemp(new byte[]{108});
+			fakeServer.processNextMessage(false, false, false);
+			results[8] = connection.sendTemp(new byte[]{109});
+			fakeServer.processNextMessage(false, false, false);
+			
+			// Wait for expected states.
+			results[0].waitForCommitted();
+			results[1].waitForCommitted();
+			results[2].waitForCommitted();
+			results[3].waitForReceived();
+			results[4].waitForReceived();
+			results[5].waitForReceived();
+			
+			// Do the reconnect.
+			fakeServer.disconnect();
+			results[9] = connection.sendTemp(new byte[]{110});
+			fakeServer.handleReconnect();
+			// Now, process all re-sent and the new message (index [5..9]).
+			for (int i = 5; i <= 9; ++i) {
+				fakeServer.processNextMessage(true, true, true);
+			}
+			// Make sure we got all the commits.
+			for (ClientResult result : results) {
+				result.waitForReceived();
+				result.waitForCommitted();
+			}
+		}
+		socket.close();
+		// Now, verify the server got everything.
+		byte messagePayloadBias = 101;
+		for (byte i = 0; i < 10; ++i) {
+			ClientMessage message = fakeServer.messageByMutationOffset.get(baseMutationOffset + (long)i);
+			Assert.assertEquals(messagePayloadBias + i, ((ClientMessagePayload_Temp)message.payload).contents[0]);
+			
+		}
+	}
+
 
 	private ServerSocketChannel createSocket(int port) throws IOException {
 		ServerSocketChannel socket = ServerSocketChannel.open();
@@ -153,5 +235,121 @@ class TestClientConnection {
 		writeBuffer.flip();
 		int didWrite = server.write(writeBuffer);
 		Assert.assertEquals(writeBuffer.position(), didWrite);
+	}
+
+
+	private static class FakeServer {
+		private final ServerSocketChannel _socket;
+		public final Map<Long, ClientMessage> messageByMutationOffset;
+		private long _nextMutationOffset;
+		private long _mostRecentCommitOffset;
+		
+		private SocketChannel _clientConnection;
+		private UUID _clientId;
+		private long _clientNextNonce;
+		
+		public FakeServer(ServerSocketChannel socket, long baseMutationOffset) {
+			_socket = socket;
+			this.messageByMutationOffset = new HashMap<>();
+			// We bias the starting mutation offset so the client nonce doesn't match it.
+			_nextMutationOffset = baseMutationOffset;
+			_mostRecentCommitOffset = _nextMutationOffset - 1L;
+		}
+		
+		public void handleConnect() throws IOException {
+			_clientConnection = _socket.accept();
+			_clientConnection.configureBlocking(true);
+			
+			ClientMessage message = _readNextMessage();
+			Assert.assertEquals(ClientMessageType.HANDSHAKE, message.type);
+			_clientId = ((ClientMessagePayload_Handshake)message.payload).clientId;
+			_clientNextNonce = 1L;
+			
+			ClientResponse response = ClientResponse.clientReady(1L, _mostRecentCommitOffset);
+			_sendResponse(response);
+		}
+		
+		public void processNextMessage(boolean received, boolean store, boolean committed) throws IOException {
+			ClientMessage message = _readNextMessage();
+			Assert.assertEquals(ClientMessageType.TEMP, message.type);
+			Assert.assertEquals(_clientNextNonce, message.nonce);
+			_clientNextNonce += 1L;
+			if (received) {
+				_sendResponse(ClientResponse.received(message.nonce, _mostRecentCommitOffset));
+				if (store) {
+					ClientMessage old = this.messageByMutationOffset.put(_nextMutationOffset++, message);
+					Assert.assertNull(old);
+					if (committed) {
+						_mostRecentCommitOffset = _nextMutationOffset - 1L;
+						_sendResponse(ClientResponse.committed(message.nonce, _mostRecentCommitOffset));
+					}
+				}
+			}
+		}
+		
+		public void disconnect() throws IOException {
+			_clientConnection.close();
+			_clientConnection = null;
+		}
+		
+		public void handleReconnect() throws IOException {
+			_clientConnection = _socket.accept();
+			_clientConnection.configureBlocking(true);
+			ClientMessage message = _readNextMessage();
+			ClientMessagePayload_Reconnect reconnect = (ClientMessagePayload_Reconnect)message.payload;
+			Assert.assertEquals(_clientId, reconnect.clientId);
+			// The last commit we would have told them the same "last commit" in the last few responses.
+			Assert.assertEquals(_mostRecentCommitOffset, reconnect.lastCommitGlobalOffset);
+			
+			// We should only have stored the next 2 commits after this one.
+			_clientNextNonce = message.nonce;
+			long globalMutationToLoad = reconnect.lastCommitGlobalOffset + 1L;
+			for (int i = 0; i < 2; ++i) {
+				ClientMessage oneToSendBack = this.messageByMutationOffset.get(globalMutationToLoad);
+				Assert.assertNotNull(oneToSendBack);
+				_sendResponse(ClientResponse.received(oneToSendBack.nonce, _mostRecentCommitOffset));
+				_sendResponse(ClientResponse.committed(oneToSendBack.nonce, _mostRecentCommitOffset));
+				// We can also verify that they next nonce they gave us is for this message.
+				Assert.assertEquals(_clientNextNonce, oneToSendBack.nonce);
+				_clientNextNonce += 1L;
+				globalMutationToLoad += 1L;
+			}
+			
+			// The next one shouldn't be in storage.
+			Assert.assertFalse(this.messageByMutationOffset.containsKey(globalMutationToLoad));
+			// Just send them the ready since we have fallen off our storage.
+			_sendResponse(ClientResponse.clientReady(_clientNextNonce, _mostRecentCommitOffset));
+		}
+		
+		private ClientMessage _readNextMessage() throws IOException {
+			ByteBuffer frameSize = ByteBuffer.allocate(Short.BYTES);
+			_readCompletely(frameSize);
+			frameSize.flip();
+			ByteBuffer buffer = ByteBuffer.allocate(Short.toUnsignedInt(frameSize.getShort()));
+			_readCompletely(buffer);
+			buffer.flip();
+			return ClientMessage.deserialize(buffer.array());
+		}
+		
+		private void _readCompletely(ByteBuffer buffer) throws IOException {
+			int read = _clientConnection.read(buffer);
+			// If we read less, this test will need to be made more complex.
+			Assert.assertEquals(buffer.capacity(), read);
+		}
+		
+		private void _sendResponse(ClientResponse response) throws IOException {
+			byte[] serialized = response.serialize();
+			ByteBuffer frameSize = ByteBuffer.allocate(2);
+			frameSize.putShort((short)serialized.length);
+			frameSize.flip();
+			_writeCompletely(frameSize);
+			_writeCompletely(ByteBuffer.wrap(serialized));
+		}
+		
+		private void _writeCompletely(ByteBuffer buffer) throws IOException {
+			int write = _clientConnection.write(buffer);
+			// If we read less, this test will need to be made more complex.
+			Assert.assertEquals(buffer.capacity(), write);
+		}
 	}
 }

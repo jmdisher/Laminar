@@ -305,6 +305,76 @@ class TestLaminar {
 		runner.join();
 	}
 
+	@Test
+	void testSimulatedClientReconnect() throws Throwable {
+		// Here, we start up, connect a client, send one message, wait for it to commit, then shut everything down.
+		PipedOutputStream outStream = new PipedOutputStream();
+		PipedInputStream inStream = new PipedInputStream(outStream);
+		PrintStream feeder = new PrintStream(outStream);
+		System.setIn(inStream);
+		
+		// We need to run the Laminar process in a thread it will control and then sleep for startup.
+		// (this way of using sleep for timing is a hack but this will eventually be made into a more reliable integration test, probably outside of JUnit).
+		Thread runner = new Thread() {
+			@Override
+			public void run() {
+				Laminar.main(new String[] {"--client", "2002", "--cluster", "2003", "--data", "/tmp/laminar"});
+			}
+		};
+		runner.start();
+		
+		// HACK - wait for startup.
+		Thread.sleep(500);
+		
+		// Fake a connection from a client:  send the handshake and a few messages, then disconnect.
+		InetSocketAddress address = new InetSocketAddress("localhost", 2002);
+		UUID clientId = UUID.randomUUID();
+		SocketChannel outbound = SocketChannel.open();
+		outbound.configureBlocking(true);
+		outbound.connect(address);
+		_sendMessage(outbound, ClientMessage.handshake(clientId));
+		ClientResponse ready = _readResponse(outbound);
+		Assert.assertEquals(ClientResponseType.CLIENT_READY, ready.type);
+		ClientMessage temp1 = ClientMessage.temp(1L, new byte[] {1});
+		ClientMessage temp2 = ClientMessage.temp(2L, new byte[] {2});
+		ClientMessage temp3 = ClientMessage.temp(3L, new byte[] {3});
+		_sendMessage(outbound, temp1);
+		_readResponse(outbound);
+		long lastCommitGlobalOffset = _readResponse(outbound).lastCommitGlobalOffset;
+		// We will fake that 2 and 3 went missing.
+		_sendMessage(outbound, temp2);
+		_readResponse(outbound);
+		_readResponse(outbound);
+		_sendMessage(outbound, temp3);
+		_readResponse(outbound);
+		_readResponse(outbound);
+		outbound.close();
+		
+		outbound = SocketChannel.open();
+		outbound.configureBlocking(true);
+		outbound.connect(address);
+		_sendMessage(outbound, ClientMessage.reconnect(temp2.nonce, clientId, lastCommitGlobalOffset));
+		// We expect to see the received and committed of temp2 and temp3.
+		_readResponse(outbound);
+		_readResponse(outbound);
+		_readResponse(outbound);
+		_readResponse(outbound);
+		// Followed by the ready.
+		ready = _readResponse(outbound);
+		Assert.assertEquals(ClientResponseType.CLIENT_READY, ready.type);
+		ClientMessage temp4 = ClientMessage.temp(4L, new byte[] {4});
+		_sendMessage(outbound, temp4);
+		_readResponse(outbound);
+		ClientResponse commit4 = _readResponse(outbound);
+		Assert.assertEquals(ClientResponseType.COMMITTED, commit4.type);
+		Assert.assertEquals(temp4.nonce, commit4.nonce);
+		// Since this is a commit and we sent 4 messages, we must see a final commit of 4.
+		Assert.assertEquals(4L, commit4.lastCommitGlobalOffset);
+		
+		feeder.println("stop");
+		runner.join();
+	}
+
 
 	private void _sendMessage(SocketChannel socket, ClientMessage message) throws IOException {
 		byte[] serialized = message.serialize();

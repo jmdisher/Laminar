@@ -30,6 +30,24 @@ public class ClientMessage {
 	}
 
 	/**
+	 * The first message sent by an existing client when they reconnect after a network failure of cluster fail-over.
+	 * They send this _instead_ of a handshake and this tells the server to start sending any received/committed
+	 * responses which logically should have been sent when the connection was down.  This means messages which did
+	 * commit but the client never received that message so it doesn't know.  Anything the server can't say committed,
+	 * the client will then be able to re-send.
+	 * 
+	 * @param lowestNextNonce The next nonce the client will use, assuming the server didn't see any of its in-flight
+	 * messages.  The server will use this to find any messages which the client didn't hear about.
+	 * @param clientId The UUID of the client (same as the UUID sent in the initial handshake).
+	 * @param lastCommitGlobalOffset The last global mutation offset the client knows that the server committed.  The
+	 * commit will start looking for missing messages after this point.
+	 * @return A new ClientMessage instance.
+	 */
+	public static ClientMessage reconnect(long lowestNextNonce, UUID clientId, long lastCommitGlobalOffset) {
+		return new ClientMessage(ClientMessageType.RECONNECT, lowestNextNonce, ClientMessagePayload_Reconnect.create(clientId, lastCommitGlobalOffset));
+	}
+
+	/**
 	 * Sends a listen request when a new connection wants to be a read-only listener instead of a normal client (for
 	 * which they would have sent a handshake).
 	 * 
@@ -72,11 +90,14 @@ public class ClientMessage {
 		long nonce = buffer.getLong();
 		IClientMessagePayload payload;
 		switch (type) {
+		case INVALID:
+			throw Assert.unimplemented("Handle invalid deserialization");
 		case HANDSHAKE:
 			payload = ClientMessagePayload_Handshake.deserialize(buffer);
 			break;
-		case INVALID:
-			throw Assert.unimplemented("Handle invalid deserialization");
+		case RECONNECT:
+			payload = ClientMessagePayload_Reconnect.deserialize(buffer);
+			break;
 		case LISTEN:
 			payload = ClientMessagePayload_Listen.deserialize(buffer);
 			break;
