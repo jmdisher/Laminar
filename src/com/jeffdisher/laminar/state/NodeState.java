@@ -59,9 +59,9 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 	// (in the future, this will change to handle multiple topics).
 	private final Map<Long, List<ClientManager.ClientNode>> _listenersWaitingOnLocalOffset;
 	// The next global offset to assign to an incoming message.
-	private long _nextGlobalOffset;
+	private long _nextGlobalMutationOffset;
 	// The global offset most recently committed to disk (used to keep both the clients and other nodes in sync).
-	private long _lastCommitGlobalOffset;
+	private long _lastCommittedMutationOffset;
 	private boolean _keepRunning;
 	private final UninterruptableQueue _commandQueue;
 
@@ -76,7 +76,7 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 		_pendingMessageCommits = new HashMap<>();
 		_listenersWaitingOnLocalOffset = new HashMap<>();
 		// Global offsets are 1-indexed so the first one is 1L.
-		_nextGlobalOffset = 1L;
+		_nextGlobalMutationOffset = 1L;
 		_commandQueue = new UninterruptableQueue();
 	}
 
@@ -242,7 +242,7 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 						normalState.nextNonce += 1;
 						_backgroundNormalMessage(node, normalState, incoming);
 					} else {
-						_backgroundEnqueueMessageToClient(node, ClientResponse.error(incoming.nonce, _lastCommitGlobalOffset));
+						_backgroundEnqueueMessageToClient(node, ClientResponse.error(incoming.nonce, _lastCommittedMutationOffset));
 					}
 				} else {
 					Assert.assertTrue(null != listenerState);
@@ -300,14 +300,14 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 
 	// <IDiskManagerBackgroundCallbacks>
 	@Override
-	public void recordWasCommitted(EventRecord completed) {
+	public void eventWasCommitted(EventRecord completed) {
 		_commandQueue.put(new Runnable() {
 			@Override
 			public void run() {
 				// Update our global commit offset (set this first since other methods we are calling might want to read for common state).
 				// We setup this commit so it must be sequential (this is a good check to make sure the commits aren't being re-ordered in the disk layer, too).
-				Assert.assertTrue((_lastCommitGlobalOffset + 1) == completed.globalOffset);
-				_lastCommitGlobalOffset = completed.globalOffset;
+				Assert.assertTrue((_lastCommittedMutationOffset + 1) == completed.globalOffset);
+				_lastCommittedMutationOffset = completed.globalOffset;
 				// Look up the tuple so we know which clients and listeners should be told about the commit.
 				ClientCommitTuple tuple = _pendingMessageCommits.remove(completed.globalOffset);
 				// This was requested for the specific tuple so it can't be missing.
@@ -320,7 +320,7 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 	}
 
 	@Override
-	public void recordWasFetched(EventRecord record) {
+	public void eventWasFetched(EventRecord record) {
 		_commandQueue.put(new Runnable() {
 			@Override
 			public void run() {
@@ -361,7 +361,7 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 			_normalClients.put(client, state);
 			
 			// The HANDSHAKE is special so we return CLIENT_READY instead of a RECEIVED and COMMIT (which is otherwise all we send).
-			ClientResponse ready = ClientResponse.clientReady(state.nextNonce, _lastCommitGlobalOffset);
+			ClientResponse ready = ClientResponse.clientReady(state.nextNonce, _lastCommittedMutationOffset);
 			System.out.println("HANDSHAKE: " + state.clientId);
 			_backgroundEnqueueMessageToClient(client, ready);
 			break;
@@ -371,7 +371,7 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 			// In this case, they won't send any other messages to us and just expect a constant stream of raw EventRecords to be sent to them.
 			// Note that this message overloads the nonce as the last received local offset.
 			long lastReceivedLocalOffset = incoming.nonce;
-			if ((lastReceivedLocalOffset < 0L) || (lastReceivedLocalOffset >= _nextGlobalOffset)) {
+			if ((lastReceivedLocalOffset < 0L) || (lastReceivedLocalOffset >= _nextGlobalMutationOffset)) {
 				Assert.unimplemented("This listener is invalid so disconnect it");
 			}
 			// Create the new state and change the connection state in the maps.
@@ -397,16 +397,16 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 		case TEMP:
 			// This is just for initial testing:  send the received, log it, and send the commit.
 			// (client outgoing message list is unbounded so this is safe to do all at once).
-			ClientResponse ack = ClientResponse.received(incoming.nonce, _lastCommitGlobalOffset);
+			ClientResponse ack = ClientResponse.received(incoming.nonce, _lastCommittedMutationOffset);
 			_backgroundEnqueueMessageToClient(client, ack);
 			byte[] contents = ((ClientMessagePayload_Temp)incoming.payload).contents;
 			System.out.println("GOT TEMP FROM " + state.clientId + ": \"" + new String(contents) + "\" (nonce " + incoming.nonce + ")");
 			// Create the EventRecord, add it to storage, and set up the commit to send once we get the notification that it is durable.
 			// (for now, we don't have per-topic streams or programmable topics so the localOffset is the same as the global).
-			long globalOffset = _nextGlobalOffset++;
+			long globalOffset = _nextGlobalMutationOffset++;
 			long localOffset = globalOffset;
 			EventRecord record = EventRecord.generateRecord(globalOffset, localOffset, state.clientId, incoming.nonce, contents);
-			ClientResponse commit = ClientResponse.committed(incoming.nonce, _lastCommitGlobalOffset);
+			ClientResponse commit = ClientResponse.committed(incoming.nonce, _lastCommittedMutationOffset);
 			// Setup the record for the async response and send the commit to the disk.
 			// Note that both the client and the listeners are only notified of the committed event once it is durable.
 			_pendingMessageCommits.put(globalOffset, new ClientCommitTuple(client, commit));
@@ -447,8 +447,8 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 			waitingList = new LinkedList<>();
 			_listenersWaitingOnLocalOffset.put(nextLocalOffset, waitingList);
 			// Unless this is the next offset (meaning we are waiting for a client to send it), then request the load.
-			// WARNING:  We currently only use the global offset for these until we have per-topic committing.
-			if (nextLocalOffset < _nextGlobalOffset) {
+			// Note that this, like all uses of "local" or "event-based" offsets, will eventually need to be per-topic.
+			if (nextLocalOffset < _nextGlobalMutationOffset) {
 				_diskManager.fetchEvent(nextLocalOffset);
 			}
 		}

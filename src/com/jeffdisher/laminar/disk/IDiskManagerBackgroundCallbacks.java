@@ -8,16 +8,16 @@ import com.jeffdisher.laminar.types.EventRecord;
  */
 public interface IDiskManagerBackgroundCallbacks {
 	/**
-	 * A previously requested commit operation has completed.
+	 * A previously requested event commit operation has completed.
 	 * 
 	 * @param completed The record which has now committed.
 	 */
-	void recordWasCommitted(EventRecord completed);
+	void eventWasCommitted(EventRecord completed);
 
 	/**
-	 * A previously requested record has been fetched.
+	 * A previously requested event record has been fetched.
 	 * 
 	 * @param record The record which was fetched from storage.
 	 */
-	void recordWasFetched(EventRecord record);
+	void eventWasFetched(EventRecord record);
 }

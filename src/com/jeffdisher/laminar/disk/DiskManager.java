@@ -31,10 +31,10 @@ public class DiskManager {
 	// In the future, this will further parameterized to support AVM-synthesized commit events (since they are NOT in the input but ARE in the topics).
 	private final List<EventRecord> _incomingCommitEvents;
 	// (this is a good example of something which will need to be split for "global" ad "per-topic" event namespaces).
-	private final List<Long> _incomingFetchRequests;
+	private final List<Long> _incomingFetchEventRequests;
 
 	// Only accessed by background thread (current virtual "disk").
-	private final List<EventRecord> _committedVirtualDisk;
+	private final List<EventRecord> _committedEventVirtualDisk;
 
 	public DiskManager(File dataDirectory, IDiskManagerBackgroundCallbacks callbackTarget) {
 		// For now, we ignore the given directory as we are just going to be faking the disk in-memory.
@@ -54,10 +54,10 @@ public class DiskManager {
 		
 		_keepRunning = false;
 		_incomingCommitEvents = new LinkedList<>();
-		_incomingFetchRequests = new LinkedList<>();
-		_committedVirtualDisk = new LinkedList<>();
+		_incomingFetchEventRequests = new LinkedList<>();
+		_committedEventVirtualDisk = new LinkedList<>();
 		// (we introduce a null to the virtual disk since it must be 1-indexed)
-		_committedVirtualDisk.add(null);
+		_committedEventVirtualDisk.add(null);
 	}
 
 	/**
@@ -87,6 +87,7 @@ public class DiskManager {
 
 	/**
 	 * Request that the given event be asynchronously committed.
+	 * NOTE:  This will be changed to per-topic commit, in the future.
 	 * 
 	 * @param event The event to commit.
 	 */
@@ -98,26 +99,29 @@ public class DiskManager {
 	}
 
 	/**
-	 * Requests that the event with the associated global offset be asynchronously fetched.
+	 * Requests that the event with the associated localOffset offset be asynchronously fetched.
+	 * NOTE:  This will be changed to per-topic fetch, in the future.
 	 * 
-	 * @param globalOffset The offset of the event to load.
+	 * @param localOffset The offset of the event to load.
 	 */
-	public synchronized void fetchEvent(long globalOffset) {
+	public synchronized void fetchEvent(long localOffset) {
 		// Make sure this isn't reentrant.
 		Assert.assertTrue(Thread.currentThread() != _background);
-		_incomingFetchRequests.add(globalOffset);
+		_incomingFetchEventRequests.add(localOffset);
 		this.notifyAll();
 	}
 
 
 	private void _backgroundThreadMain() throws IOException {
+		// TODO:  This design should probably be changed to UninterruptibleQueue in order to maintain commit order.
+		// (this would also avoiding needing multiple intermediary containers and structures)
 		Work work = _backgroundWaitForWork();
 		while (null != work) {
-			if (null != work.toCommit) {
-				_committedVirtualDisk.add(work.toCommit);
-				_callbackTarget.recordWasCommitted(work.toCommit);
+			if (null != work.commitEvent) {
+				_committedEventVirtualDisk.add(work.commitEvent);
+				_callbackTarget.eventWasCommitted(work.commitEvent);
 			}
-			else if (0L != work.toFetch) {
+			else if (0L != work.fetchEvent) {
 				// This design might change but we currently "push" the fetched data over the background callback instead
 				// of telling the caller that it is available and that they must request it.
 				// The reason for this is that keeping it here would represent a sort of logical cache which the DiskManager
@@ -125,15 +129,15 @@ public class DiskManager {
 				// (this is because it would not be able to evict the element until the caller was "done" with it)
 				// In the future, this layer almost definitely will have a cache but it will be an LRU physical cache which
 				// is not required to satisfy all requests.
-				EventRecord record = _committedVirtualDisk.get((int)work.toFetch);
-				_callbackTarget.recordWasFetched(record);
+				EventRecord record = _committedEventVirtualDisk.get((int)work.fetchEvent);
+				_callbackTarget.eventWasFetched(record);
 			}
 			work = _backgroundWaitForWork();
 		}
 	}
 
 	private synchronized Work _backgroundWaitForWork() {
-		while (_keepRunning && _incomingCommitEvents.isEmpty() && _incomingFetchRequests.isEmpty()) {
+		while (_keepRunning && _incomingCommitEvents.isEmpty() && _incomingFetchEventRequests.isEmpty()) {
 			try {
 				this.wait();
 			} catch (InterruptedException e) {
@@ -141,11 +145,15 @@ public class DiskManager {
 				Assert.unexpected(e);
 			}
 		}
-		return _keepRunning
-				? _incomingCommitEvents.isEmpty()
-						? Work.toFetch(_incomingFetchRequests.remove(0))
-						: Work.toCommit(_incomingCommitEvents.remove(0))
-				: null;
+		Work todo = null;
+		if (_keepRunning) {
+			if (!_incomingCommitEvents.isEmpty()) {
+				todo = Work.commitEvent(_incomingCommitEvents.remove(0));
+			} else if (!_incomingFetchEventRequests.isEmpty()) {
+				todo = Work.fetchEvent(_incomingFetchEventRequests.remove(0));
+			}
+		}
+		return todo;
 	}
 
 
@@ -153,21 +161,19 @@ public class DiskManager {
 	 * A simple tuple used to pass back work from the synchronized wait loop.
 	 */
 	private static class Work {
-		public static Work toCommit(EventRecord toCommit) {
+		public static Work commitEvent(EventRecord toCommit) {
 			return new Work(toCommit, 0L);
 		}
-		public static Work toFetch(long toFetch) {
+		public static Work fetchEvent(long toFetch) {
 			return new Work(null, toFetch);
 		}
 		
-		public final EventRecord toCommit;
-		public final long toFetch;
+		public final EventRecord commitEvent;
+		public final long fetchEvent;
 		
-		private Work(EventRecord toCommit, long toFetch) {
-			Assert.assertTrue(toFetch >= 0L);
-			Assert.assertTrue((null != toCommit) != (toFetch > 0L));
-			this.toCommit = toCommit;
-			this.toFetch = toFetch;
+		private Work(EventRecord commitEvent, long fetchEvent) {
+			this.commitEvent = commitEvent;
+			this.fetchEvent = fetchEvent;
 		}
 	}
 }
