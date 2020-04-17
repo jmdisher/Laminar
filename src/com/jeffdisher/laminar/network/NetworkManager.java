@@ -116,6 +116,17 @@ public class NetworkManager {
 	}
 
 	public void startAndWaitForReady(String consumer) {
+		// We consider calls into the public interface on the internal thread to be statically incorrect re-entrance
+		// errors, so those are assertions.
+		// (this is gratuitous here but is added for consistency)
+		Assert.assertTrue(Thread.currentThread() != _background);
+		
+		if (_keepRunning) {
+			throw new IllegalStateException("Background thread already running");
+		}
+		if (null != _background) {
+			throw new IllegalStateException("NetworkManager is not restartable");
+		}
 		_keepRunning = true;
 		_background = new Thread() {
 			@Override
@@ -128,6 +139,10 @@ public class NetworkManager {
 	}
 
 	public void stopAndWaitForTermination() {
+		// We consider calls into the public interface on the internal thread to be statically incorrect re-entrance
+		// errors, so those are assertions.
+		Assert.assertTrue(Thread.currentThread() != _background);
+		
 		if (!_keepRunning) {
 			throw new IllegalStateException("Background thread not running");
 		}
@@ -167,12 +182,13 @@ public class NetworkManager {
 	 * @throws IllegalArgumentException If the payload is larger than MESSAGE_PAYLOAD_MAXIMUM_BYTES.
 	 */
 	public boolean trySendMessage(NetworkManager.NodeToken target, byte[] payload) throws IllegalArgumentException {
-		if (!_keepRunning) {
-			throw new IllegalStateException("Background thread not running");
-		}
 		// We consider calls into the public interface on the internal thread to be statically incorrect re-entrance
 		// errors, so those are assertions.
 		Assert.assertTrue(Thread.currentThread() != _background);
+		
+		if (!_keepRunning) {
+			throw new IllegalStateException("Background thread not running");
+		}
 		if (payload.length > MESSAGE_PAYLOAD_MAXIMUM_BYTES) {
 			throw new IllegalArgumentException("Buffer size greater than " + MESSAGE_PAYLOAD_MAXIMUM_BYTES);
 		}
@@ -214,13 +230,13 @@ public class NetworkManager {
 	 * @return The message payload or null if a complete message wasn't available.
 	 */
 	public byte[] readWaitingMessage(NetworkManager.NodeToken sender) {
-		if (!_keepRunning) {
-			throw new IllegalStateException("Background thread not running");
-		}
 		// We consider calls into the public interface on the internal thread to be statically incorrect re-entrance
 		// errors, so those are assertions.
 		Assert.assertTrue(Thread.currentThread() != _background);
 		
+		if (!_keepRunning) {
+			throw new IllegalStateException("Background thread not running");
+		}
 		byte[] message = null;
 		ConnectionState state = (ConnectionState) sender.actualKey.attachment();
 		synchronized (this) {
@@ -257,13 +273,13 @@ public class NetworkManager {
 	}
 
 	public NodeToken createOutgoingConnection(InetSocketAddress address) throws IOException {
-		if (!_keepRunning) {
-			throw new IllegalStateException("Background thread not running");
-		}
 		// We consider calls into the public interface on the internal thread to be statically incorrect re-entrance
 		// errors, so those are assertions.
 		Assert.assertTrue(Thread.currentThread() != _background);
 		
+		if (!_keepRunning) {
+			throw new IllegalStateException("Background thread not running");
+		}
 		// Create the socket as non-blocking and initiate the connection.
 		// This is then added to our _persistentOutboundNodes set, since we want to re-establish these if they drop.
 		SocketChannel outbound = SocketChannel.open();
@@ -314,6 +330,10 @@ public class NetworkManager {
 	 * @param token The connection to close.
 	 */
 	public void closeConnection(NodeToken token) {
+		// We consider calls into the public interface on the internal thread to be statically incorrect re-entrance
+		// errors, so those are assertions.
+		Assert.assertTrue(Thread.currentThread() != _background);
+		
 		if (!_keepRunning) {
 			throw new IllegalStateException("Background thread not running");
 		}
