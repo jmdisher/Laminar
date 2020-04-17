@@ -430,7 +430,8 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 			long localOffset = _nextLocalEventOffset++;
 			MutationRecord mutation = MutationRecord.generateRecord(globalOffset, state.clientId, incoming.nonce, contents);
 			EventRecord event = EventRecord.generateRecord(globalOffset, localOffset, state.clientId, incoming.nonce, contents);
-			ClientResponse commit = ClientResponse.committed(incoming.nonce, _lastCommittedMutationOffset);
+			// Note that we know the global offset will be the offset of this event once it is committed (by definition).
+			ClientResponse commit = ClientResponse.committed(incoming.nonce, globalOffset);
 			// Set up the client to be notified that the message committed once the MutationRecord is durable.
 			_pendingMessageCommits.put(globalOffset, new ClientCommitTuple(client, commit));
 			// Now request that both of these records be committed.

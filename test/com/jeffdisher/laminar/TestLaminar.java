@@ -8,6 +8,9 @@ import java.io.PipedInputStream;
 import java.io.PipedOutputStream;
 import java.io.PrintStream;
 import java.net.InetSocketAddress;
+import java.nio.ByteBuffer;
+import java.nio.channels.SocketChannel;
+import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 
 import org.junit.Assert;
@@ -19,6 +22,9 @@ import org.junit.jupiter.api.Test;
 import com.jeffdisher.laminar.client.ClientConnection;
 import com.jeffdisher.laminar.client.ClientResult;
 import com.jeffdisher.laminar.client.ListenerConnection;
+import com.jeffdisher.laminar.network.ClientMessage;
+import com.jeffdisher.laminar.network.ClientResponse;
+import com.jeffdisher.laminar.network.ClientResponseType;
 import com.jeffdisher.laminar.types.EventRecord;
 
 
@@ -252,6 +258,76 @@ class TestLaminar {
 		}
 		feeder.println("stop");
 		runner.join();
+	}
+
+	@Test
+	void testGlobalMutationCommitOffset() throws Throwable {
+		// Start up a fake client to verify that the RECEIVED and COMMITTED responses have the expected commit offsets.
+		PipedOutputStream outStream = new PipedOutputStream();
+		PipedInputStream inStream = new PipedInputStream(outStream);
+		PrintStream feeder = new PrintStream(outStream);
+		System.setIn(inStream);
+		
+		// We need to run the Laminar process in a thread it will control and then sleep for startup.
+		// (this way of using sleep for timing is a hack but this will eventually be made into a more reliable integration test, probably outside of JUnit).
+		Thread runner = new Thread() {
+			@Override
+			public void run() {
+				Laminar.main(new String[] {"--client", "2002", "--cluster", "2003", "--data", "/tmp/laminar"});
+			}
+		};
+		runner.start();
+		
+		// HACK - wait for startup.
+		Thread.sleep(500);
+		
+		// Fake a connection from a client:  send the handshake and a few messages, then disconnect.
+		InetSocketAddress address = new InetSocketAddress("localhost", 2002);
+		UUID clientId = UUID.randomUUID();
+		SocketChannel outbound = SocketChannel.open();
+		outbound.configureBlocking(true);
+		outbound.connect(address);
+		
+		_sendMessage(outbound, ClientMessage.handshake(clientId));
+		ClientResponse ready = _readResponse(outbound);
+		Assert.assertEquals(ClientResponseType.CLIENT_READY, ready.type);
+		ClientMessage temp = ClientMessage.temp(1L, new byte[] {1});
+		_sendMessage(outbound, temp);
+		ClientResponse received = _readResponse(outbound);
+		ClientResponse committed = _readResponse(outbound);
+		Assert.assertEquals(ClientResponseType.RECEIVED, received.type);
+		Assert.assertEquals(ClientResponseType.COMMITTED, committed.type);
+		Assert.assertEquals(0L, received.lastCommitGlobalOffset);
+		Assert.assertEquals(1L, committed.lastCommitGlobalOffset);
+		
+		outbound.close();
+		feeder.println("stop");
+		runner.join();
+	}
+
+
+	private void _sendMessage(SocketChannel socket, ClientMessage message) throws IOException {
+		byte[] serialized = message.serialize();
+		ByteBuffer buffer = ByteBuffer.allocate(Short.BYTES);
+		buffer.putShort((short)serialized.length);
+		buffer.flip();
+		int written = socket.write(buffer);
+		Assert.assertEquals(buffer.capacity(), written);
+		buffer = ByteBuffer.wrap(serialized);
+		written = socket.write(buffer);
+		Assert.assertEquals(buffer.capacity(), written);
+	}
+
+	private ClientResponse _readResponse(SocketChannel socket) throws IOException {
+		ByteBuffer buffer = ByteBuffer.allocate(Short.BYTES);
+		int read = socket.read(buffer);
+		Assert.assertEquals(buffer.capacity(), read);
+		buffer.flip();
+		int size = Short.toUnsignedInt(buffer.getShort());
+		buffer = ByteBuffer.allocate(size);
+		read = socket.read(buffer);
+		Assert.assertEquals(buffer.capacity(), read);
+		return ClientResponse.deserialize(buffer.array());
 	}
 
 
