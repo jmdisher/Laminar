@@ -524,6 +524,9 @@ public class NetworkManager {
 	private void _backgroundProcessReadableKey(SelectionKey key, ConnectionState state) {
 		// Read into our buffer.
 		int newMessagesAvailable = 0;
+		// Note that we may need to send a callback if we detect a disconnect here but we can't do that under lock.
+		NodeToken outboundNodeDisconnected = null;
+		NodeToken inboundNodeDisconnected = null;
 		synchronized (this) {
 			int originalPosition = state.toRead.position();
 			boolean isStillValid = true;
@@ -576,9 +579,9 @@ public class NetworkManager {
 				_connectedNodes.remove(key);
 				state.isClosed = true;
 				if (state.isOutgoing) {
-					_callbackTarget.outboundNodeDisconnected(state.token);
+					outboundNodeDisconnected = state.token;
 				} else {
-					_callbackTarget.nodeDidDisconnect(state.token);
+					inboundNodeDisconnected = state.token;
 				}
 			}
 		}
@@ -587,6 +590,13 @@ public class NetworkManager {
 			// Just to prove that we are doing this correctly and didn't re-order something, above, make sure this is still open.
 			Assert.assertTrue(!state.isClosed);
 			_callbackTarget.nodeReadReady(state.token);
+		}
+		// Send the disconnect callbacks.
+		if (null != outboundNodeDisconnected) {
+			_callbackTarget.outboundNodeDisconnected(outboundNodeDisconnected);
+		}
+		if (null != inboundNodeDisconnected) {
+			_callbackTarget.nodeDidDisconnect(inboundNodeDisconnected);
 		}
 	}
 

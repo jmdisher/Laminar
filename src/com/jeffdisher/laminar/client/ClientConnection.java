@@ -242,12 +242,8 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 
 	private void _backgroundThreadMain() {
 		while (_keepRunning) {
-			boolean canRead = false;
-			ClientMessage handshakeToSend = null;
-			ClientResult messageToWrite = null;
-			
-			// Wait for something to do.
 			synchronized (this) {
+				// Wait for something to do.
 				// Note that we don't consider that we have anything to write until we have something in the outgoing list and the writable flag is set and the client is ready.
 				while (_keepRunning && (0 == _pendingMessages) && (_outgoingMessages.isEmpty() || !_canWrite || !_isClientReady) && (null == _currentConnectionFailure) && !_handshakeRequired) {
 					try {
@@ -257,6 +253,11 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 						Assert.unexpected(e);
 					}
 				}
+				
+				// Interpret why we were unblocked.
+				boolean canRead = false;
+				ClientMessage handshakeToSend = null;
+				ClientResult messageToWrite = null;
 				if (_pendingMessages > 0) {
 					_pendingMessages -= 1;
 					canRead = true;
@@ -299,26 +300,32 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 					}
 					_handshakeRequired = false;
 				}
-			}
-			
-			// Do whatever we can.
-			if (canRead) {
-				_backgroundReadAndDispatchMessage();
-			}
-			if (null != messageToWrite) {
-				_sendMessageInWrapper(messageToWrite);
-			}
-			if (null != handshakeToSend) {
-				_serializeAndSendMessage(handshakeToSend);
+				
+				// Now apply whatever changes we can make in response to waking.
+				if (canRead) {
+					// Note that this method may receive a CLIENT_READY message in which case we may need to notify the user thread that the connection is up.
+					boolean clientBecameReady = _lockedBackgroundReadAndDispatchMessage();
+					if (clientBecameReady) {
+						_isClientReady = true;
+						this.notifyAll();
+					}
+				}
+				if (null != messageToWrite) {
+					_lockedBackgroundSendMessageInWrapper(messageToWrite);
+				}
+				if (null != handshakeToSend) {
+					_lockedBackgroundSerializeAndSendMessage(handshakeToSend);
+				}
 			}
 		}
 	}
 
-	private void _backgroundReadAndDispatchMessage() {
+	private boolean _lockedBackgroundReadAndDispatchMessage() {
 		byte[] message = _network.readWaitingMessage(_connection);
 		// We were told this was here so it can't fail.
 		Assert.assertTrue(null != message);
 		
+		boolean clientBecameReady = false;
 		// Decode this.
 		ClientResponse deserialized = ClientResponse.deserialize(message);
 		// Update the global commit offset.
@@ -347,11 +354,7 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 			// We rely on the SortedMap returning a sorted collection of values whose iterator returns them in ascending order of corresponding keys.
 			_outgoingMessages.addAll(0, _inFlightMessages.values());
 			_inFlightMessages.clear();
-			// TODO:  Move this synchronized elsewhere - this is just to make the waitForConnection case work until this can be reshaped.
-			synchronized(this) {
-				_isClientReady = true;
-				this.notifyAll();
-			}
+			clientBecameReady = true;
 			break;
 		case RECEIVED:
 			result.setReceived();
@@ -365,17 +368,18 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 			Assert.unreachable("Default response case reached");
 			break;
 		}
+		return clientBecameReady;
 	}
 
-	private void _sendMessageInWrapper(ClientResult wrapper) {
+	private void _lockedBackgroundSendMessageInWrapper(ClientResult wrapper) {
 		// Unwrap the message.
 		ClientMessage messageToWrite = wrapper.message;
-		_serializeAndSendMessage(messageToWrite);
+		_lockedBackgroundSerializeAndSendMessage(messageToWrite);
 		// We also need to track this as an in-flight message.
 		_inFlightMessages.put(messageToWrite.nonce, wrapper);
 	}
 
-	private void _serializeAndSendMessage(ClientMessage messageToWrite) {
+	private void _lockedBackgroundSerializeAndSendMessage(ClientMessage messageToWrite) {
 		// Serialize the message.
 		byte[] serialized = messageToWrite.serialize();
 		boolean didSend = _network.trySendMessage(_connection, serialized);
