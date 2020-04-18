@@ -216,11 +216,14 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 						ClientResponse toSend = normalState.outgoingMessages.remove(0);
 						_clientManager.send(node, toSend);
 					}
-				} else {
+				} else if (null != listenerState) {
 					Assert.assertTrue(null != listenerState);
 					// Listener.
 					// The socket is now writable so either load or wait for the next event for this listener.
 					_backgroundSetupListenerForNextEvent(node, listenerState);
+				} else {
+					// This appears to have disconnected before we processed it.
+					System.out.println("NOTE: Processed write ready from disconnected client");
 				}
 			}});
 	}
@@ -253,11 +256,12 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 					} else {
 						_backgroundEnqueueMessageToClient(node, ClientResponse.error(incoming.nonce, _lastCommittedMutationOffset));
 					}
-				} else {
-					Assert.assertTrue(null != listenerState);
-					
+				} else if (null != listenerState) {
 					// Once a listener is in the listener state, they should never send us another message.
 					Assert.unimplemented("TODO: Disconnect listener on invalid state transition");
+				} else {
+					// This appears to have disconnected before we processed it.
+					System.out.println("NOTE: Processed read ready from disconnected client");
 				}
 			}});
 	}
