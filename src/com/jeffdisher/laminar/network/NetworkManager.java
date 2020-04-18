@@ -623,7 +623,9 @@ public class NetworkManager {
 	private void _backgroundProcessWritableKey(SelectionKey key, ConnectionState state) {
 		// Write from our buffer.
 		boolean isBufferEmpty = false;
-		NodeToken notifyDisconnect = null;
+		// Note that we may need to send a callback if we detect a disconnect here but we can't do that under lock.
+		NodeToken outboundNodeDisconnected = null;
+		NodeToken inboundNodeDisconnected = null;
 		synchronized (this) {
 			state.toWrite.flip();
 			boolean isStillValid = true;
@@ -646,7 +648,11 @@ public class NetworkManager {
 				key.cancel();
 				_connectedNodes.remove(key);
 				state.isClosed = true;
-				notifyDisconnect = state.token;
+				if (state.isOutgoing) {
+					outboundNodeDisconnected = state.token;
+				} else {
+					inboundNodeDisconnected = state.token;
+				}
 				isStillValid = false;
 			}
 			
@@ -666,8 +672,12 @@ public class NetworkManager {
 			// We need to notify the callbacks that the buffer has fully drained.
 			_callbackTarget.nodeWriteReady(state.token);
 		}
-		if (null != notifyDisconnect) {
-			_callbackTarget.nodeDidDisconnect(notifyDisconnect);
+		// Send the disconnect callbacks.
+		if (null != outboundNodeDisconnected) {
+			_callbackTarget.outboundNodeDisconnected(outboundNodeDisconnected);
+		}
+		if (null != inboundNodeDisconnected) {
+			_callbackTarget.nodeDidDisconnect(inboundNodeDisconnected);
 		}
 	}
 
