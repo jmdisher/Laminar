@@ -75,6 +75,21 @@ public class ClientMessage {
 	}
 
 	/**
+	 * Creates a poison message.  This message is purely for testing and will either be removed or further restricted,
+	 * later on.
+	 * When a server receives a poison message, it will disconnect all clients and listeners.  Note that it will still
+	 * proceed to commit the message so the re-send won't cause the same thing to happen again.
+	 * 
+	 * @param nonce Per-client nonce.
+	 * @param message A message payload.
+	 * @return A new ClientMessage instance.
+	 */
+	public static ClientMessage poison(long nonce, byte[] message) {
+		// Note that poison uses the TEMP payload since it is just a nameless buffer for testing in both cases.
+		return new ClientMessage(ClientMessageType.POISON, nonce, ClientMessagePayload_Temp.create(message));
+	}
+
+	/**
 	 * Creates a new message instance by deserializing it from a payload.
 	 * 
 	 * @param serialized The serialized representation of the message.
@@ -102,6 +117,9 @@ public class ClientMessage {
 			payload = ClientMessagePayload_Listen.deserialize(buffer);
 			break;
 		case TEMP:
+			payload = ClientMessagePayload_Temp.deserialize(buffer);
+			break;
+		case POISON:
 			payload = ClientMessagePayload_Temp.deserialize(buffer);
 			break;
 		default:

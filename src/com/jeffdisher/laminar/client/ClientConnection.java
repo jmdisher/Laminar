@@ -133,6 +133,14 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 		return result;
 	}
 
+	public synchronized ClientResult sendPoison(byte[] payload) {
+		ClientMessage message = ClientMessage.poison(_nextNonce++, payload);
+		ClientResult result = new ClientResult(message);
+		_outgoingMessages.add(result);
+		this.notifyAll();
+		return result;
+	}
+
 	/**
 	 * Every client has a UUID and this is the same after reconnections but new client instances always start with a new
 	 * one.
@@ -212,6 +220,8 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 		_hasDisconnectedEver = true;
 		// TODO:  Find a way to observe the disconnect or report the exception, consistently.
 		_currentConnectionFailure = new IOException("Closed");
+		// We also need to dump any pending messages we were told about since we set _connection to null.
+		_pendingMessages = 0;
 		this.notifyAll();
 	}
 

@@ -375,6 +375,65 @@ class TestLaminar {
 		runner.join();
 	}
 
+	@Test
+	void testSimplePoisonCase() throws Throwable {
+		// Here, we start up, connect a client, send one message, wait for it to commit, observe listener behaviour, then shut everything down.
+		PipedOutputStream outStream = new PipedOutputStream();
+		PipedInputStream inStream = new PipedInputStream(outStream);
+		PrintStream feeder = new PrintStream(outStream);
+		System.setIn(inStream);
+		
+		// We need to run the Laminar process in a thread it will control and then sleep for startup.
+		// (this way of using sleep for timing is a hack but this will eventually be made into a more reliable integration test, probably outside of JUnit).
+		Thread runner = new Thread() {
+			@Override
+			public void run() {
+				Laminar.main(new String[] {"--client", "2002", "--cluster", "2003", "--data", "/tmp/laminar"});
+			}
+		};
+		runner.start();
+		InetSocketAddress address = new InetSocketAddress("localhost", 2002);
+		
+		// Start a listener before the client begins.
+		CaptureListener beforeListener = new CaptureListener(address, 21);
+		beforeListener.setName("Before");
+		beforeListener.start();
+		
+		try (ClientConnection client = ClientConnection.open(address)) {
+			// Send 10 messages, then a poison, then another 10 messages.  After, wait for them all to commit.
+			ClientResult[] results = new ClientResult[21];
+			for (int i = 0; i < 10; ++i) {
+				results[i] = client.sendTemp(new byte[] {(byte)i});
+			}
+			results[10] = client.sendPoison(new byte[] {10});
+			for (int i = 11; i < results.length; ++i) {
+				results[i] = client.sendTemp(new byte[] {(byte)i});
+			}
+			for (int i = 0; i < results.length; ++i) {
+				results[i].waitForReceived();
+				results[i].waitForCommitted();
+			}
+		}
+		
+		// Start a listener after the client is done.
+		CaptureListener afterListener = new CaptureListener(address, 21);
+		afterListener.setName("After");
+		afterListener.start();
+		
+		// Wait for the listeners to stop and then verify what they found is correct.
+		EventRecord[] beforeEvents = beforeListener.waitForTerminate();
+		EventRecord[] afterEvents = afterListener.waitForTerminate();
+		for (int i = 0; i < beforeEvents.length; ++i) {
+			// Check the after, first, since that happened after the poison was done and the difference can point to different bugs.
+			Assert.assertEquals(i, afterEvents[i].payload[0]);
+			Assert.assertEquals(i, beforeEvents[i].payload[0]);
+		}
+		
+		// Shut down.
+		feeder.println("stop");
+		runner.join();
+	}
+
 
 	private void _sendMessage(SocketChannel socket, ClientMessage message) throws IOException {
 		byte[] serialized = message.serialize();
@@ -432,6 +491,38 @@ class TestLaminar {
 				} catch (IllegalStateException e) {
 					// This happens in cases where we initiated an external close.
 				}
+			} catch (IOException | InterruptedException e) {
+				Assert.fail(e.getLocalizedMessage());
+			}
+		}
+	}
+
+
+	private static class CaptureListener extends Thread {
+		private final ListenerConnection _listener;
+		private final EventRecord[] _captured;
+		
+		public CaptureListener(InetSocketAddress address, int messagesToCapture) throws IOException {
+			_listener = ListenerConnection.open(address);
+			_captured = new EventRecord[messagesToCapture];
+		}
+		
+		public EventRecord[] waitForTerminate() throws InterruptedException {
+			this.join();
+			return _captured;
+		}
+		
+		@Override
+		public void run() {
+			try {
+				long lastLocalOffset = 0L;
+				for (int i = 0; i < _captured.length; ++i) {
+					long nextOffset = lastLocalOffset + 1L;
+					_captured[i] = _listener.pollForNextEvent(lastLocalOffset);
+					Assert.assertEquals(nextOffset, _captured[i].localOffset);
+					lastLocalOffset = nextOffset;
+				}
+				_listener.close();
 			} catch (IOException | InterruptedException e) {
 				Assert.fail(e.getLocalizedMessage());
 			}

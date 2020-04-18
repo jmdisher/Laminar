@@ -161,9 +161,15 @@ public class ListenerConnection implements Closeable, INetworkManagerBackgroundC
 	}
 
 	@Override
-	public void outboundNodeDisconnected(NodeToken node) {
+	public synchronized void outboundNodeDisconnected(NodeToken node) {
 		Assert.assertTrue(_connection == node);
-		throw Assert.unimplemented("TODO: Implement along-side reconnect logic");
+		_connection = null;
+		// Reset our status to waiting for a connection.
+		_didSendListen = true;
+		_pendingMessages = 0;
+		// TODO:  Generalize this disconnect handling
+		_currentConnectionFailure = new IOException("Closed");
+		this.notifyAll();
 	}
 
 	@Override
@@ -196,10 +202,8 @@ public class ListenerConnection implements Closeable, INetworkManagerBackgroundC
 	}
 
 
-	private EventRecord _doLockedPollForNextEvent(long previousLocalOffset, EventRecord record)
-			throws InterruptedException, AssertionError {
+	private EventRecord _doLockedPollForNextEvent(long previousLocalOffset, EventRecord record) throws InterruptedException, AssertionError {
 		while (_keepRunning && (null == record)) {
-			System.out.println(">Running");
 			// Wait until we are ready to take some action.  Cases to exit:
 			// -told to stop (!_keepRunning)
 			// -we haven't yet sent the "listen" message on a new connection
@@ -211,6 +215,7 @@ public class ListenerConnection implements Closeable, INetworkManagerBackgroundC
 			}
 			
 			if (!_didSendListen) {
+				Assert.assertTrue(null != _connection);
 				// The connection opened but we haven't send the listen message.
 				ClientMessage listen = ClientMessage.listen(previousLocalOffset);
 				boolean didSend = _network.trySendMessage(_connection, listen.serialize());
@@ -231,6 +236,7 @@ public class ListenerConnection implements Closeable, INetworkManagerBackgroundC
 				_currentConnectionFailure = null;
 			}
 			if (_pendingMessages > 0) {
+				Assert.assertTrue(null != _connection);
 				// Grab a message, decode it, and return it.
 				byte[] message = _network.readWaitingMessage(_connection);
 				// (we know this must have been available).

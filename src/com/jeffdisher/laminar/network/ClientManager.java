@@ -72,6 +72,16 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 	}
 
 	/**
+	 * Forces the connection to the given node to be disconnected.
+	 * It is worth noting that some callbacks related to this node may still arrive if they came in asynchronously.
+	 * 
+	 * @param node The incoming connection to close.
+	 */
+	public void disconnectClient(ClientNode node) {
+		_networkManager.closeConnection(node.token);
+	}
+
+	/**
 	 * Reads and deserializes a message waiting from the given client.
 	 * Note that this asserts that there was a message waiting.
 	 * 

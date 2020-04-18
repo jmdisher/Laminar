@@ -27,4 +27,9 @@ public enum ClientMessageType {
 	 * This message is purely temporary to verify the client-server communication.
 	 */
 	TEMP,
+	/**
+	 * This message type is for stress-testing reconnect.  When a server receives it, it will disconnect all clients
+	 * and listeners.
+	 */
+	POISON,
 }

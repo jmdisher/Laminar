@@ -485,8 +485,11 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 			} else {
 				// This is a degenerate case where they didn't miss anything so just send them the client ready.
 				ClientResponse ready = ClientResponse.clientReady(reconnectState.earliestNextNonce, _lastCommittedMutationOffset);
-				System.out.println("RECONNECT degernate case: " + state.clientId);
+				System.out.println("Note:  RECONNECT degenerate case: " + state.clientId + " with nonce " + incoming.nonce);
 				_backgroundEnqueueMessageToClient(client, ready);
+				// Since we aren't processing anything, just over-write our reserved value, immediately (assert just for balance).
+				Assert.assertTrue(-1L == state.nextNonce);
+				state.nextNonce = reconnectState.earliestNextNonce;
 			}
 			break;
 		}
@@ -518,13 +521,13 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 		case INVALID:
 			Assert.unimplemented("Invalid message type");
 			break;
-		case TEMP:
+		case TEMP: {
 			// This is just for initial testing:  send the received, log it, and send the commit.
 			// (client outgoing message list is unbounded so this is safe to do all at once).
 			ClientResponse ack = ClientResponse.received(incoming.nonce, _lastCommittedMutationOffset);
 			_backgroundEnqueueMessageToClient(client, ack);
 			byte[] contents = ((ClientMessagePayload_Temp)incoming.payload).contents;
-			System.out.println("GOT TEMP FROM " + state.clientId + ": \"" + new String(contents) + "\" (nonce " + incoming.nonce + ")");
+			System.out.println("GOT TEMP FROM " + state.clientId + " nonce " + incoming.nonce + " data " + contents[0]);
 			// Create the MutationRecord and EventRecord.
 			long globalOffset = _nextGlobalMutationOffset++;
 			long localOffset = _nextLocalEventOffset++;
@@ -538,6 +541,43 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 			_diskManager.commitEvent(event);
 			// TODO:  We probably want to lock-step the mutation on the event commit since we will be able to detect the broken data, that way, and replay it.
 			_diskManager.commitMutation(mutation);
+		}
+			break;
+		case POISON: {
+			// This is just for initial testing:  send the received, log it, and send the commit.
+			// (client outgoing message list is unbounded so this is safe to do all at once).
+			ClientResponse ack = ClientResponse.received(incoming.nonce, _lastCommittedMutationOffset);
+			_backgroundEnqueueMessageToClient(client, ack);
+			byte[] contents = ((ClientMessagePayload_Temp)incoming.payload).contents;
+			System.out.println("GOT POISON FROM " + state.clientId + ": \"" + new String(contents) + "\" (nonce " + incoming.nonce + ")");
+			// Create the MutationRecord and EventRecord.
+			long globalOffset = _nextGlobalMutationOffset++;
+			long localOffset = _nextLocalEventOffset++;
+			MutationRecord mutation = MutationRecord.generateRecord(globalOffset, state.clientId, incoming.nonce, contents);
+			EventRecord event = EventRecord.generateRecord(globalOffset, localOffset, state.clientId, incoming.nonce, contents);
+			// Note that we know the global offset will be the offset of this event once it is committed (by definition).
+			ClientResponse commit = ClientResponse.committed(incoming.nonce, globalOffset);
+			// Set up the client to be notified that the message committed once the MutationRecord is durable.
+			_pendingMessageCommits.put(globalOffset, new ClientCommitTuple(client, commit));
+			// Now request that both of these records be committed.
+			_diskManager.commitEvent(event);
+			// TODO:  We probably want to lock-step the mutation on the event commit since we will be able to detect the broken data, that way, and replay it.
+			_diskManager.commitMutation(mutation);
+			
+			// Now that we did the usual work, disconnect everyone.
+			for (ClientManager.ClientNode node : _newClients) {
+				_clientManager.disconnectClient(node);
+			}
+			_newClients.clear();
+			for (ClientManager.ClientNode node : _normalClients.keySet()) {
+				_clientManager.disconnectClient(node);
+			}
+			_normalClients.clear();
+			for (ClientManager.ClientNode node : _listenerClients.keySet()) {
+				_clientManager.disconnectClient(node);
+			}
+			_listenerClients.clear();
+		}
 			break;
 		default:
 			Assert.unimplemented("This is an invalid message for this client type and should be disconnected");
