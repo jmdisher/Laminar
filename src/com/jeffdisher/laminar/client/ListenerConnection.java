@@ -25,6 +25,8 @@ import com.jeffdisher.laminar.utils.Assert;
  * This means that the listener is responsible for telling the server the last local offset it received (both global and
  * local offsets are 1-indexed so the initial request passes 0 to request all events) and then it will receive updates
  * from that point onward.
+ * If the user needs to restart the ListenerConnection, at a later time, they will need to provide the localOffset of
+ * the last event returned in order to ensure a seamless continuation of events.
  * NOTE:  "Local" offsets are the per-topic offsets while the "global" offsets are the input event offsets.  For a
  * single-topic, non-programmable system, they map 1-to-1.  The input events are split into per-topic events, when
  * committed, meaning they are given local offsets.  This, alone, would not be a reason to use this "local" addressing
@@ -40,14 +42,16 @@ public class ListenerConnection implements Closeable, INetworkManagerBackgroundC
 	 * Creates a new listener connection with a background connection attempt to server.
 	 * 
 	 * @param server The server to which the client should listen.
+	 * @param previousLocalOffset The most recently returned local offset from a previous listener connection (0L if
+	 * this is a new listener with no existing state).
 	 * @return An initialized, but not yet connected, listener.
 	 * @throws IOException Something went wrong in initializing the network layer.
 	 */
-	public static ListenerConnection open(InetSocketAddress server) throws IOException {
+	public static ListenerConnection open(InetSocketAddress server, long previousLocalOffset) throws IOException {
 		if (null == server) {
 			throw new IllegalArgumentException("Address cannot be null");
 		}
-		ListenerConnection connection = new ListenerConnection(server);
+		ListenerConnection connection = new ListenerConnection(server, previousLocalOffset);
 		connection._network.startAndWaitForReady("ListenerConnection");
 		connection._network.createOutgoingConnection(server);
 		return connection;
@@ -65,6 +69,7 @@ public class ListenerConnection implements Closeable, INetworkManagerBackgroundC
 	private boolean _isPollActive;
 	private boolean _didSendListen;
 	private int _pendingMessages;
+	private long _previousLocalOffset;
 
 	// Due to reconnection requirements, it is possible to fail a connection but not want to bring down the system.
 	// Therefore, we will continue reconnection attempts, until told to close.  Unless we have an active connection, we
@@ -72,28 +77,32 @@ public class ListenerConnection implements Closeable, INetworkManagerBackgroundC
 	private IOException _currentConnectionFailure;
 	private IOException _mostRecentConnectionFailure;
 
-	private ListenerConnection(InetSocketAddress server) throws IOException {
+	private ListenerConnection(InetSocketAddress server, long previousLocalOffset) throws IOException {
 		_serverAddress = server;
 		_network = NetworkManager.outboundOnly(this);
 		_keepRunning = true;
 		// We "sent" listen until a new connection opens and then it is set to false.
 		_didSendListen = true;
 		_pendingMessages = 0;
+		_previousLocalOffset = previousLocalOffset;
 	}
 
 	/**
 	 * Block until the next EventRecord is available, then decode and return it.
 	 * Note that this call is interruptable using a thread interrupt.
 	 * 
-	 * @param previousLocalOffset The most recently returned local offset (0L if this is the first call).
 	 * @return The next EventRecord or null if the receiver was shut down.
 	 * @throws InterruptedException If the calling thread received an interrupt.
 	 */
-	public synchronized EventRecord pollForNextEvent(long previousLocalOffset) throws InterruptedException {
+	public synchronized EventRecord pollForNextEvent() throws InterruptedException {
 		EventRecord record = null;
 		_isPollActive = true;
 		try {
-			record = _doLockedPollForNextEvent(previousLocalOffset, record);
+			record = _doLockedPollForNextEvent(_previousLocalOffset, record);
+			// Note that we don't want to progress if we couldn't connect.
+			if (null != record) {
+				_previousLocalOffset = record.localOffset;
+			}
 		} finally {
 			_isPollActive = false;
 			// If we are shutting down, notify anyone who might be waiting for us to rationalize the state of these flags.

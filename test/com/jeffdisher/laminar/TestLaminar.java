@@ -469,13 +469,13 @@ class TestLaminar {
 			_message = message;
 			_latch = latch;
 			// We want to expose the connection so tests can request it shut down.
-			this.listener = ListenerConnection.open(address);
+			this.listener = ListenerConnection.open(address, 0L);
 		}
 		
 		@Override
 		public void run() {
 			try {
-				EventRecord record = this.listener.pollForNextEvent(0L);
+				EventRecord record = this.listener.pollForNextEvent();
 				if (null == _message) {
 					// We expected failure.
 					Assert.assertNull(record);
@@ -503,7 +503,7 @@ class TestLaminar {
 		private final EventRecord[] _captured;
 		
 		public CaptureListener(InetSocketAddress address, int messagesToCapture) throws IOException {
-			_listener = ListenerConnection.open(address);
+			_listener = ListenerConnection.open(address, 0L);
 			_captured = new EventRecord[messagesToCapture];
 		}
 		
@@ -515,12 +515,9 @@ class TestLaminar {
 		@Override
 		public void run() {
 			try {
-				long lastLocalOffset = 0L;
 				for (int i = 0; i < _captured.length; ++i) {
-					long nextOffset = lastLocalOffset + 1L;
-					_captured[i] = _listener.pollForNextEvent(lastLocalOffset);
-					Assert.assertEquals(nextOffset, _captured[i].localOffset);
-					lastLocalOffset = nextOffset;
+					_captured[i] = _listener.pollForNextEvent();
+					Assert.assertEquals(i + 1, _captured[i].localOffset);
 				}
 				_listener.close();
 			} catch (IOException | InterruptedException e) {
