@@ -80,7 +80,7 @@ public class EchoNetworkCallbacks implements INetworkManagerBackgroundCallbacks 
 	}
 
 	@Override
-	public void nodeDidDisconnect(NodeToken node) {
+	public void nodeDidDisconnect(NodeToken node, IOException cause) {
 		// This doesn't currently do anything with disconnects.
 	}
 
@@ -117,7 +117,7 @@ public class EchoNetworkCallbacks implements INetworkManagerBackgroundCallbacks 
 	}
 
 	@Override
-	public void outboundNodeDisconnected(NodeToken node) {
+	public void outboundNodeDisconnected(NodeToken node, IOException cause) {
 		// This doesn't currently do anything with disconnects.
 	}
 

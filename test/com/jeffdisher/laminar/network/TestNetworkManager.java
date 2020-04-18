@@ -263,7 +263,7 @@ class TestNetworkManager {
 		}
 
 		@Override
-		public void nodeDidDisconnect(NodeToken node) {
+		public void nodeDidDisconnect(NodeToken node, IOException cause) {
 			this.disconnectLatch.countDown();
 		}
 
@@ -284,7 +284,7 @@ class TestNetworkManager {
 		}
 
 		@Override
-		public void outboundNodeDisconnected(NodeToken node) {
+		public void outboundNodeDisconnected(NodeToken node, IOException cause) {
 			this.outboundDisconnectLatch.countDown();
 		}
 

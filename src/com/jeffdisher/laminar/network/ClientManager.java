@@ -102,7 +102,7 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 	}
 
 	@Override
-	public void nodeDidDisconnect(NetworkManager.NodeToken node) {
+	public void nodeDidDisconnect(NetworkManager.NodeToken node, IOException cause) {
 		ClientNode realNode = _translateNode(node);
 		_callbacks.clientDisconnectedFromUs(realNode);
 	}
@@ -126,7 +126,7 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 	}
 
 	@Override
-	public void outboundNodeDisconnected(NetworkManager.NodeToken node) {
+	public void outboundNodeDisconnected(NetworkManager.NodeToken node, IOException cause) {
 		// This implementation has no outbound connections.
 		Assert.unreachable("No outbound connections");
 	}

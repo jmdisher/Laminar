@@ -179,7 +179,7 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 	}
 
 	@Override
-	public void nodeDidDisconnect(NodeToken node) {
+	public void nodeDidDisconnect(NodeToken node, IOException cause) {
 		throw Assert.unreachable("Incoming connections not exposed");
 	}
 
@@ -211,15 +211,14 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 	}
 
 	@Override
-	public synchronized void outboundNodeDisconnected(NodeToken node) {
+	public synchronized void outboundNodeDisconnected(NodeToken node, IOException cause) {
 		Assert.assertTrue(_connection == node);
 		_connection = null;
 		// We will also need to reconnect and wait for CLIENT_READY so the client isn't ready.
 		_isClientReady = false;
 		// We record that a disconnect happened so our next connection attempt is a reconnect.
 		_hasDisconnectedEver = true;
-		// TODO:  Find a way to observe the disconnect or report the exception, consistently.
-		_currentConnectionFailure = new IOException("Closed");
+		_currentConnectionFailure = cause;
 		// We also need to dump any pending messages we were told about since we set _connection to null.
 		_pendingMessages = 0;
 		this.notifyAll();

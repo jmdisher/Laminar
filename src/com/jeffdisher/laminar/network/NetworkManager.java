@@ -1,5 +1,6 @@
 package com.jeffdisher.laminar.network;
 
+import java.io.EOFException;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
@@ -547,21 +548,21 @@ public class NetworkManager {
 		// Note that we may need to send a callback if we detect a disconnect here but we can't do that under lock.
 		NodeToken outboundNodeDisconnected = null;
 		NodeToken inboundNodeDisconnected = null;
+		IOException disconnectException = null;
 		synchronized (this) {
 			int originalPosition = state.toRead.position();
-			boolean isStillValid = true;
 			try {
 				int read = state.channel.read(state.toRead);
 				if (-1 == read) {
 					// If the remote side closes the connection, this typically returns a -1 as an EOF.
-					isStillValid = false;
+					disconnectException = _synthesizeEndOfFile();
 				}
 			} catch (IOException e) {
 				// This is typically a "Connection reset by peer".
-				isStillValid = false;
+				disconnectException = e;
 			}
 			
-			if (isStillValid) {
+			if (null == disconnectException) {
 				if (0 == state.toRead.remaining()) {
 					// If this buffer is now full, stop reading.
 					key.interestOps(key.interestOps() & ~SelectionKey.OP_READ);
@@ -613,10 +614,10 @@ public class NetworkManager {
 		}
 		// Send the disconnect callbacks.
 		if (null != outboundNodeDisconnected) {
-			_callbackTarget.outboundNodeDisconnected(outboundNodeDisconnected);
+			_callbackTarget.outboundNodeDisconnected(outboundNodeDisconnected, disconnectException);
 		}
 		if (null != inboundNodeDisconnected) {
-			_callbackTarget.nodeDidDisconnect(inboundNodeDisconnected);
+			_callbackTarget.nodeDidDisconnect(inboundNodeDisconnected, disconnectException);
 		}
 	}
 
@@ -626,15 +627,16 @@ public class NetworkManager {
 		// Note that we may need to send a callback if we detect a disconnect here but we can't do that under lock.
 		NodeToken outboundNodeDisconnected = null;
 		NodeToken inboundNodeDisconnected = null;
+		IOException disconnectException = null;
 		synchronized (this) {
 			state.toWrite.flip();
-			boolean isStillValid = true;
 			try {
 				int written = state.channel.write(state.toWrite);
 				// If this returns no writes, it means this is in a state we can't interpret.
 				Assert.assertTrue(written > 0);
 			} catch (IOException e) {
 				// This is typically a "Broken pipe".
+				disconnectException = e;
 				// We just want to close the connection, cancel the key, and send the callback.
 				// Note that we may have already told the caller that we were write-ready and they may, in fact, already
 				// be in the middle of a call to write a message, blocked on this monitor.  We will just record that the
@@ -653,10 +655,9 @@ public class NetworkManager {
 				} else {
 					inboundNodeDisconnected = state.token;
 				}
-				isStillValid = false;
 			}
 			
-			if (isStillValid) {
+			if (null == disconnectException) {
 				state.toWrite.compact();
 				isBufferEmpty = 0 == state.toWrite.position();
 				if (isBufferEmpty) {
@@ -674,11 +675,16 @@ public class NetworkManager {
 		}
 		// Send the disconnect callbacks.
 		if (null != outboundNodeDisconnected) {
-			_callbackTarget.outboundNodeDisconnected(outboundNodeDisconnected);
+			_callbackTarget.outboundNodeDisconnected(outboundNodeDisconnected, disconnectException);
 		}
 		if (null != inboundNodeDisconnected) {
-			_callbackTarget.nodeDidDisconnect(inboundNodeDisconnected);
+			_callbackTarget.nodeDidDisconnect(inboundNodeDisconnected, disconnectException);
 		}
+	}
+
+	private IOException _synthesizeEndOfFile() {
+		// We use a helper method to create these since we might want to do something different but this seems appropriate.
+		return new EOFException("Synthetic EOF");
 	}
 
 

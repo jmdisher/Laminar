@@ -39,7 +39,7 @@ public class ClusterManager implements INetworkManagerBackgroundCallbacks {
 	}
 
 	@Override
-	public void nodeDidDisconnect(NetworkManager.NodeToken node) {
+	public void nodeDidDisconnect(NetworkManager.NodeToken node, IOException cause) {
 		ClusterNode realNode = _translateNode(node);
 		_callbacks.peerDisconnectedFromUs(realNode);
 	}
@@ -63,7 +63,7 @@ public class ClusterManager implements INetworkManagerBackgroundCallbacks {
 	}
 
 	@Override
-	public void outboundNodeDisconnected(NetworkManager.NodeToken node) {
+	public void outboundNodeDisconnected(NetworkManager.NodeToken node, IOException cause) {
 		ClusterNode realNode = _translateNode(node);
 		_callbacks.weDisconnectedFromPeer(realNode);
 	}

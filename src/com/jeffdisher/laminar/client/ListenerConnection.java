@@ -130,7 +130,7 @@ public class ListenerConnection implements Closeable, INetworkManagerBackgroundC
 	}
 
 	@Override
-	public void nodeDidDisconnect(NodeToken node) {
+	public void nodeDidDisconnect(NodeToken node, IOException cause) {
 		throw Assert.unreachable("Incoming connections not exposed");
 	}
 
@@ -161,14 +161,13 @@ public class ListenerConnection implements Closeable, INetworkManagerBackgroundC
 	}
 
 	@Override
-	public synchronized void outboundNodeDisconnected(NodeToken node) {
+	public synchronized void outboundNodeDisconnected(NodeToken node, IOException cause) {
 		Assert.assertTrue(_connection == node);
 		_connection = null;
 		// Reset our status to waiting for a connection.
 		_didSendListen = true;
 		_pendingMessages = 0;
-		// TODO:  Generalize this disconnect handling
-		_currentConnectionFailure = new IOException("Closed");
+		_currentConnectionFailure = cause;
 		this.notifyAll();
 	}
 
