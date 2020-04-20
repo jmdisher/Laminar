@@ -527,6 +527,7 @@ public class NetworkManager {
 			}
 			key.cancel();
 			state.isClosed = true;
+			_connectedNodes.remove(key);
 			_callbackTarget.outboundNodeConnectionFailed(state.token, e);
 			isConnected = false;
 		}
