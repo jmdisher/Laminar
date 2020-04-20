@@ -11,7 +11,7 @@ import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 
 import org.junit.Assert;
-import org.junit.jupiter.api.Test;
+import org.junit.Test;
 
 import com.jeffdisher.laminar.network.ClientManager.ClientNode;
 import com.jeffdisher.laminar.types.EventRecord;

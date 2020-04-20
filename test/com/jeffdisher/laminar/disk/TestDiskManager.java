@@ -4,7 +4,7 @@ import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 
 import org.junit.Assert;
-import org.junit.jupiter.api.Test;
+import org.junit.Test;
 
 import com.jeffdisher.laminar.types.EventRecord;
 import com.jeffdisher.laminar.types.MutationRecord;

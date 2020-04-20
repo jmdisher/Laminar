@@ -10,7 +10,7 @@ import java.util.Map;
 import java.util.UUID;
 
 import org.junit.Assert;
-import org.junit.jupiter.api.Test;
+import org.junit.Test;
 
 import com.jeffdisher.laminar.network.ClientMessage;
 import com.jeffdisher.laminar.network.ClientMessagePayload_Handshake;

@@ -3,7 +3,7 @@ package com.jeffdisher.laminar.types;
 import java.util.UUID;
 
 import org.junit.Assert;
-import org.junit.jupiter.api.Test;
+import org.junit.Test;
 
 
 /**

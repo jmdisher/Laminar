@@ -13,11 +13,10 @@ import java.nio.channels.SocketChannel;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 
+import org.junit.After;
 import org.junit.Assert;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.Assertions;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
+import org.junit.Before;
+import org.junit.Test;
 
 import com.jeffdisher.laminar.client.ClientConnection;
 import com.jeffdisher.laminar.client.ClientResult;
@@ -41,7 +40,7 @@ public class TestLaminar {
 	private ByteArrayOutputStream out;
 	private ByteArrayOutputStream err;
 
-	@BeforeEach
+	@Before
 	public void beforeEach() {
 		this.realIn = System.in;
 		this.realOut= System.out;
@@ -53,7 +52,7 @@ public class TestLaminar {
 		System.setErr(new PrintStream(this.err));
 	}
 
-	@AfterEach
+	@After
 	public void afterEach() {
 		System.setIn(this.realIn);
 		System.setOut(this.realOut);
@@ -201,9 +200,13 @@ public class TestLaminar {
 			client.sendTemp(message);
 			// HACK:  Wait for the connection to fail.
 			Thread.sleep(500);
-			Assertions.assertThrows(IOException.class, () -> {
+			boolean didThrow = false;
+			try {
 				client.checkConnection();
-			});
+			} catch (IOException e) {
+				didThrow = true;
+			}
+			Assert.assertTrue(didThrow);
 		}
 	}
 
@@ -215,9 +218,13 @@ public class TestLaminar {
 		listener.start();
 		// HACK:  Wait for the connection to fail.
 		Thread.sleep(500);
-		Assertions.assertThrows(IOException.class, () -> {
+		boolean didThrow = false;
+		try {
 			listener.listener.checkConnection();
-		});
+		} catch (IOException e) {
+			didThrow = true;
+		}
+		Assert.assertTrue(didThrow);
 		// Shut it down and observe the we did see the null returned.
 		listener.listener.close();
 		latch.await();

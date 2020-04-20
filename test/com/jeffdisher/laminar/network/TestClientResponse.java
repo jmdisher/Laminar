@@ -1,7 +1,7 @@
 package com.jeffdisher.laminar.network;
 
 import org.junit.Assert;
-import org.junit.jupiter.api.Test;
+import org.junit.Test;
 
 
 /**

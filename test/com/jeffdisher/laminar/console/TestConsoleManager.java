@@ -7,14 +7,14 @@ import java.io.PrintStream;
 import java.util.concurrent.CountDownLatch;
 
 import org.junit.Assert;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
+import org.junit.Before;
+import org.junit.Test;
 
 
 public class TestConsoleManager {
 	private PrintStream _fakeOut;
 
-	@BeforeEach
+	@Before
 	public void beforeEach() {
 		// Create a new fake sink for every test.
 		_fakeOut = new PrintStream(new ByteArrayOutputStream(1024));

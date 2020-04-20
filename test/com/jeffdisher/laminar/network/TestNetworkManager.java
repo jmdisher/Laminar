@@ -9,7 +9,7 @@ import java.nio.channels.ServerSocketChannel;
 import java.util.concurrent.CountDownLatch;
 
 import org.junit.Assert;
-import org.junit.jupiter.api.Test;
+import org.junit.Test;
 
 import com.jeffdisher.laminar.network.NetworkManager.NodeToken;
 
