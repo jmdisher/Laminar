@@ -9,9 +9,9 @@ import org.junit.jupiter.api.Test;
 /**
  * Tests around serialization and deserialization of EventRecord objects.
  */
-class TestEventRecord {
+public class TestEventRecord {
 	@Test
-	void testBasic() throws Throwable {
+	public void testBasic() throws Throwable {
 		long globalOffset = 1L;
 		long localOffset = 1L;
 		UUID clientId = UUID.randomUUID();

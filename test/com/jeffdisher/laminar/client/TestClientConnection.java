@@ -20,7 +20,7 @@ import com.jeffdisher.laminar.network.ClientMessageType;
 import com.jeffdisher.laminar.network.ClientResponse;
 
 
-class TestClientConnection {
+public class TestClientConnection {
 	private static final int PORT_BASE = 3000;
 
 	/**
@@ -28,7 +28,7 @@ class TestClientConnection {
 	 * and committed responses to make sure that ClientConnection handles them correctly.
 	 */
 	@Test
-	void testSendTempCommit() throws Throwable {
+	public void testSendTempCommit() throws Throwable {
 		// Create the message.
 		byte[] payload = new byte[] {0,1,2,3};
 		// Create a server socket.
@@ -87,7 +87,7 @@ class TestClientConnection {
 	 * CLIENT_READY unblocks waitForConnection on the client.
 	 */
 	@Test
-	void testWaitForConnection() throws Throwable {
+	public void testWaitForConnection() throws Throwable {
 		// Create a server socket.
 		int port = PORT_BASE + 2;
 		ServerSocketChannel socket = createSocket(port);
@@ -131,7 +131,7 @@ class TestClientConnection {
 	 * duplicates, then the test will be considered passed.
 	 */
 	@Test
-	void testHeavyReconnect() throws Throwable {
+	public void testHeavyReconnect() throws Throwable {
 		// Create a server socket.
 		int port = PORT_BASE + 3;
 		long baseMutationOffset = 1000L;

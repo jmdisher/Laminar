@@ -10,9 +10,9 @@ import com.jeffdisher.laminar.types.EventRecord;
 import com.jeffdisher.laminar.types.MutationRecord;
 
 
-class TestDiskManager {
+public class TestDiskManager {
 	@Test
-	void testStartStop() throws Throwable {
+	public void testStartStop() throws Throwable {
 		LatchedCallbacks callbacks = new LatchedCallbacks();
 		DiskManager manager = new DiskManager(null, callbacks);
 		manager.startAndWaitForReady();
@@ -23,7 +23,7 @@ class TestDiskManager {
 	 * Just write 2 records and fetch the first.
 	 */
 	@Test
-	void testSimpleWriteAndFetch() throws Throwable {
+	public void testSimpleWriteAndFetch() throws Throwable {
 		EventRecord event1 = EventRecord.generateRecord(1L, 1L, UUID.randomUUID(), 1L, new byte[] {1});
 		EventRecord event2 = EventRecord.generateRecord(2L, 2L, UUID.randomUUID(), 2L, new byte[] {1});
 		LatchedCallbacks callbacks = new LatchedCallbacks();
@@ -46,7 +46,7 @@ class TestDiskManager {
 	 * Write a few events and mutations and try to fetch them, independently.
 	 */
 	@Test
-	void testMutationAndEventCommitAndFetch() throws Throwable {
+	public void testMutationAndEventCommitAndFetch() throws Throwable {
 		MutationRecord mutation1 = MutationRecord.generateRecord(1L, UUID.randomUUID(), 1L, new byte[] {1});
 		MutationRecord mutation2 = MutationRecord.generateRecord(2L, UUID.randomUUID(), 2L, new byte[] {1});
 		EventRecord event1 = EventRecord.generateRecord(1L, 1L, UUID.randomUUID(), 1L, new byte[] {1});

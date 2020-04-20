@@ -9,9 +9,9 @@ import org.junit.jupiter.api.Test;
 /**
  * Tests around serialization and deserialization of ClientMessage objects.
  */
-class TestClientMessage {
+public class TestClientMessage {
 	@Test
-	void testHandshakeMessage() throws Throwable {
+	public void testHandshakeMessage() throws Throwable {
 		UUID uuid = UUID.randomUUID();
 		ClientMessage input = ClientMessage.handshake(uuid);
 		byte[] serialized = input.serialize();
@@ -24,7 +24,7 @@ class TestClientMessage {
 	}
 
 	@Test
-	void testListenMessage() throws Throwable {
+	public void testListenMessage() throws Throwable {
 		long previousLocalOffset = 5L;
 		ClientMessage input = ClientMessage.listen(previousLocalOffset);
 		byte[] serialized = input.serialize();
@@ -36,7 +36,7 @@ class TestClientMessage {
 	}
 
 	@Test
-	void testTempMessage() throws Throwable {
+	public void testTempMessage() throws Throwable {
 		long nonce = 1000;
 		byte[] payload = new byte[] { 0, 1, 2, 3 };
 		ClientMessage input = ClientMessage.temp(nonce, payload);

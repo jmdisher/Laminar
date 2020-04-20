@@ -33,7 +33,7 @@ import com.jeffdisher.laminar.types.EventRecord;
  * top-level system is correct before fleshing out the actual function units.
  * This will be replaced with some kind of integration test, later on.
  */
-class TestLaminar {
+public class TestLaminar {
 	private InputStream realIn;
 	private PrintStream realOut;
 	private PrintStream realErr;
@@ -61,7 +61,7 @@ class TestLaminar {
 	}
 
 	@Test
-	void testMissingArgs() {
+	public void testMissingArgs() {
 		boolean didFail = false;
 		try {
 			Laminar.main(new String[] {"missing"});
@@ -76,14 +76,14 @@ class TestLaminar {
 	}
 
 	@Test
-	void testNormalRun() {
+	public void testNormalRun() {
 		// We just want this to start everything and then shut down.
 		System.setIn(new ByteArrayInputStream("stop\n".getBytes()));
 		Laminar.main(new String[] {"--client", "2000", "--cluster", "2001", "--data", "/tmp/laminar"});
 	}
 
 	@Test
-	void testSimpleClient() throws Throwable {
+	public void testSimpleClient() throws Throwable {
 		// Here, we start up, connect a client, send one message, wait for it to commit, then shut everything down.
 		PipedOutputStream outStream = new PipedOutputStream();
 		PipedInputStream inStream = new PipedInputStream(outStream);
@@ -110,7 +110,7 @@ class TestLaminar {
 	}
 
 	@Test
-	void testSimpleClientAndListeners() throws Throwable {
+	public void testSimpleClientAndListeners() throws Throwable {
 		byte[] message = "Hello World!".getBytes();
 		// Here, we start up, connect a client, send one message, wait for it to commit, observe listener behaviour, then shut everything down.
 		PipedOutputStream outStream = new PipedOutputStream();
@@ -157,7 +157,7 @@ class TestLaminar {
 	}
 
 	@Test
-	void testClientForceDisconnect() throws Throwable {
+	public void testClientForceDisconnect() throws Throwable {
 		byte[] message = "Hello World!".getBytes();
 		// Here, we start up, connect a client, send one message, wait for it to commit, observe listener behaviour, then shut everything down.
 		PipedOutputStream outStream = new PipedOutputStream();
@@ -192,7 +192,7 @@ class TestLaminar {
 	}
 
 	@Test
-	void testClientFailedConnection() throws Throwable {
+	public void testClientFailedConnection() throws Throwable {
 		byte[] message = "Hello World!".getBytes();
 		InetSocketAddress address = new InetSocketAddress("localhost", 2002);
 		
@@ -208,7 +208,7 @@ class TestLaminar {
 	}
 
 	@Test
-	void testListenerFailedConnection() throws Throwable {
+	public void testListenerFailedConnection() throws Throwable {
 		InetSocketAddress address = new InetSocketAddress("localhost", 2002);
 		CountDownLatch latch = new CountDownLatch(1);
 		ListenerThread listener = new ListenerThread(address, null, latch);
@@ -225,7 +225,7 @@ class TestLaminar {
 	}
 
 	@Test
-	void testSimpleClientWaitForConnection() throws Throwable {
+	public void testSimpleClientWaitForConnection() throws Throwable {
 		// Here, we start up, connect a client, send one message, wait for it to commit, then shut everything down.
 		PipedOutputStream outStream = new PipedOutputStream();
 		PipedInputStream inStream = new PipedInputStream(outStream);
@@ -261,7 +261,7 @@ class TestLaminar {
 	}
 
 	@Test
-	void testGlobalMutationCommitOffset() throws Throwable {
+	public void testGlobalMutationCommitOffset() throws Throwable {
 		// Start up a fake client to verify that the RECEIVED and COMMITTED responses have the expected commit offsets.
 		PipedOutputStream outStream = new PipedOutputStream();
 		PipedInputStream inStream = new PipedInputStream(outStream);
@@ -306,7 +306,7 @@ class TestLaminar {
 	}
 
 	@Test
-	void testSimulatedClientReconnect() throws Throwable {
+	public void testSimulatedClientReconnect() throws Throwable {
 		// Here, we start up, connect a client, send one message, wait for it to commit, then shut everything down.
 		PipedOutputStream outStream = new PipedOutputStream();
 		PipedInputStream inStream = new PipedInputStream(outStream);
@@ -376,7 +376,7 @@ class TestLaminar {
 	}
 
 	@Test
-	void testSimplePoisonCase() throws Throwable {
+	public void testSimplePoisonCase() throws Throwable {
 		// Here, we start up, connect a client, send one message, wait for it to commit, observe listener behaviour, then shut everything down.
 		PipedOutputStream outStream = new PipedOutputStream();
 		PipedInputStream inStream = new PipedInputStream(outStream);

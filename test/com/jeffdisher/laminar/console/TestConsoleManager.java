@@ -11,7 +11,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 
-class TestConsoleManager {
+public class TestConsoleManager {
 	private PrintStream _fakeOut;
 
 	@BeforeEach
@@ -21,7 +21,7 @@ class TestConsoleManager {
 	}
 
 	@Test
-	void testStopParse() throws Throwable {
+	public void testStopParse() throws Throwable {
 		FakeStream stream = new FakeStream("stop\n");
 		CountDownLatch waitForStop = new CountDownLatch(1);
 		ConsoleManager manager = new ConsoleManager(_fakeOut, stream, new IConsoleManagerBackgroundCallbacks() {
@@ -37,7 +37,7 @@ class TestConsoleManager {
 	}
 
 	@Test
-	void testStopWithArgs() throws Throwable {
+	public void testStopWithArgs() throws Throwable {
 		FakeStream stream = new FakeStream("stop now in 5\n");
 		CountDownLatch waitForStop = new CountDownLatch(1);
 		ConsoleManager manager = new ConsoleManager(_fakeOut, stream, new IConsoleManagerBackgroundCallbacks() {
@@ -53,7 +53,7 @@ class TestConsoleManager {
 	}
 
 	@Test
-	void testNoInput() throws Throwable {
+	public void testNoInput() throws Throwable {
 		FakeStream stream = new FakeStream("");
 		ConsoleManager manager = new ConsoleManager(_fakeOut, stream, new IConsoleManagerBackgroundCallbacks() {
 			@Override
@@ -70,7 +70,7 @@ class TestConsoleManager {
 	}
 
 	@Test
-	void testStopMultiple() throws Throwable {
+	public void testStopMultiple() throws Throwable {
 		FakeStream stream = new FakeStream("stop\nstopstop\nstop\n\n\n");
 		CountDownLatch waitForStop = new CountDownLatch(1);
 		ConsoleManager manager = new ConsoleManager(_fakeOut, stream, new IConsoleManagerBackgroundCallbacks() {
@@ -86,7 +86,7 @@ class TestConsoleManager {
 	}
 
 	@Test
-	void testLongCommand() throws Throwable {
+	public void testLongCommand() throws Throwable {
 		StringBuilder builder = new StringBuilder();
 		for (int i = 0; i < 2048; ++i) {
 			builder.append("a");

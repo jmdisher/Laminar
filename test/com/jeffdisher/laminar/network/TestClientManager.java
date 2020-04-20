@@ -17,7 +17,7 @@ import com.jeffdisher.laminar.network.ClientManager.ClientNode;
 import com.jeffdisher.laminar.types.EventRecord;
 
 
-class TestClientManager {
+public class TestClientManager {
 	private static final int PORT_BASE = 3100;
 
 	/**
@@ -26,7 +26,7 @@ class TestClientManager {
 	 * message.
 	 */
 	@Test
-	void testReceiveTempMessage() throws Throwable {
+	public void testReceiveTempMessage() throws Throwable {
 		// Create a message.
 		ClientMessage message = ClientMessage.temp(1000, new byte[] {0,1,2,3});
 		// Create a server.
@@ -60,7 +60,7 @@ class TestClientManager {
 	}
 
 	@Test
-	void testSendCommitResponse() throws Throwable {
+	public void testSendCommitResponse() throws Throwable {
 		// Create a commit response.
 		ClientResponse commit = ClientResponse.committed(1L, 1L);
 		// Create a server.
@@ -104,7 +104,7 @@ class TestClientManager {
 	}
 
 	@Test
-	void testSendEvent() throws Throwable {
+	public void testSendEvent() throws Throwable {
 		// Create an event record.
 		EventRecord record = EventRecord.generateRecord(1L, 1L, UUID.randomUUID(), 1L, new byte[] { 1, 2, 3});
 		// Create a server.

@@ -7,9 +7,9 @@ import org.junit.jupiter.api.Test;
 /**
  * Tests around serialization and deserialization of ClientResponse objects.
  */
-class TestClientResponse {
+public class TestClientResponse {
 	@Test
-	void testError() throws Throwable {
+	public void testError() throws Throwable {
 		long nonce = 1000;
 		long lastCommitGlobalOffset = 1L;
 		ClientResponse input = ClientResponse.error(nonce, lastCommitGlobalOffset);
@@ -22,7 +22,7 @@ class TestClientResponse {
 	}
 
 	@Test
-	void testReceived() throws Throwable {
+	public void testReceived() throws Throwable {
 		long nonce = 1000;
 		long lastCommitGlobalOffset = 1L;
 		ClientResponse input = ClientResponse.received(nonce, lastCommitGlobalOffset);
@@ -35,7 +35,7 @@ class TestClientResponse {
 	}
 
 	@Test
-	void testCommitted() throws Throwable {
+	public void testCommitted() throws Throwable {
 		long nonce = 1000;
 		long lastCommitGlobalOffset = 1L;
 		ClientResponse input = ClientResponse.committed(nonce, lastCommitGlobalOffset);

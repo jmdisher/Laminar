@@ -14,11 +14,11 @@ import org.junit.jupiter.api.Test;
 import com.jeffdisher.laminar.network.NetworkManager.NodeToken;
 
 
-class TestNetworkManager {
-	private static final int PORT_BASE = 3000;
+public class TestNetworkManager {
+	private static final int PORT_BASE = 3200;
 
 	@Test
-	void testStartStop() throws Throwable {
+	public void testStartStop() throws Throwable {
 		// Create a server.
 		ServerSocketChannel socket = createSocket(PORT_BASE + 1);
 		LatchedCallbacks callbacks = new LatchedCallbacks();
@@ -28,7 +28,7 @@ class TestNetworkManager {
 	}
 
 	@Test
-	void testSingleClient() throws Throwable {
+	public void testSingleClient() throws Throwable {
 		// Create a server.
 		int port = PORT_BASE + 2;
 		ServerSocketChannel socket = createSocket(port);
@@ -60,7 +60,7 @@ class TestNetworkManager {
 	}
 
 	@Test
-	void testPingPong2() throws Throwable {
+	public void testPingPong2() throws Throwable {
 		// Create main server.
 		int serverPort = PORT_BASE + 3;
 		// Create to "clients"
@@ -109,7 +109,7 @@ class TestNetworkManager {
 	}
 
 	@Test
-	void testSingleClientWithNetworkManager() throws Throwable {
+	public void testSingleClientWithNetworkManager() throws Throwable {
 		// Create a server.
 		int port = PORT_BASE + 6;
 		ServerSocketChannel socket = createSocket(port);
@@ -150,7 +150,7 @@ class TestNetworkManager {
 	}
 
 	@Test
-	void testOutgoingConnectionFailure() throws Throwable {
+	public void testOutgoingConnectionFailure() throws Throwable {
 		int badPort = 9999;
 		LatchedCallbacks client_callbacks = new LatchedCallbacks();
 		NetworkManager client = NetworkManager.outboundOnly(client_callbacks);
@@ -164,7 +164,7 @@ class TestNetworkManager {
 	}
 
 	@Test
-	void testExplicitDisconnects() throws Throwable {
+	public void testExplicitDisconnects() throws Throwable {
 		// We will create 2 servers, have them connect to each other, and observe explicit closures on either side.
 		int port1 = PORT_BASE + 7;
 		int port2 = PORT_BASE + 8;
