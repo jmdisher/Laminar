@@ -485,12 +485,9 @@ class TestLaminar {
 					Assert.assertArrayEquals(_message, record.payload);
 				}
 				_latch.countDown();
-				// This might be a redundant close so wrap it.
-				try {
-					this.listener.close();
-				} catch (IllegalStateException e) {
-					// This happens in cases where we initiated an external close.
-				}
+				// ListenerConnection is safe against redundant closes (even though the underlying NetworkManager is not).
+				// The reasoning behind this is that ListenerConnection is simpler and is directly accessed by client code.
+				this.listener.close();
 			} catch (IOException | InterruptedException e) {
 				Assert.fail(e.getLocalizedMessage());
 			}

@@ -190,23 +190,32 @@ public class ListenerConnection implements Closeable, INetworkManagerBackgroundC
 
 	@Override
 	public void close() throws IOException {
+		boolean shouldStopNetwork = false;
+		boolean interrupt = false;
 		synchronized (this) {
-			_keepRunning = false;
-			this.notifyAll();
-			boolean interrupt = false;
-			while (_isPollActive) {
-				try {
-					this.wait();
-				} catch (InterruptedException e) {
-					// This operation isn't interruptable but we will restore the state when done.
-					interrupt = true;
+			// We only proceed to stop this if nobody else already did.
+			shouldStopNetwork = _keepRunning;
+			if (shouldStopNetwork) {
+				_keepRunning = false;
+				this.notifyAll();
+				while (_isPollActive) {
+					try {
+						this.wait();
+					} catch (InterruptedException e) {
+						// This operation isn't interruptable but we will restore the state when done.
+						interrupt = true;
+					}
 				}
 			}
-			if (interrupt) {
-				Thread.currentThread().interrupt();
-			}
 		}
-		_network.stopAndWaitForTermination();
+		// Only the thread which transitioned the state to no longer running should stop the network since only 1 thread is allowed to.
+		if (shouldStopNetwork) {
+			_network.stopAndWaitForTermination();
+		}
+		// If someone tried to interrupt us during this uninterruptable operation, re-interrupt the thread.
+		if (interrupt) {
+			Thread.currentThread().interrupt();
+		}
 	}
 
 
