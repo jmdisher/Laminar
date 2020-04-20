@@ -1,5 +1,9 @@
+# Eclipse
+
 bin/
 .project
 .classpath
 .settings
 
+# Ant build
+build/
