@@ -8,7 +8,9 @@ import com.jeffdisher.laminar.network.ClientMessage;
 import com.jeffdisher.laminar.network.INetworkManagerBackgroundCallbacks;
 import com.jeffdisher.laminar.network.NetworkManager;
 import com.jeffdisher.laminar.network.NetworkManager.NodeToken;
+import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.types.EventRecord;
+import com.jeffdisher.laminar.types.EventRecordType;
 import com.jeffdisher.laminar.utils.Assert;
 
 
@@ -98,10 +100,24 @@ public class ListenerConnection implements Closeable, INetworkManagerBackgroundC
 		EventRecord record = null;
 		_isPollActive = true;
 		try {
-			record = _doLockedPollForNextEvent(_previousLocalOffset, record);
-			// Note that we don't want to progress if we couldn't connect.
-			if (null != record) {
-				_previousLocalOffset = record.localOffset;
+			boolean tryAgain = true;
+			while (tryAgain) {
+				// We only try again if we keep getting config changes.
+				tryAgain = false;
+				record = _doLockedPollForNextEvent(_previousLocalOffset);
+				// Note that we don't want to progress if we couldn't connect.
+				if (null != record) {
+					// We want to intercept any CONFIG_CHANGE events to update our connection state, instead of returning this to the user (since it is a control message, not data).
+					if (EventRecordType.CONFIG_CHANGE == record.type) {
+						// For now, we just verify this is what we expected but we will use this to manage reconnect, later.
+						ClusterConfig currentConfig = ClusterConfig.deserialize(record.payload);
+						Assert.assertTrue(1 == currentConfig.entries.length);
+						Assert.assertTrue(_serverAddress.equals(currentConfig.entries[0].client));
+						tryAgain = true;
+					} else {
+						_previousLocalOffset = record.localOffset;
+					}
+				}
 			}
 		} finally {
 			_isPollActive = false;
@@ -219,7 +235,8 @@ public class ListenerConnection implements Closeable, INetworkManagerBackgroundC
 	}
 
 
-	private EventRecord _doLockedPollForNextEvent(long previousLocalOffset, EventRecord record) throws InterruptedException, AssertionError {
+	private EventRecord _doLockedPollForNextEvent(long previousLocalOffset) throws InterruptedException, AssertionError {
+		EventRecord record = null;
 		while (_keepRunning && (null == record)) {
 			// Wait until we are ready to take some action.  Cases to exit:
 			// -told to stop (!_keepRunning)

@@ -501,20 +501,28 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 		case LISTEN: {
 			// This is the first message a client sends when they want to register as a listener.
 			// In this case, they won't send any other messages to us and just expect a constant stream of raw EventRecords to be sent to them.
-			// NOTE:  Because this stream doesn't use message framing, they don't currently receive the initial config or config updates.
-			// TODO:  Design a way for listeners to receive initial and updated configs.
+			
 			// Note that this message overloads the nonce as the last received local offset.
 			long lastReceivedLocalOffset = incoming.nonce;
 			if ((lastReceivedLocalOffset < 0L) || (lastReceivedLocalOffset >= _nextLocalEventOffset)) {
 				Assert.unimplemented("This listener is invalid so disconnect it");
 			}
+			
 			// Create the new state and change the connection state in the maps.
 			ListenerState state = new ListenerState(lastReceivedLocalOffset);
 			boolean didRemove = _newClients.remove(client);
 			Assert.assertTrue(didRemove);
 			_listenerClients.put(client, state);
-			// Start the fetch or setup for the first event after the one they last had.
-			_backgroundSetupListenerForNextEvent(client, state);
+			
+			// In this case, we will synthesize the current config as an EventRecord (we have a special type for config
+			// changes), send them that message, and then we will wait for the socket to become writable, again, where
+			// we will begin streaming EventRecords to them.
+			EventRecord initialConfig = EventRecord.synthesizeRecordForConfig(_currentConfig);
+			// This is the only message we send on this socket which isn't specifically related to the
+			// "fetch+send+repeat" cycle so we will send it directly, waiting for the writable callback from the socket
+			// to start the initial fetch.
+			// If we weren't sending a message here, we would start the cycle by calling _backgroundSetupListenerForNextEvent(), given that the socket starts writable.
+			_clientManager.sendEventToListener(client, initialConfig);
 			break;
 		}
 		default:

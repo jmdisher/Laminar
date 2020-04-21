@@ -13,8 +13,21 @@ import com.jeffdisher.laminar.utils.Assert;
  * serialization/deserialization logic.
  */
 public class EventRecord {
+	/**
+	 * Creates a new event record.  This method is specifically meant for the common-cases, not special-cases like
+	 * CONFIG_CHANGE.
+	 * 
+	 * @param type The record type (cannot be INVALID or CONFIG_CHANGE).
+	 * @param globalOffset The global offset of the mutation which caused the event.
+	 * @param localOffset The local offset of this event within its topic.
+	 * @param clientId The UUID of the client who sent the mutation which caused the event.
+	 * @param clientNonce The client nonce of the mutation which caused the event.
+	 * @param payload The payload of event data.
+	 * @return A new EventRecord instance for the common-case.
+	 */
 	public static EventRecord generateRecord(EventRecordType type, long globalOffset, long localOffset, UUID clientId, long clientNonce, byte[] payload) {
 		Assert.assertTrue(EventRecordType.INVALID != type);
+		Assert.assertTrue(EventRecordType.CONFIG_CHANGE != type);
 		// Currently, we only support matching global and local offsets (these are just here to get the shape in place).
 		Assert.assertTrue(globalOffset == localOffset);
 		// The offsets must be positive.
@@ -25,6 +38,25 @@ public class EventRecord {
 		return new EventRecord(type, globalOffset, localOffset, clientId, clientNonce, payload);
 	}
 
+	/**
+	 * Creates the special-case CONFIG_CHANGE EventRecord.  Since the listener only interprets EventRecords, and has no
+	 * message framing for any other kind of data, we package a change to the cluster config (which is not part of the
+	 * data stream, just cluster meta-data) in an EventRecord.
+	 * 
+	 * @param config The config to encapsulate.
+	 * @return A new EventRecord instance for this special-case.
+	 */
+	public static EventRecord synthesizeRecordForConfig(ClusterConfig config) {
+		return new EventRecord(EventRecordType.CONFIG_CHANGE, -1L, -1L, new UUID(0L, 0L), -1L, config.serialize());
+	}
+
+	/**
+	 * Deserializes an EventRecord from raw bytes.  Note that there is no difference between common-case and special-
+	 * case EventRecord in the serialized form.
+	 * 
+	 * @param serialized A serialized EventRecord/
+	 * @return A new EventRecord instance.
+	 */
 	public static EventRecord deserialize(byte[] serialized) {
 		ByteBuffer wrapper = ByteBuffer.wrap(serialized);
 		int ordinal = (int) wrapper.get();
@@ -58,6 +90,12 @@ public class EventRecord {
 		this.payload = payload;
 	}
 
+	/**
+	 * Serializes the receiver into raw bytes.  Note that there is no difference between common-case and special-case
+	 * EventRecord in the serialized form.
+	 * 
+	 * @return The raw bytes of the serialized receiver.
+	 */
 	public byte[] serialize() {
 		byte[] buffer = new byte[Byte.BYTES + Long.BYTES + Long.BYTES + (2 * Long.BYTES) + Long.BYTES + this.payload.length];
 		ByteBuffer wrapper = ByteBuffer.wrap(buffer);
