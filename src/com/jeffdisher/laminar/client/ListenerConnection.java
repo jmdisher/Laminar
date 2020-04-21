@@ -63,6 +63,8 @@ public class ListenerConnection implements Closeable, INetworkManagerBackgroundC
 	private final InetSocketAddress _serverAddress;
 	private final NetworkManager _network;
 	private NodeToken _connection;
+	// We also track the latest config from the cluster - this is currently just used for testing but will eventually be used to govern reconnect decisions.
+	private ClusterConfig _currentClusterConfig;
 
 	private boolean _keepRunning;
 	// Since we are using the user's thread to perform the poll and we must stop polling before stopping the network
@@ -113,6 +115,8 @@ public class ListenerConnection implements Closeable, INetworkManagerBackgroundC
 						ClusterConfig currentConfig = ClusterConfig.deserialize(record.payload);
 						Assert.assertTrue(1 == currentConfig.entries.length);
 						Assert.assertTrue(_serverAddress.equals(currentConfig.entries[0].client));
+						// Whether this was null (start-up) or something else (if the config change mid-run), we want to set this as our active config in case of a reconnect.
+						_currentClusterConfig = currentConfig;
 						tryAgain = true;
 					} else {
 						_previousLocalOffset = record.localOffset;
@@ -146,6 +150,13 @@ public class ListenerConnection implements Closeable, INetworkManagerBackgroundC
 			throw _mostRecentConnectionFailure;
 		}
 		return isNetworkUp;
+	}
+
+	/**
+	 * @return The most recent cluster config we received from the server (null during start-up).
+	 */
+	public ClusterConfig getCurrentConfig() {
+		return _currentClusterConfig;
 	}
 
 	// <INetworkManagerBackgroundCallbacks>

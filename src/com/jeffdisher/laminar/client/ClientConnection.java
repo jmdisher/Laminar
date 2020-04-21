@@ -70,6 +70,8 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 	private final NetworkManager _network;
 	private final UUID _clientId;
 	private NodeToken _connection;
+	// We also track the latest config from the cluster - this is currently just used for testing but will eventually be used to govern reconnect decisions.
+	private ClusterConfig _currentClusterConfig;
 
 	private volatile boolean _keepRunning;
 	private Thread _backgroundThread;
@@ -174,6 +176,13 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 			throw _mostRecentConnectionFailure;
 		}
 		return isNetworkUp;
+	}
+
+	/**
+	 * @return The most recent cluster config we received from the server (null during start-up).
+	 */
+	public ClusterConfig getCurrentConfig() {
+		return _currentClusterConfig;
 	}
 
 	// <INetworkManagerBackgroundCallbacks>
@@ -369,6 +378,8 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 			ClusterConfig currentConfig = ClusterConfig.deserialize(deserialized.extraData);
 			Assert.assertTrue(1 == currentConfig.entries.length);
 			Assert.assertTrue(_serverAddress.equals(currentConfig.entries[0].client));
+			// Whether this was null (start-up) or something else (if the config change mid-run), we want to set this as our active config in case of a reconnect.
+			_currentClusterConfig = currentConfig;
 			
 			// We rely on the SortedMap returning a sorted collection of values whose iterator returns them in ascending order of corresponding keys.
 			_outgoingMessages.addAll(0, _inFlightMessages.values());

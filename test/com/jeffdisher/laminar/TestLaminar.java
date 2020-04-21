@@ -25,6 +25,7 @@ import com.jeffdisher.laminar.client.ListenerConnection;
 import com.jeffdisher.laminar.network.ClientMessage;
 import com.jeffdisher.laminar.network.ClientResponse;
 import com.jeffdisher.laminar.network.ClientResponseType;
+import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.types.EventRecord;
 
 
@@ -421,6 +422,8 @@ public class TestLaminar {
 				results[i].waitForReceived();
 				results[i].waitForCommitted();
 			}
+			// By this point, the client must have received the config (since it gets that before any received/committed).
+			Assert.assertNotNull(client.getCurrentConfig());
 		}
 		
 		// Start a listener after the client is done.
@@ -436,6 +439,9 @@ public class TestLaminar {
 			Assert.assertEquals(i, afterEvents[i].payload[0]);
 			Assert.assertEquals(i, beforeEvents[i].payload[0]);
 		}
+		// Also verify that the listeners got the config.
+		Assert.assertNotNull(beforeListener.getCurrentConfig());
+		Assert.assertNotNull(afterListener.getCurrentConfig());
 		
 		// Shut down.
 		feeder.println("stop");
@@ -510,6 +516,10 @@ public class TestLaminar {
 		public CaptureListener(InetSocketAddress address, int messagesToCapture) throws IOException {
 			_listener = ListenerConnection.open(address, 0L);
 			_captured = new EventRecord[messagesToCapture];
+		}
+		
+		public ClusterConfig getCurrentConfig() {
+			return _listener.getCurrentConfig();
 		}
 		
 		public EventRecord[] waitForTerminate() throws InterruptedException {
