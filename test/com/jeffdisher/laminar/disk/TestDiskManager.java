@@ -7,7 +7,9 @@ import org.junit.Assert;
 import org.junit.Test;
 
 import com.jeffdisher.laminar.types.EventRecord;
+import com.jeffdisher.laminar.types.EventRecordType;
 import com.jeffdisher.laminar.types.MutationRecord;
+import com.jeffdisher.laminar.types.MutationRecordType;
 
 
 public class TestDiskManager {
@@ -24,8 +26,8 @@ public class TestDiskManager {
 	 */
 	@Test
 	public void testSimpleWriteAndFetch() throws Throwable {
-		EventRecord event1 = EventRecord.generateRecord(1L, 1L, UUID.randomUUID(), 1L, new byte[] {1});
-		EventRecord event2 = EventRecord.generateRecord(2L, 2L, UUID.randomUUID(), 2L, new byte[] {1});
+		EventRecord event1 = EventRecord.generateRecord(EventRecordType.TEMP, 1L, 1L, UUID.randomUUID(), 1L, new byte[] {1});
+		EventRecord event2 = EventRecord.generateRecord(EventRecordType.TEMP, 2L, 2L, UUID.randomUUID(), 2L, new byte[] {1});
 		LatchedCallbacks callbacks = new LatchedCallbacks();
 		callbacks.commitEventLatch = new CountDownLatch(2);
 		callbacks.fetchEventLatch = new CountDownLatch(1);
@@ -47,10 +49,10 @@ public class TestDiskManager {
 	 */
 	@Test
 	public void testMutationAndEventCommitAndFetch() throws Throwable {
-		MutationRecord mutation1 = MutationRecord.generateRecord(1L, UUID.randomUUID(), 1L, new byte[] {1});
-		MutationRecord mutation2 = MutationRecord.generateRecord(2L, UUID.randomUUID(), 2L, new byte[] {1});
-		EventRecord event1 = EventRecord.generateRecord(1L, 1L, UUID.randomUUID(), 1L, new byte[] {1});
-		EventRecord event2 = EventRecord.generateRecord(2L, 2L, UUID.randomUUID(), 2L, new byte[] {1});
+		MutationRecord mutation1 = MutationRecord.generateRecord(MutationRecordType.TEMP, 1L, UUID.randomUUID(), 1L, new byte[] {1});
+		MutationRecord mutation2 = MutationRecord.generateRecord(MutationRecordType.TEMP, 2L, UUID.randomUUID(), 2L, new byte[] {1});
+		EventRecord event1 = EventRecord.generateRecord(EventRecordType.TEMP, 1L, 1L, UUID.randomUUID(), 1L, new byte[] {1});
+		EventRecord event2 = EventRecord.generateRecord(EventRecordType.TEMP, 2L, 2L, UUID.randomUUID(), 2L, new byte[] {1});
 		
 		LatchedCallbacks callbacks = new LatchedCallbacks();
 		callbacks.commitMutationLatch = new CountDownLatch(2);

@@ -24,7 +24,9 @@ import com.jeffdisher.laminar.network.IClientManagerBackgroundCallbacks;
 import com.jeffdisher.laminar.network.IClusterManagerBackgroundCallbacks;
 import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.types.EventRecord;
+import com.jeffdisher.laminar.types.EventRecordType;
 import com.jeffdisher.laminar.types.MutationRecord;
+import com.jeffdisher.laminar.types.MutationRecordType;
 import com.jeffdisher.laminar.utils.Assert;
 
 
@@ -536,8 +538,8 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 			// Create the MutationRecord and EventRecord.
 			long globalOffset = _nextGlobalMutationOffset++;
 			long localOffset = _nextLocalEventOffset++;
-			MutationRecord mutation = MutationRecord.generateRecord(globalOffset, state.clientId, incoming.nonce, contents);
-			EventRecord event = EventRecord.generateRecord(globalOffset, localOffset, state.clientId, incoming.nonce, contents);
+			MutationRecord mutation = MutationRecord.generateRecord(MutationRecordType.TEMP, globalOffset, state.clientId, incoming.nonce, contents);
+			EventRecord event = EventRecord.generateRecord(EventRecordType.TEMP, globalOffset, localOffset, state.clientId, incoming.nonce, contents);
 			// Note that we know the global offset will be the offset of this event once it is committed (by definition).
 			ClientResponse commit = ClientResponse.committed(incoming.nonce, globalOffset);
 			// Set up the client to be notified that the message committed once the MutationRecord is durable.
@@ -558,8 +560,8 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 			// Create the MutationRecord and EventRecord.
 			long globalOffset = _nextGlobalMutationOffset++;
 			long localOffset = _nextLocalEventOffset++;
-			MutationRecord mutation = MutationRecord.generateRecord(globalOffset, state.clientId, incoming.nonce, contents);
-			EventRecord event = EventRecord.generateRecord(globalOffset, localOffset, state.clientId, incoming.nonce, contents);
+			MutationRecord mutation = MutationRecord.generateRecord(MutationRecordType.TEMP, globalOffset, state.clientId, incoming.nonce, contents);
+			EventRecord event = EventRecord.generateRecord(EventRecordType.TEMP, globalOffset, localOffset, state.clientId, incoming.nonce, contents);
 			// Note that we know the global offset will be the offset of this event once it is committed (by definition).
 			ClientResponse commit = ClientResponse.committed(incoming.nonce, globalOffset);
 			// Set up the client to be notified that the message committed once the MutationRecord is durable.
