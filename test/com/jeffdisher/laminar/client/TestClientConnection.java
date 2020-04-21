@@ -1,6 +1,7 @@
 package com.jeffdisher.laminar.client;
 
 import java.io.IOException;
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.ServerSocketChannel;
@@ -18,6 +19,7 @@ import com.jeffdisher.laminar.network.ClientMessagePayload_Reconnect;
 import com.jeffdisher.laminar.network.ClientMessagePayload_Temp;
 import com.jeffdisher.laminar.network.ClientMessageType;
 import com.jeffdisher.laminar.network.ClientResponse;
+import com.jeffdisher.laminar.types.ClusterConfig;
 
 
 public class TestClientConnection {
@@ -34,9 +36,10 @@ public class TestClientConnection {
 		// Create a server socket.
 		int port = PORT_BASE + 1;
 		ServerSocketChannel socket = createSocket(port);
+		InetSocketAddress address = new InetSocketAddress(InetAddress.getLocalHost(), port);
 		
 		// Start the client.
-		try (ClientConnection connection = ClientConnection.open(new InetSocketAddress("localhost", port))) {
+		try (ClientConnection connection = ClientConnection.open(address)) {
 			// Accept the connection (we will use blocking mode for the emulated side).
 			SocketChannel server = socket.accept();
 			server.configureBlocking(true);
@@ -55,7 +58,7 @@ public class TestClientConnection {
 			Assert.assertEquals(-1L, handshake.nonce);
 			Assert.assertEquals(connection.getClientId(), ((ClientMessagePayload_Handshake)handshake.payload).clientId);
 			// Send the ready.
-			_sendReady(server, 1L, lastCommitGlobalOffset);
+			_sendReady(server, 1L, lastCommitGlobalOffset, _synthesizeClientOnlyConfig(address));
 			
 			// Send the message.
 			ClientResult result = connection.sendTemp(payload);
@@ -91,9 +94,10 @@ public class TestClientConnection {
 		// Create a server socket.
 		int port = PORT_BASE + 2;
 		ServerSocketChannel socket = createSocket(port);
+		InetSocketAddress address = new InetSocketAddress(InetAddress.getLocalHost(), port);
 		
 		// Start the client.
-		try (ClientConnection connection = ClientConnection.open(new InetSocketAddress("localhost", port))) {
+		try (ClientConnection connection = ClientConnection.open(address)) {
 			// Accept the connection (we will use blocking mode for the emulated side).
 			SocketChannel server = socket.accept();
 			server.configureBlocking(true);
@@ -112,7 +116,7 @@ public class TestClientConnection {
 			Assert.assertEquals(-1L, handshake.nonce);
 			Assert.assertEquals(connection.getClientId(), ((ClientMessagePayload_Handshake)handshake.payload).clientId);
 			// Send the ready.
-			_sendReady(server, 1L, lastCommitGlobalOffset);
+			_sendReady(server, 1L, lastCommitGlobalOffset, _synthesizeClientOnlyConfig(address));
 			
 			// Now, wait for that to reach the client.
 			connection.waitForConnection();
@@ -139,7 +143,7 @@ public class TestClientConnection {
 		FakeServer fakeServer = new FakeServer(socket, baseMutationOffset);
 		
 		// Start the client.
-		try (ClientConnection connection = ClientConnection.open(new InetSocketAddress("localhost", port))) {
+		try (ClientConnection connection = ClientConnection.open(new InetSocketAddress(InetAddress.getLocalHost(), port))) {
 			ClientResult[] results = new ClientResult[10];
 			fakeServer.handleConnect();
 			
@@ -202,7 +206,7 @@ public class TestClientConnection {
 
 	private ServerSocketChannel createSocket(int port) throws IOException {
 		ServerSocketChannel socket = ServerSocketChannel.open();
-		InetSocketAddress clientAddress = new InetSocketAddress(port);
+		InetSocketAddress clientAddress = new InetSocketAddress(InetAddress.getLocalHost(), port);
 		socket.bind(clientAddress);
 		return socket;
 	}
@@ -227,14 +231,18 @@ public class TestClientConnection {
 		Assert.assertEquals(writeBuffer.position(), didWrite);
 	}
 
-	private void _sendReady(SocketChannel server, long expectedNonce, long lastCommitGlobalOffset) throws IOException {
-		ClientResponse committed = ClientResponse.clientReady(expectedNonce, lastCommitGlobalOffset);
+	private void _sendReady(SocketChannel server, long expectedNonce, long lastCommitGlobalOffset, ClusterConfig config) throws IOException {
+		ClientResponse committed = ClientResponse.clientReady(expectedNonce, lastCommitGlobalOffset, config);
 		byte[] raw = committed.serialize();
 		ByteBuffer writeBuffer = ByteBuffer.allocate(Short.BYTES + raw.length);
 		writeBuffer.putShort((short)raw.length).put(raw);
 		writeBuffer.flip();
 		int didWrite = server.write(writeBuffer);
 		Assert.assertEquals(writeBuffer.position(), didWrite);
+	}
+
+	private static ClusterConfig _synthesizeClientOnlyConfig(InetSocketAddress address) {
+		return ClusterConfig.configFromEntries(new ClusterConfig.ConfigEntry[] {new ClusterConfig.ConfigEntry(new InetSocketAddress(address.getAddress(), 0), address)});
 	}
 
 
@@ -265,7 +273,8 @@ public class TestClientConnection {
 			_clientId = ((ClientMessagePayload_Handshake)message.payload).clientId;
 			_clientNextNonce = 1L;
 			
-			ClientResponse response = ClientResponse.clientReady(1L, _mostRecentCommitOffset);
+			ClusterConfig config = _synthesizeConfig();
+			ClientResponse response = ClientResponse.clientReady(1L, _mostRecentCommitOffset, config);
 			_sendResponse(response);
 		}
 		
@@ -318,7 +327,7 @@ public class TestClientConnection {
 			// The next one shouldn't be in storage.
 			Assert.assertFalse(this.messageByMutationOffset.containsKey(globalMutationToLoad));
 			// Just send them the ready since we have fallen off our storage.
-			_sendResponse(ClientResponse.clientReady(_clientNextNonce, _mostRecentCommitOffset));
+			_sendResponse(ClientResponse.clientReady(_clientNextNonce, _mostRecentCommitOffset, _synthesizeConfig()));
 		}
 		
 		private ClientMessage _readNextMessage() throws IOException {
@@ -350,6 +359,11 @@ public class TestClientConnection {
 			int write = _clientConnection.write(buffer);
 			// If we read less, this test will need to be made more complex.
 			Assert.assertEquals(buffer.capacity(), write);
+		}
+		
+		private ClusterConfig _synthesizeConfig() throws IOException {
+			InetSocketAddress address = (InetSocketAddress)_socket.getLocalAddress();
+			return _synthesizeClientOnlyConfig(address);
 		}
 	}
 }

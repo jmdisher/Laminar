@@ -2,6 +2,8 @@ package com.jeffdisher.laminar.network;
 
 import java.nio.ByteBuffer;
 
+import com.jeffdisher.laminar.types.ClusterConfig;
+
 
 /**
  * High-level representation of a message to be sent FROM the server TO a client.
@@ -17,7 +19,7 @@ public class ClientResponse {
 	 * @return A new ClientResponse instance.
 	 */
 	public static ClientResponse error(long nonce, long lastCommitGlobalOffset) {
-		return new ClientResponse(ClientResponseType.ERROR, nonce, lastCommitGlobalOffset);
+		return new ClientResponse(ClientResponseType.ERROR, nonce, lastCommitGlobalOffset, new byte[0]);
 	}
 
 	/**
@@ -27,10 +29,11 @@ public class ClientResponse {
 	 * 
 	 * @param expectedNextNonce The nonce the server is expecting the client to use on its next message.
 	 * @param lastCommitGlobalOffset The most recent global message offset which was committed on the server.
+	 * @param activeConfig The config the cluster is currently using (the "old config", in the case of joint consensus).
 	 * @return A new ClientResponse instance.
 	 */
-	public static ClientResponse clientReady(long expectedNextNonce, long lastCommitGlobalOffset) {
-		return new ClientResponse(ClientResponseType.CLIENT_READY, expectedNextNonce, lastCommitGlobalOffset);
+	public static ClientResponse clientReady(long expectedNextNonce, long lastCommitGlobalOffset, ClusterConfig activeConfig) {
+		return new ClientResponse(ClientResponseType.CLIENT_READY, expectedNextNonce, lastCommitGlobalOffset, activeConfig.serialize());
 	}
 
 	/**
@@ -43,7 +46,7 @@ public class ClientResponse {
 	 * @return A new ClientResponse instance.
 	 */
 	public static ClientResponse received(long nonce, long lastCommitGlobalOffset) {
-		return new ClientResponse(ClientResponseType.RECEIVED, nonce, lastCommitGlobalOffset);
+		return new ClientResponse(ClientResponseType.RECEIVED, nonce, lastCommitGlobalOffset, new byte[0]);
 	}
 
 	/**
@@ -58,7 +61,7 @@ public class ClientResponse {
 	 * @return A new ClientResponse instance.
 	 */
 	public static ClientResponse committed(long nonce, long lastCommitGlobalOffset) {
-		return new ClientResponse(ClientResponseType.COMMITTED, nonce, lastCommitGlobalOffset);
+		return new ClientResponse(ClientResponseType.COMMITTED, nonce, lastCommitGlobalOffset, new byte[0]);
 	}
 
 	/**
@@ -72,18 +75,22 @@ public class ClientResponse {
 		ClientResponseType type = ClientResponseType.values()[(int)wrapper.get()];
 		long nonce = wrapper.getLong();
 		long lastCommitGlobalOffset = wrapper.getLong();
-		return new ClientResponse(type, nonce, lastCommitGlobalOffset);
+		byte[] extraData = new byte[wrapper.remaining()];
+		wrapper.get(extraData);
+		return new ClientResponse(type, nonce, lastCommitGlobalOffset, extraData);
 	}
 
 
 	public final ClientResponseType type;
 	public final long nonce;
 	public final long lastCommitGlobalOffset;
+	public final byte[] extraData;
 
-	private ClientResponse(ClientResponseType type, long nonce, long lastCommitGlobalOffset) {
+	private ClientResponse(ClientResponseType type, long nonce, long lastCommitGlobalOffset, byte[] extraData) {
 		this.type = type;
 		this.nonce = nonce;
 		this.lastCommitGlobalOffset = lastCommitGlobalOffset;
+		this.extraData = extraData;
 	}
 
 	/**
@@ -92,11 +99,12 @@ public class ClientResponse {
 	 * @return The serialized representation of the receiver.
 	 */
 	public byte[] serialize() {
-		ByteBuffer buffer = ByteBuffer.allocate(Byte.BYTES + Long.BYTES + Long.BYTES);
+		ByteBuffer buffer = ByteBuffer.allocate(Byte.BYTES + Long.BYTES + Long.BYTES + this.extraData.length);
 		return buffer
 				.put((byte)this.type.ordinal())
 				.putLong(this.nonce)
 				.putLong(this.lastCommitGlobalOffset)
+				.put(this.extraData)
 				.array();
 	}
 }

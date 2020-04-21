@@ -7,6 +7,7 @@ import java.io.InputStream;
 import java.io.PipedInputStream;
 import java.io.PipedOutputStream;
 import java.io.PrintStream;
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.SocketChannel;
@@ -99,7 +100,7 @@ public class TestLaminar {
 		};
 		runner.start();
 		
-		try (ClientConnection client = ClientConnection.open(new InetSocketAddress("localhost", 2002))) {
+		try (ClientConnection client = ClientConnection.open(new InetSocketAddress(InetAddress.getLocalHost(), 2002))) {
 			ClientResult result = client.sendTemp("Hello World!".getBytes());
 			result.waitForReceived();
 			result.waitForCommitted();
@@ -126,7 +127,7 @@ public class TestLaminar {
 			}
 		};
 		runner.start();
-		InetSocketAddress address = new InetSocketAddress("localhost", 2002);
+		InetSocketAddress address = new InetSocketAddress(InetAddress.getLocalHost(), 2002);
 		
 		// Start a listener before the client begins.
 		CountDownLatch beforeLatch = new CountDownLatch(1);
@@ -173,7 +174,7 @@ public class TestLaminar {
 			}
 		};
 		runner.start();
-		InetSocketAddress address = new InetSocketAddress("localhost", 2002);
+		InetSocketAddress address = new InetSocketAddress(InetAddress.getLocalHost(), 2002);
 		
 		try (ClientConnection client = ClientConnection.open(address)) {
 			ClientResult result1 = client.sendTemp(message);
@@ -193,7 +194,7 @@ public class TestLaminar {
 	@Test
 	public void testClientFailedConnection() throws Throwable {
 		byte[] message = "Hello World!".getBytes();
-		InetSocketAddress address = new InetSocketAddress("localhost", 2002);
+		InetSocketAddress address = new InetSocketAddress(InetAddress.getLocalHost(), 2002);
 		
 		try (ClientConnection client = ClientConnection.open(address)) {
 			// Even though we aren't yet connected, the client can technically still attempt to send messages.
@@ -212,7 +213,7 @@ public class TestLaminar {
 
 	@Test
 	public void testListenerFailedConnection() throws Throwable {
-		InetSocketAddress address = new InetSocketAddress("localhost", 2002);
+		InetSocketAddress address = new InetSocketAddress(InetAddress.getLocalHost(), 2002);
 		CountDownLatch latch = new CountDownLatch(1);
 		ListenerThread listener = new ListenerThread(address, null, latch);
 		listener.start();
@@ -250,7 +251,7 @@ public class TestLaminar {
 		runner.start();
 		
 		// It should always be harmless to wait for connection over and over so just do that here.
-		try (ClientConnection client = ClientConnection.open(new InetSocketAddress("localhost", 2002))) {
+		try (ClientConnection client = ClientConnection.open(new InetSocketAddress(InetAddress.getLocalHost(), 2002))) {
 			client.waitForConnection();
 			Assert.assertTrue(client.checkConnection());
 			ClientResult result = client.sendTemp("Hello World!".getBytes());
@@ -289,7 +290,7 @@ public class TestLaminar {
 		Thread.sleep(500);
 		
 		// Fake a connection from a client:  send the handshake and a few messages, then disconnect.
-		InetSocketAddress address = new InetSocketAddress("localhost", 2002);
+		InetSocketAddress address = new InetSocketAddress(InetAddress.getLocalHost(), 2002);
 		UUID clientId = UUID.randomUUID();
 		SocketChannel outbound = SocketChannel.open();
 		outbound.configureBlocking(true);
@@ -334,7 +335,7 @@ public class TestLaminar {
 		Thread.sleep(500);
 		
 		// Fake a connection from a client:  send the handshake and a few messages, then disconnect.
-		InetSocketAddress address = new InetSocketAddress("localhost", 2002);
+		InetSocketAddress address = new InetSocketAddress(InetAddress.getLocalHost(), 2002);
 		UUID clientId = UUID.randomUUID();
 		SocketChannel outbound = SocketChannel.open();
 		outbound.configureBlocking(true);
@@ -399,7 +400,7 @@ public class TestLaminar {
 			}
 		};
 		runner.start();
-		InetSocketAddress address = new InetSocketAddress("localhost", 2002);
+		InetSocketAddress address = new InetSocketAddress(InetAddress.getLocalHost(), 2002);
 		
 		// Start a listener before the client begins.
 		CaptureListener beforeListener = new CaptureListener(address, 21);

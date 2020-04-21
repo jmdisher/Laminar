@@ -22,6 +22,7 @@ import com.jeffdisher.laminar.network.ClientResponse;
 import com.jeffdisher.laminar.network.ClusterManager;
 import com.jeffdisher.laminar.network.IClientManagerBackgroundCallbacks;
 import com.jeffdisher.laminar.network.IClusterManagerBackgroundCallbacks;
+import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.types.EventRecord;
 import com.jeffdisher.laminar.types.MutationRecord;
 import com.jeffdisher.laminar.utils.Assert;
@@ -44,6 +45,7 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 	private ConsoleManager _consoleManager;
 
 	private RaftState _currentState;
+	private ClusterConfig _currentConfig;
 	// Note that we track clients in 1 of 3 different states:  new, normal, listener.
 	// -new clients just connected and haven't yet sent a message so we don't know what they are doing.
 	// -normal clients are the kind which send mutative operations and wait for acks
@@ -72,11 +74,12 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 	private boolean _keepRunning;
 	private final UninterruptableQueue _commandQueue;
 
-	public NodeState() {
+	public NodeState(ClusterConfig initialConfig) {
 		// We define the thread which instantiates us as "main".
 		_mainThread = Thread.currentThread();
 		// Note that we default to the LEADER state (typically forced into a FOLLOWER state when an existing LEADER attempts to append entries).
 		_currentState = RaftState.LEADER;
+		_currentConfig = initialConfig;
 		_newClients = new HashSet<>();
 		_normalClients = new HashMap<>();
 		_listenerClients = new HashMap<>();
@@ -374,7 +377,7 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 							moveToNext.add(state);
 						} else {
 							// We are done processing this reconnecting client so set it ready.
-							_backgroundEnqueueMessageToClient(state.token, ClientResponse.clientReady(state.earliestNextNonce, _lastCommittedMutationOffset));
+							_backgroundEnqueueMessageToClient(state.token, ClientResponse.clientReady(state.earliestNextNonce, _lastCommittedMutationOffset, _currentConfig));
 							// Make sure that this nonce is still the -1 value we used initially and then update it.
 							ClientState clientState = _normalClients.get(state.token);
 							Assert.assertTrue(-1L == clientState.nextNonce);
@@ -445,7 +448,7 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 			_normalClients.put(client, state);
 			
 			// The HANDSHAKE is special so we return CLIENT_READY instead of a RECEIVED and COMMIT (which is otherwise all we send).
-			ClientResponse ready = ClientResponse.clientReady(state.nextNonce, _lastCommittedMutationOffset);
+			ClientResponse ready = ClientResponse.clientReady(state.nextNonce, _lastCommittedMutationOffset, _currentConfig);
 			System.out.println("HANDSHAKE: " + state.clientId);
 			_backgroundEnqueueMessageToClient(client, ready);
 			break;
@@ -484,7 +487,7 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 				_diskManager.fetchMutation(offsetToFetch);
 			} else {
 				// This is a degenerate case where they didn't miss anything so just send them the client ready.
-				ClientResponse ready = ClientResponse.clientReady(reconnectState.earliestNextNonce, _lastCommittedMutationOffset);
+				ClientResponse ready = ClientResponse.clientReady(reconnectState.earliestNextNonce, _lastCommittedMutationOffset, _currentConfig);
 				System.out.println("Note:  RECONNECT degenerate case: " + state.clientId + " with nonce " + incoming.nonce);
 				_backgroundEnqueueMessageToClient(client, ready);
 				// Since we aren't processing anything, just over-write our reserved value, immediately (assert just for balance).
@@ -496,6 +499,8 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 		case LISTEN: {
 			// This is the first message a client sends when they want to register as a listener.
 			// In this case, they won't send any other messages to us and just expect a constant stream of raw EventRecords to be sent to them.
+			// NOTE:  Because this stream doesn't use message framing, they don't currently receive the initial config or config updates.
+			// TODO:  Design a way for listeners to receive initial and updated configs.
 			// Note that this message overloads the nonce as the last received local offset.
 			long lastReceivedLocalOffset = incoming.nonce;
 			if ((lastReceivedLocalOffset < 0L) || (lastReceivedLocalOffset >= _nextLocalEventOffset)) {

@@ -2,6 +2,7 @@ package com.jeffdisher.laminar.client;
 
 import java.io.Closeable;
 import java.io.IOException;
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.util.LinkedList;
 import java.util.List;
@@ -14,6 +15,7 @@ import com.jeffdisher.laminar.network.ClientResponse;
 import com.jeffdisher.laminar.network.INetworkManagerBackgroundCallbacks;
 import com.jeffdisher.laminar.network.NetworkManager;
 import com.jeffdisher.laminar.network.NetworkManager.NodeToken;
+import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.utils.Assert;
 
 
@@ -98,7 +100,9 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 	private boolean _hasDisconnectedEver;
 
 	private ClientConnection(InetSocketAddress server) throws IOException {
-		_serverAddress = server;
+		// Make sure we erase the hostname from this, if we were given one (fixes some checks, later on, since the internal system never uses hostnames).
+		// This is largely gratuitous but makes some very precise testing possible.
+		_serverAddress = new InetSocketAddress(InetAddress.getByAddress(server.getAddress().getAddress()), server.getPort());
 		_network = NetworkManager.outboundOnly(this);
 		_clientId = UUID.randomUUID();
 		_outgoingMessages = new LinkedList<>();
@@ -359,6 +363,12 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 			// Now, all we have to do is take any remaining in-flight messages (those not satisfied by the sythesized
 			// messages) and push them onto the front of outgoing messages, in the correct nonce order.  Then we can set
 			// _isClientReady and the normal logic should play out as though nothing was wrong.
+			
+			// The CLIENT_READY includes the cluster's active config so we want to read this and verify it is consistent.
+			// (this is just a temporary check to verify that the ClusterConfig is working correctly - this will be removed once config management is fully implemented)
+			ClusterConfig currentConfig = ClusterConfig.deserialize(deserialized.extraData);
+			Assert.assertTrue(1 == currentConfig.entries.length);
+			Assert.assertTrue(_serverAddress.equals(currentConfig.entries[0].client));
 			
 			// We rely on the SortedMap returning a sorted collection of values whose iterator returns them in ascending order of corresponding keys.
 			_outgoingMessages.addAll(0, _inFlightMessages.values());

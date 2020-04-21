@@ -2,7 +2,9 @@ package com.jeffdisher.laminar;
 
 import java.io.File;
 import java.io.IOException;
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.net.UnknownHostException;
 import java.nio.channels.ServerSocketChannel;
 
 import com.jeffdisher.laminar.console.ConsoleManager;
@@ -10,6 +12,8 @@ import com.jeffdisher.laminar.disk.DiskManager;
 import com.jeffdisher.laminar.network.ClientManager;
 import com.jeffdisher.laminar.network.ClusterManager;
 import com.jeffdisher.laminar.state.NodeState;
+import com.jeffdisher.laminar.types.ClusterConfig;
+import com.jeffdisher.laminar.utils.Assert;
 
 
 /**
@@ -41,12 +45,23 @@ public class Laminar {
 		int clientPort = Integer.parseInt(clientPortString);
 		int clusterPort = Integer.parseInt(clusterPortString);
 		
+		// Create the socket addresses we will use for initial binding and initial config.
+		InetAddress localhost;
+		try {
+			localhost = InetAddress.getLocalHost();
+		} catch (UnknownHostException e2) {
+			// If localhost can't be resolved, there is something wrong with the host.
+			throw Assert.unexpected(e2);
+		}
+		InetSocketAddress clientSocketAddress = ClusterConfig.cleanSocketAddress(new InetSocketAddress(localhost, clientPort));
+		InetSocketAddress clusterSocketAddress = ClusterConfig.cleanSocketAddress(new InetSocketAddress(localhost, clusterPort));
+		
 		// Bind ports.
 		ServerSocketChannel clientSocket = null;
 		ServerSocketChannel clusterSocket = null;
 		try {
-			clientSocket = bindLocalPort(clientPort);
-			clusterSocket = bindLocalPort(clusterPort);
+			clientSocket = bindLocalPort(clientSocketAddress);
+			clusterSocket = bindLocalPort(clusterSocketAddress);
 		} catch (IOException e) {
 			failStart("Failure binding required port: " + e.getLocalizedMessage());
 		}
@@ -70,7 +85,9 @@ public class Laminar {
 		
 		// By this point, all requirements of the system should be satisfied so create the subsystems.
 		// First, the core NodeState and the background thread callback handlers for the managers.
-		NodeState thisNodeState = new NodeState();
+		// Note that we need to create an "initial config" which we will use until we get a cluster update from a client or another node starts sending updates.
+		ClusterConfig initialConfig = ClusterConfig.configFromEntries(new ClusterConfig.ConfigEntry[] {new ClusterConfig.ConfigEntry(clusterSocketAddress, clientSocketAddress)});
+		NodeState thisNodeState = new NodeState(initialConfig);
 		// We also want to install an uncaught exception handler to make sure background thread failures are fatal.
 		Thread.setDefaultUncaughtExceptionHandler(new Thread.UncaughtExceptionHandler() {
 			@Override
@@ -136,9 +153,8 @@ public class Laminar {
 		}
 	}
 
-	private static ServerSocketChannel bindLocalPort(int port) throws IOException {
+	private static ServerSocketChannel bindLocalPort(InetSocketAddress clientAddress) throws IOException {
 		ServerSocketChannel socket = ServerSocketChannel.open();
-		InetSocketAddress clientAddress = new InetSocketAddress(port);
 		socket.bind(clientAddress);
 		return socket;
 	}
