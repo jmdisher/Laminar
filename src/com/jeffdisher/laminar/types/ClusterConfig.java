@@ -24,7 +24,6 @@ public final class ClusterConfig {
 	public static final int MAX_CLUSTER_MEMBERS = 31;
 	public static final int IPV4_BYTE_SIZE = 4;
 	public static final int IPV6_BYTE_SIZE = 16;
-	public static final int BUFFER_SIZE = 1 + (MAX_CLUSTER_MEMBERS * 2 * (1 + IPV6_BYTE_SIZE + Short.BYTES));
 	public static final int MAX_PORT = (64 * 1024) - 1;
 
 	/**
@@ -67,6 +66,31 @@ public final class ClusterConfig {
 	 */
 	public static ClusterConfig deserialize(byte[] serialized) {
 		ByteBuffer buffer = ByteBuffer.wrap(serialized);
+		return _deserializeFrom(buffer);
+	}
+
+	/**
+	 * Creates a new ClusterConfig instance from a previously serialized instance.
+	 * This method has the side-effect of advancing the cursor in the given buffer.
+	 * 
+	 * @param buffer A ByteBuffer containing a previously serialized ClusterConfig.
+	 * @return A new ClusterConfig instance.
+	 */
+	public static ClusterConfig deserializeFrom(ByteBuffer serialized) {
+		return _deserializeFrom(serialized);
+	}
+
+
+	private static InetSocketAddress _cleanSocketAddress(InetSocketAddress input) {
+		try {
+			return new InetSocketAddress(InetAddress.getByAddress(input.getAddress().getAddress()), input.getPort());
+		} catch (UnknownHostException e) {
+			// This can't happen when directly converting one instance to another.
+			throw Assert.unexpected(e);
+		}
+	}
+
+	private static ClusterConfig _deserializeFrom(ByteBuffer buffer) {
 		byte entryCount = buffer.get();
 		if ((entryCount <= 0) || (entryCount > MAX_CLUSTER_MEMBERS)) {
 			throw _parseError();
@@ -80,15 +104,6 @@ public final class ClusterConfig {
 		return new ClusterConfig(entries);
 	}
 
-	private static InetSocketAddress _cleanSocketAddress(InetSocketAddress input) {
-		try {
-			return new InetSocketAddress(InetAddress.getByAddress(input.getAddress().getAddress()), input.getPort());
-		} catch (UnknownHostException e) {
-			// This can't happen when directly converting one instance to another.
-			throw Assert.unexpected(e);
-		}
-	}
-
 
 	public final ConfigEntry[] entries;
 
@@ -97,24 +112,35 @@ public final class ClusterConfig {
 	}
 
 	/**
+	 * Determines the number of bytes required to serialize the receiver.
+	 * 
+	 * @return The number of bytes occupied by the serialized receiver.
+	 */
+	public int serializedSize() {
+		return _serializedSize();
+	}
+
+	/**
+	 * Serializes the receiver into the given buffer.
+	 * Note that this has the side-effect of advancing the cursor in the given buffer.
+	 * 
+	 * @param buffer The buffer which will be populated by the serialized receiver.
+	 */
+	public void serializeInto(ByteBuffer buffer) {
+		_serializeInto(buffer);
+	}
+
+	/**
 	 * Serializes the receiver into raw bytes.
 	 * 
 	 * @return The raw byte serialization of the receiver.
 	 */
 	public byte[] serialize() {
-		ByteBuffer buffer = ByteBuffer.allocate(BUFFER_SIZE);
-		byte entryCount = (byte)this.entries.length;
-		buffer.put(entryCount);
-		for (ConfigEntry entry : this.entries) {
-			_writePair(buffer, entry.cluster);
-			_writePair(buffer, entry.client);
-		}
-		
-		// Take the slice we want.
-		buffer.flip();
-		byte[] toReturn = new byte[buffer.remaining()];
-		buffer.get(toReturn);
-		return toReturn;
+		int bufferSize = _serializedSize();
+		ByteBuffer buffer = ByteBuffer.allocate(bufferSize);
+		_serializeInto(buffer);
+		// The size is precise so just return the underlying array.
+		return buffer.array();
 	}
 
 
@@ -147,6 +173,27 @@ public final class ClusterConfig {
 		buffer.put(ipLength);
 		buffer.put(ip);
 		buffer.putShort(port);
+	}
+
+	private int _serializedSize() {
+		// We have 1 byte for the number of entries but each entry can be a different size.
+		int bufferSize = Byte.BYTES;
+		for (ConfigEntry entry : this.entries) {
+			// The port is always a u16 but the IP can be 4 or 16 bytes, and each one has a byte to describe which.
+			int clusterIpSize = entry.cluster.getAddress().getAddress().length;
+			int clientIpSize = entry.client.getAddress().getAddress().length;
+			bufferSize += Byte.BYTES + clusterIpSize + Byte.BYTES + clientIpSize + (2 * Short.BYTES);
+		}
+		return bufferSize;
+	}
+
+	private void _serializeInto(ByteBuffer buffer) {
+		byte entryCount = (byte)this.entries.length;
+		buffer.put(entryCount);
+		for (ConfigEntry entry : this.entries) {
+			_writePair(buffer, entry.cluster);
+			_writePair(buffer, entry.client);
+		}
 	}
 
 

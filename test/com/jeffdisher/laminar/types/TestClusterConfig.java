@@ -2,6 +2,7 @@ package com.jeffdisher.laminar.types;
 
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.nio.ByteBuffer;
 
 import org.junit.Assert;
 import org.junit.Test;
@@ -20,6 +21,20 @@ public class TestClusterConfig {
 		ClusterConfig config = ClusterConfig.configFromEntries(new ClusterConfig.ConfigEntry[] {new ClusterConfig.ConfigEntry(new InetSocketAddress(address, clusterPort), new InetSocketAddress(address, clientPort))});
 		byte[] serialized = config.serialize();
 		ClusterConfig deserialized = ClusterConfig.deserialize(serialized);
+		Assert.assertArrayEquals(config.entries, deserialized.entries);
+	}
+
+	@Test
+	public void testLocalHostByteBuffer() throws Throwable {
+		InetAddress address = InetAddress.getLocalHost();
+		int clusterPort = 2000;
+		int clientPort = 2001;
+		
+		ClusterConfig config = ClusterConfig.configFromEntries(new ClusterConfig.ConfigEntry[] {new ClusterConfig.ConfigEntry(new InetSocketAddress(address, clusterPort), new InetSocketAddress(address, clientPort))});
+		ByteBuffer buffer = ByteBuffer.allocate(config.serializedSize());
+		config.serializeInto(buffer);
+		buffer.flip();
+		ClusterConfig deserialized = ClusterConfig.deserializeFrom(buffer);
 		Assert.assertArrayEquals(config.entries, deserialized.entries);
 	}
 
