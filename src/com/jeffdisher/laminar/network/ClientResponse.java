@@ -65,6 +65,19 @@ public class ClientResponse {
 	}
 
 	/**
+	 * Similar to the config argument added to the CLIENT_READY, this message is injected into the stream, without any
+	 * connection to any action the client took, to tell it that the cluster config has changed.
+	 * Clients need this information to reconfigure their reconnect behaviour.
+	 * 
+	 * @param lastCommitGlobalOffset The most recent global message offset which was committed on the server.
+	 * @param newConfig The new cluster config.
+	 * @return A new ClientResponse instance.
+	 */
+	public static ClientResponse updateConfig(long lastCommitGlobalOffset, ClusterConfig newConfig) {
+		return new ClientResponse(ClientResponseType.UPDATE_CONFIG, -1L, lastCommitGlobalOffset, newConfig.serialize());
+	}
+
+	/**
 	 * Creates a new response instance by deserializing it from a payload.
 	 * 
 	 * @param serialized The serialized representation of the response.

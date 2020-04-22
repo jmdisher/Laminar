@@ -448,6 +448,89 @@ public class TestLaminar {
 		runner.join();
 	}
 
+	/**
+	 * In this test, create 2 clients and a listener connected to a single node.
+	 * Both clients send a message, then 1 sends a config update, wait for received, then both send another message and
+	 * wait for commit.
+	 * Wait for listener to observe all messages.
+	 * Check that all clients and the listener did receive the config update.
+	 * Note that the config update doesn't go to a topic so the listener will only receive it as an out-of-band meta-
+	 * data update.
+	 */
+	@Test
+	public void testConfigUpdate() throws Throwable {
+		PipedOutputStream outStream = new PipedOutputStream();
+		PipedInputStream inStream = new PipedInputStream(outStream);
+		PrintStream feeder = new PrintStream(outStream);
+		System.setIn(inStream);
+		
+		// We need to run the Laminar process in a thread it will control and then sleep for startup.
+		// (this way of using sleep for timing is a hack but this will eventually be made into a more reliable integration test, probably outside of JUnit).
+		Thread runner = new Thread() {
+			@Override
+			public void run() {
+				Laminar.main(new String[] {"--client", "2002", "--cluster", "2003", "--data", "/tmp/laminar"});
+			}
+		};
+		runner.start();
+		InetSocketAddress address = new InetSocketAddress(InetAddress.getLocalHost(), 2002);
+		
+		// Start a listener before the client begins.
+		CaptureListener beforeListener = new CaptureListener(address, 4);
+		beforeListener.setName("Before");
+		beforeListener.start();
+		
+		// Create 2 clients.
+		ClientConnection client1 = ClientConnection.open(address);
+		ClientConnection client2 = ClientConnection.open(address);
+		try {
+			// Send initial messages.
+			ClientResult result1_1 = client1.sendTemp(new byte[] {1});
+			ClientResult result2_1 = client2.sendTemp(new byte[] {2});
+			
+			// Send config update (wait for received to ensure one client got the initial config).
+			result1_1.waitForReceived();
+			ClusterConfig originalConfig = client1.getCurrentConfig();
+			Assert.assertEquals(1, originalConfig.entries.length);
+			ClusterConfig.ConfigEntry originalEntry = originalConfig.entries[0];
+			ClusterConfig.ConfigEntry fakeEntry = new ClusterConfig.ConfigEntry(new InetSocketAddress(originalEntry.cluster.getAddress(), originalEntry.cluster.getPort() + 1000), new InetSocketAddress(originalEntry.client.getAddress(), originalEntry.client.getPort() + 1000));
+			ClusterConfig newConfig = ClusterConfig.configFromEntries(new ClusterConfig.ConfigEntry[] {originalEntry, fakeEntry});
+			ClientResult updateResult = client1.sendUpdateConfig(newConfig);
+			updateResult.waitForReceived();
+			
+			// Now send another from each client.
+			ClientResult result1_2 = client1.sendTemp(new byte[] {1});
+			ClientResult result2_2 = client2.sendTemp(new byte[] {2});
+			
+			// Wait for everything to commit and check that the update we got is the same as the one we send.
+			result1_1.waitForCommitted();
+			result2_1.waitForCommitted();
+			updateResult.waitForCommitted();
+			result1_2.waitForCommitted();
+			result2_2.waitForCommitted();
+			Assert.assertEquals(newConfig.entries.length, client1.getCurrentConfig().entries.length);
+			Assert.assertEquals(newConfig.entries.length, client2.getCurrentConfig().entries.length);
+		} finally {
+			client1.close();
+			client2.close();
+		}
+		
+		// Start a listener after the client is done.
+		CaptureListener afterListener = new CaptureListener(address, 4);
+		afterListener.setName("After");
+		afterListener.start();
+		
+		// Wait for the listeners to consume all 4 real events we sent (the commit of the config update doesn't go to a topic so they won't see that), and then verify they got the update as out-of-band.
+		beforeListener.waitForTerminate();
+		afterListener.waitForTerminate();
+		Assert.assertEquals(2, beforeListener.getCurrentConfig().entries.length);
+		Assert.assertEquals(2, afterListener.getCurrentConfig().entries.length);
+		
+		// Shut down.
+		feeder.println("stop");
+		runner.join();
+	}
+
 
 	private void _sendMessage(SocketChannel socket, ClientMessage message) throws IOException {
 		byte[] serialized = message.serialize();

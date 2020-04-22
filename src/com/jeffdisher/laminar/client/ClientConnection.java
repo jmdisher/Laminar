@@ -147,6 +147,14 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 		return result;
 	}
 
+	public synchronized ClientResult sendUpdateConfig(ClusterConfig config) {
+		ClientMessage message = ClientMessage.updateConfig(_nextNonce++, config);
+		ClientResult result = new ClientResult(message);
+		_outgoingMessages.add(result);
+		this.notifyAll();
+		return result;
+	}
+
 	/**
 	 * Every client has a UUID and this is the same after reconnections but new client instances always start with a new
 	 * one.
@@ -393,6 +401,12 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 			result.setCommitted();
 			// If the message has committed, we will no longer re-send it.
 			_inFlightMessages.remove(deserialized.nonce);
+			break;
+		case UPDATE_CONFIG:
+			// This is an out-of-band config update.  This has a -1 nonce so make sure we didn't find a message.
+			Assert.assertTrue(null == result);
+			// Now, just deserialize and set the config (whether our exising one was null, or not).
+			_currentClusterConfig = ClusterConfig.deserialize(deserialized.extraData);
 			break;
 		default:
 			Assert.unreachable("Default response case reached");

@@ -13,4 +13,8 @@ public enum MutationRecordType {
 	 * This message is purely temporary to verify the client-server communication.
 	 */
 	TEMP,
+	/**
+	 * The payload of this message is the serialized new config.
+	 */
+	UPDATE_CONFIG,
 }

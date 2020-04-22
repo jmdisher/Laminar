@@ -28,8 +28,8 @@ public class EventRecord {
 	public static EventRecord generateRecord(EventRecordType type, long globalOffset, long localOffset, UUID clientId, long clientNonce, byte[] payload) {
 		Assert.assertTrue(EventRecordType.INVALID != type);
 		Assert.assertTrue(EventRecordType.CONFIG_CHANGE != type);
-		// Currently, we only support matching global and local offsets (these are just here to get the shape in place).
-		Assert.assertTrue(globalOffset == localOffset);
+		// The localOffset can never be larger than the globalOffset (since it is per-topic while the global is for the input mutation stream).
+		Assert.assertTrue(globalOffset >= localOffset);
 		// The offsets must be positive.
 		Assert.assertTrue(globalOffset > 0L);
 		Assert.assertTrue(localOffset > 0L);

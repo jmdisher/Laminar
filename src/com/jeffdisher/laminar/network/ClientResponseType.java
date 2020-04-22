@@ -28,4 +28,9 @@ public enum ClientResponseType {
 	 * are asynchronous relative to the client, but this response implies the commit is guaranteed.
 	 */
 	COMMITTED,
+	/**
+	 * This response is delivered whenever a new config has been committed on the cluster.  It isn't in response to any
+	 * specific action taken by the receiving client.
+	 */
+	UPDATE_CONFIG,
 }

@@ -32,4 +32,11 @@ public enum ClientMessageType {
 	 * and listeners.
 	 */
 	POISON,
+	/**
+	 * This message contains a new ClusterConfig object which the client wants to apply to the cluster.
+	 * Note that UPDATE_CONFIG may take a long time to commit and will block the commit of messages which follow until
+	 * the new cluster is synced and has committed the config change (requires a period of "joint consensus" in which
+	 * the cluster is slower than when running the old or new config).
+	 */
+	UPDATE_CONFIG,
 }

@@ -18,6 +18,7 @@ import com.jeffdisher.laminar.network.ClientMessage;
 import com.jeffdisher.laminar.network.ClientMessagePayload_Handshake;
 import com.jeffdisher.laminar.network.ClientMessagePayload_Reconnect;
 import com.jeffdisher.laminar.network.ClientMessagePayload_Temp;
+import com.jeffdisher.laminar.network.ClientMessagePayload_UpdateConfig;
 import com.jeffdisher.laminar.network.ClientResponse;
 import com.jeffdisher.laminar.network.ClusterManager;
 import com.jeffdisher.laminar.network.IClientManagerBackgroundCallbacks;
@@ -224,8 +225,15 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 				} else if (null != listenerState) {
 					Assert.assertTrue(null != listenerState);
 					// Listener.
-					// The socket is now writable so either load or wait for the next event for this listener.
-					_backgroundSetupListenerForNextEvent(node, listenerState);
+					// The socket is now writable so first check if there is a high-priority message waiting.
+					if (null != listenerState.highPriorityMessage) {
+						// Send the high-priority message and we will proceed to sync when we get the next writable callback.
+						_clientManager.sendEventToListener(node, listenerState.highPriorityMessage);
+						listenerState.highPriorityMessage = null;
+					} else {
+						// Normal syncing operation so either load or wait for the next event for this listener.
+						_backgroundSetupListenerForNextEvent(node, listenerState);
+					}
 				} else {
 					// This appears to have disconnected before we processed it.
 					System.out.println("NOTE: Processed write ready from disconnected client");
@@ -332,6 +340,10 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 				Assert.assertTrue(null != tuple);
 				// Send the commit to the client..
 				_backgroundEnqueueMessageToClient(tuple.client, tuple.ack);
+				// If there is any special action to take, we want to invoke that now.
+				if (null != tuple.specialAction) {
+					tuple.specialAction.run();
+				}
 			}});
 	}
 
@@ -551,7 +563,7 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 			// Note that we know the global offset will be the offset of this event once it is committed (by definition).
 			ClientResponse commit = ClientResponse.committed(incoming.nonce, globalOffset);
 			// Set up the client to be notified that the message committed once the MutationRecord is durable.
-			_pendingMessageCommits.put(globalOffset, new ClientCommitTuple(client, commit));
+			_pendingMessageCommits.put(globalOffset, new ClientCommitTuple(client, commit, null));
 			// Now request that both of these records be committed.
 			_diskManager.commitEvent(event);
 			// TODO:  We probably want to lock-step the mutation on the event commit since we will be able to detect the broken data, that way, and replay it.
@@ -573,7 +585,7 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 			// Note that we know the global offset will be the offset of this event once it is committed (by definition).
 			ClientResponse commit = ClientResponse.committed(incoming.nonce, globalOffset);
 			// Set up the client to be notified that the message committed once the MutationRecord is durable.
-			_pendingMessageCommits.put(globalOffset, new ClientCommitTuple(client, commit));
+			_pendingMessageCommits.put(globalOffset, new ClientCommitTuple(client, commit, null));
 			// Now request that both of these records be committed.
 			_diskManager.commitEvent(event);
 			// TODO:  We probably want to lock-step the mutation on the event commit since we will be able to detect the broken data, that way, and replay it.
@@ -592,6 +604,61 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 				_clientManager.disconnectClient(node);
 			}
 			_listenerClients.clear();
+		}
+			break;
+		case UPDATE_CONFIG: {
+			// Eventually, this will kick-off the joint consensus where we change to having 2 active configs until this commits on all nodes and the local disk.
+			// For now, however, we just send the received ack and enqueue this for commit (note that it DOES NOT generate an event - only a mutation).
+			// The more complex operation happens after the commit completes since that is when we will change our state and broadcast the new config to all clients and listeners.
+			ClientResponse ack = ClientResponse.received(incoming.nonce, _lastCommittedMutationOffset);
+			_backgroundEnqueueMessageToClient(client, ack);
+			ClusterConfig newConfig = ((ClientMessagePayload_UpdateConfig)incoming.payload).config;
+			System.out.println("GOT UPDATE_CONFIG FROM " + state.clientId + ": " + newConfig.entries.length + " entries (nonce " + incoming.nonce + ")");
+			
+			// Create the MutationRecord but NO EventRecord.
+			long globalOffset = _nextGlobalMutationOffset++;
+			MutationRecord mutation = MutationRecord.generateRecord(MutationRecordType.UPDATE_CONFIG, globalOffset, state.clientId, incoming.nonce, newConfig.serialize());
+			
+			// Note that we know the global offset will be the offset of this event once it is committed (by definition).
+			ClientResponse commit = ClientResponse.committed(incoming.nonce, globalOffset);
+			// Set up the client to be notified that the message committed once the MutationRecord is durable.
+			// (we want a special action for this in order to notify all connected clients and listeners of the new config).
+			Runnable specialAction = () -> {
+				// Set our config.
+				_currentConfig = newConfig;
+				
+				// For the clients, we just enqueue this.
+				for (ClientManager.ClientNode node : _normalClients.keySet()) {
+					ClientResponse update = ClientResponse.updateConfig(_lastCommittedMutationOffset, newConfig);
+					_backgroundEnqueueMessageToClient(node, update);
+				}
+				// For listeners, we either need to send this directly (if they are already waiting for the next event)
+				// or set their high-priority slot to preempt the next enqueue operation (since those ones are currently
+				// waiting on an in-progress disk fetch).
+				// We use the high-priority slot because it doesn't have a message queue and they don't need every update, just the most recent.
+				EventRecord updateConfigPseudoRecord = EventRecord.synthesizeRecordForConfig(newConfig);
+				// Set this in all of them and remove the ones we are going to eagerly handle.
+				for (ClientManager.ClientNode node : _listenerClients.keySet()) {
+					ListenerState listenerState = _listenerClients.get(node);
+					listenerState.highPriorityMessage = updateConfigPseudoRecord;
+				}
+				List<ClientManager.ClientNode> waitingForNewEvent = _listenersWaitingOnLocalOffset.remove(_nextLocalEventOffset);
+				if (null != waitingForNewEvent) {
+					for (ClientManager.ClientNode node : waitingForNewEvent) {
+						ListenerState listenerState = _listenerClients.get(node);
+						// Make sure they are still connected.
+						if (null != listenerState) {
+							// Send this and clear it.
+							_clientManager.sendEventToListener(node, updateConfigPseudoRecord);
+							Assert.assertTrue(updateConfigPseudoRecord == listenerState.highPriorityMessage);
+							listenerState.highPriorityMessage = null;
+						}
+					}
+				}
+			};
+			_pendingMessageCommits.put(globalOffset, new ClientCommitTuple(client, commit, specialAction));
+			// Request that the MutationRecord be committed (no EventRecord).
+			_diskManager.commitMutation(mutation);
 		}
 			break;
 		default:
@@ -656,14 +723,18 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 	/**
 	 * Instances of this class are used to store data associated with a commit message (to a client) so that the message
 	 * can be sent once the commit callback comes from the disk layer.
+	 * The "specialAction" is typically null but some actions (like UPDATE_CONFIG) want to do something special when
+	 * they commit.
 	 */
 	private static class ClientCommitTuple {
 		public final ClientNode client;
 		public final ClientResponse ack;
+		public final Runnable specialAction;
 		
-		public ClientCommitTuple(ClientNode client, ClientResponse ack) {
+		public ClientCommitTuple(ClientNode client, ClientResponse ack, Runnable specialAction) {
 			this.client = client;
 			this.ack = ack;
+			this.specialAction = specialAction;
 		}
 	}
 }

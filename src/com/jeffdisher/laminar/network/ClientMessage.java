@@ -3,6 +3,7 @@ package com.jeffdisher.laminar.network;
 import java.nio.ByteBuffer;
 import java.util.UUID;
 
+import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.utils.Assert;
 
 
@@ -90,6 +91,22 @@ public class ClientMessage {
 	}
 
 	/**
+	 * Creates a message to update the cluster config.  This message is different from most others in that it is never
+	 * written to a local topic and is only ever a global mutation.  This means that listeners will never see it through
+	 * their normal polling paths, only through special event synthesis.
+	 * The important aspect of this message type is that the cluster will enter joint consensus when it receives it,
+	 * meaning that this message (and any which follow) will only commit once joint consensus has been resolved into the
+	 * new consensus around the given config.
+	 * 
+	 * @param nonce Per-client nonce.
+	 * @param config The new config the cluster should apply.
+	 * @return A new ClientMessage instance.
+	 */
+	public static ClientMessage updateConfig(long nonce, ClusterConfig config) {
+		return new ClientMessage(ClientMessageType.UPDATE_CONFIG, nonce, ClientMessagePayload_UpdateConfig.create(config));
+	}
+
+	/**
 	 * Creates a new message instance by deserializing it from a payload.
 	 * 
 	 * @param serialized The serialized representation of the message.
@@ -121,6 +138,9 @@ public class ClientMessage {
 			break;
 		case POISON:
 			payload = ClientMessagePayload_Temp.deserialize(buffer);
+			break;
+		case UPDATE_CONFIG:
+			payload = ClientMessagePayload_UpdateConfig.deserialize(buffer);
 			break;
 		default:
 			throw Assert.unreachable("Unmatched deserialization type");

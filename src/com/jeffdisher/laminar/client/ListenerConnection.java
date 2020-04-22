@@ -111,12 +111,8 @@ public class ListenerConnection implements Closeable, INetworkManagerBackgroundC
 				if (null != record) {
 					// We want to intercept any CONFIG_CHANGE events to update our connection state, instead of returning this to the user (since it is a control message, not data).
 					if (EventRecordType.CONFIG_CHANGE == record.type) {
-						// For now, we just verify this is what we expected but we will use this to manage reconnect, later.
-						ClusterConfig currentConfig = ClusterConfig.deserialize(record.payload);
-						Assert.assertTrue(1 == currentConfig.entries.length);
-						Assert.assertTrue(_serverAddress.equals(currentConfig.entries[0].client));
-						// Whether this was null (start-up) or something else (if the config change mid-run), we want to set this as our active config in case of a reconnect.
-						_currentClusterConfig = currentConfig;
+						// We just set this as our config in case we need it for reconnect.
+						_currentClusterConfig = ClusterConfig.deserialize(record.payload);
 						tryAgain = true;
 					} else {
 						_previousLocalOffset = record.localOffset;
