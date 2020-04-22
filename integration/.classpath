@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<classpath>
+	<classpathentry kind="con" path="org.eclipse.jdt.launching.JRE_CONTAINER"/>
+	<classpathentry kind="src" output="bin/main" path="src"/>
+	<classpathentry kind="src" output="bin/test" path="test">
+		<attributes>
+			<attribute name="test" value="true"/>
+		</attributes>
+	</classpathentry>
+	<classpathentry kind="con" path="org.eclipse.jdt.junit.JUNIT_CONTAINER/4"/>
+	<classpathentry combineaccessrules="false" kind="src" path="/Laminar-common"/>
+	<classpathentry combineaccessrules="false" kind="src" path="/Laminar-client"/>
+	<classpathentry combineaccessrules="false" kind="src" path="/Laminar-server"/>
+	<classpathentry kind="output" path="bin"/>
+</classpath>

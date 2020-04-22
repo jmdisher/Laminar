@@ -1,19 +1,7 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <project basedir="." default="all" name="Laminar">
-	<property name="src.src" value="${basedir}/src"/>
-	<property name="src.test" value="${basedir}/test"/>
-	<property name="src.lib" value="${basedir}/lib"/>
-	<property name="build.top" value="${basedir}/build"/>
-	<property name="build.src" value="${build.top}/src"/>
-	<property name="build.test" value="${build.top}/test"/>
-	<property name="build.testreports" value="${build.top}/testreports"/>
-	<property name="build.testdir" value="${build.top}/testdir"/>
-	<property name="build.jar" value="${build.top}/jar"/>
-	<property name="build.jar.laminar" value="${build.top}/jar/laminar.jar"/>
-
-	<!-- Set this property to run a specific test. -->
-	<property name="unit.test" value="Test*" />
-	<property name="junit.heap" value="32m"/>
+	<!-- We don't use inherited properties since each subdirection should be indepdnently buildable -->
+	<property name="global.jars" value="${basedir}/../jars"/>
 
 	<target name="all" >
 		<antcall target="clean" />
@@ -22,76 +10,25 @@
 	</target>
 
 	<target name="clean" >
-		<echo message="Cleaning all in ${build.top}..."/>
-		<delete dir="${build.top}"/>
+		<ant antfile="${basedir}/common/build.xml" inheritAll="false" target="clean" />
+		<ant antfile="${basedir}/server/build.xml" inheritAll="false" target="clean" />
+		<ant antfile="${basedir}/client/build.xml" inheritAll="false" target="clean" />
+		<ant antfile="${basedir}/integration/build.xml" inheritAll="false" target="clean" />
+		<delete dir="${global.jars}"/>
 	</target>
 
 	<target name="build" >
-		<!-- We will build test in both "build" and "test" targets -->
-		<antcall target="build_src" />
-		<antcall target="build_test" />
+		<ant antfile="${basedir}/common/build.xml" inheritAll="false" target="build" />
+		<ant antfile="${basedir}/server/build.xml" inheritAll="false" target="build" />
+		<ant antfile="${basedir}/client/build.xml" inheritAll="false" target="build" />
+		<ant antfile="${basedir}/integration/build.xml" inheritAll="false" target="build" />
 	</target>
 
 	<target name="test" >
-		<!-- We will build test in both "build" and "test" targets -->
-		<antcall target="build_test" />
-		<antcall target="run_test" />
-	</target>
-
-	<target name="build_src">
-		<echo message="Building source ${build.src}..."/>
-		<mkdir dir="${build.src}"/>
-		<javac
-			srcdir="${src.src}"
-			destdir="${build.src}"
-			includeantruntime="false"
-			debug="on" debuglevel="source,lines,vars"
-			source="8"
-			target="8"
-		/>
-		<jar destfile="${build.jar.laminar}">
-			<fileset dir="${build.src}"/>
-			<manifest>
-				<attribute name="Main-Class" value="com.jeffdisher.laminar.Laminar"/>
-			</manifest>
-		</jar>
-	</target>
-
-	<target name="build_test">
-		<echo message="Building tests ${build.test}..."/>
-		<mkdir dir="${build.test}"/>
-		<javac
-			srcdir="${src.test}"
-			destdir="${build.test}"
-			includeantruntime="false"
-			debug="on" debuglevel="source,lines,vars"
-			source="8"
-			target="8"
-		>
-			<classpath>
-				<pathelement location="${src.lib}/junit-4.12.jar"/>
-				<pathelement location="${build.jar.laminar}"/>
-			</classpath>
-		</javac>
-	</target>
-
-	<target name="run_test">
-		<echo message="Running tests in ${build.test}..."/>
-		<mkdir dir="${build.testreports}" />
-		<!-- Note that the tests currently must be run sequentially since they make assumptions about binding ports. -->
-		<!-- We want "showoutput" so we can diagnose issues found in test runs. -->
-		<junit printsummary="on" showoutput="true" haltonfailure="true" fork="true" threads="1" maxmemory="${junit.heap}" dir="${build.testreports}">
-			<classpath>
-				<pathelement location="${src.lib}/junit-4.12.jar"/>
-				<pathelement location="${src.lib}/hamcrest-all-1.3.jar"/>
-				<pathelement location="${build.jar.laminar}"/>
-				<pathelement location="${build.test}" />
-			</classpath>
-			<formatter type="plain" usefile="false" />
-			<batchtest todir="${build.testreports}">
-				<fileset dir="${src.test}" includes="**/${unit.test}.java" />
-			</batchtest>
-		</junit>
+		<ant antfile="${basedir}/common/build.xml" inheritAll="false" target="test" />
+		<ant antfile="${basedir}/server/build.xml" inheritAll="false" target="test" />
+		<ant antfile="${basedir}/client/build.xml" inheritAll="false" target="test" />
+		<ant antfile="${basedir}/integration/build.xml" inheritAll="false" target="test" />
 	</target>
 </project>
 
