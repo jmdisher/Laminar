@@ -1,7 +1,9 @@
-package com.jeffdisher.laminar.network;
+package com.jeffdisher.laminar.types;
 
 import org.junit.Assert;
 import org.junit.Test;
+
+import com.jeffdisher.laminar.types.ClientResponse;
 
 
 /**

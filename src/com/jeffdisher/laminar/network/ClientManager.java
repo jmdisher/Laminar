@@ -4,6 +4,10 @@ import java.io.IOException;
 import java.nio.channels.ServerSocketChannel;
 import java.util.WeakHashMap;
 
+import com.jeffdisher.laminar.components.INetworkManagerBackgroundCallbacks;
+import com.jeffdisher.laminar.components.NetworkManager;
+import com.jeffdisher.laminar.types.ClientMessage;
+import com.jeffdisher.laminar.types.ClientResponse;
 import com.jeffdisher.laminar.types.EventRecord;
 import com.jeffdisher.laminar.utils.Assert;
 

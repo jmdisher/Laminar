@@ -1,4 +1,4 @@
-package com.jeffdisher.laminar.network;
+package com.jeffdisher.laminar.components;
 
 import java.io.IOException;
 import java.util.HashMap;
@@ -12,8 +12,6 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.LinkedBlockingQueue;
 
 import org.junit.Assert;
-
-import com.jeffdisher.laminar.network.NetworkManager.NodeToken;
 
 
 /**
@@ -31,8 +29,8 @@ public class EchoNetworkCallbacks implements INetworkManagerBackgroundCallbacks 
 	private final CountDownLatch _messageDroppedLatch;
 	private final Thread _thread;
 	private final BlockingQueue<Runnable> _actions;
-	private final Map<NodeToken, List<byte[]>> _outputBuffers;
-	private final Set<NodeToken> _writeReady;
+	private final Map<NetworkManager.NodeToken, List<byte[]>> _outputBuffers;
+	private final Set<NetworkManager.NodeToken> _writeReady;
 	private boolean _keepRunning;
 	
 	public EchoNetworkCallbacks(int maxLength, CountDownLatch messageDroppedLatch) {
@@ -74,18 +72,18 @@ public class EchoNetworkCallbacks implements INetworkManagerBackgroundCallbacks 
 	}
 
 	@Override
-	public void nodeDidConnect(NodeToken node) {
+	public void nodeDidConnect(NetworkManager.NodeToken node) {
 		// The only interest we have in connections is to mark them write-ready and set up the map entry.
 		_setupNewNode(node);
 	}
 
 	@Override
-	public void nodeDidDisconnect(NodeToken node, IOException cause) {
+	public void nodeDidDisconnect(NetworkManager.NodeToken node, IOException cause) {
 		// This doesn't currently do anything with disconnects.
 	}
 
 	@Override
-	public void nodeWriteReady(NodeToken node) {
+	public void nodeWriteReady(NetworkManager.NodeToken node) {
 		_actions.add(new Runnable() {
 			@Override
 			public void run() {
@@ -94,7 +92,7 @@ public class EchoNetworkCallbacks implements INetworkManagerBackgroundCallbacks 
 	}
 
 	@Override
-	public void nodeReadReady(NodeToken node) {
+	public void nodeReadReady(NetworkManager.NodeToken node) {
 		// Note that this testing implementation applies no reading back-pressure of its own.
 		_actions.add(new Runnable() {
 			@Override
@@ -111,23 +109,23 @@ public class EchoNetworkCallbacks implements INetworkManagerBackgroundCallbacks 
 	}
 
 	@Override
-	public void outboundNodeConnected(NodeToken node) {
+	public void outboundNodeConnected(NetworkManager.NodeToken node) {
 		// We can also handle out-bound connections so do the same setup as for in-bound.
 		_setupNewNode(node);
 	}
 
 	@Override
-	public void outboundNodeDisconnected(NodeToken node, IOException cause) {
+	public void outboundNodeDisconnected(NetworkManager.NodeToken node, IOException cause) {
 		// This doesn't currently do anything with disconnects.
 	}
 
 	@Override
-	public void outboundNodeConnectionFailed(NodeToken token, IOException cause) {
+	public void outboundNodeConnectionFailed(NetworkManager.NodeToken token, IOException cause) {
 		// This doesn't currently do anything with connection failures.
 	}
 
 
-	private void _setupNewNode(NodeToken node) {
+	private void _setupNewNode(NetworkManager.NodeToken node) {
 		_actions.add(new Runnable() {
 			@Override
 			public void run() {
@@ -146,7 +144,7 @@ public class EchoNetworkCallbacks implements INetworkManagerBackgroundCallbacks 
 			action.run();
 			// Check if we need to do anything.
 			// (reads are all done in the Runnable but writes are done here).
-			for (NodeToken target : _writeReady) {
+			for (NetworkManager.NodeToken target : _writeReady) {
 				List<byte[]> outgoing = _outputBuffers.get(target);
 				if (!outgoing.isEmpty()) {
 					// We will only write the first one but may extend this, later, to be more aggressive once tests can

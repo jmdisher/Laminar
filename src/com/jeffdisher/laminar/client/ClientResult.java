@@ -1,6 +1,6 @@
 package com.jeffdisher.laminar.client;
 
-import com.jeffdisher.laminar.network.ClientMessage;
+import com.jeffdisher.laminar.types.ClientMessage;
 
 
 /**

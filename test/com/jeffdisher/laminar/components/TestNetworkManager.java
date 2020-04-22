@@ -1,4 +1,4 @@
-package com.jeffdisher.laminar.network;
+package com.jeffdisher.laminar.components;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -10,8 +10,6 @@ import java.util.concurrent.CountDownLatch;
 
 import org.junit.Assert;
 import org.junit.Test;
-
-import com.jeffdisher.laminar.network.NetworkManager.NodeToken;
 
 
 public class TestNetworkManager {
@@ -86,8 +84,8 @@ public class TestNetworkManager {
 		clientManager1.startAndWaitForReady("test");
 		clientManager2.startAndWaitForReady("test");
 		
-		NodeToken token1 = clientManager1.createOutgoingConnection(new InetSocketAddress(serverPort));
-		NodeToken token2 = clientManager2.createOutgoingConnection(new InetSocketAddress(serverPort));
+		NetworkManager.NodeToken token1 = clientManager1.createOutgoingConnection(new InetSocketAddress(serverPort));
+		NetworkManager.NodeToken token2 = clientManager2.createOutgoingConnection(new InetSocketAddress(serverPort));
 		boolean didSend = clientManager1.trySendMessage(token1, new byte[0]);
 		// The buffer starts writable so this can't fail.
 		Assert.assertTrue(didSend);
@@ -180,12 +178,12 @@ public class TestNetworkManager {
 		server2.startAndWaitForReady("test-server-2");
 		
 		// Create 1 connection from each, to the other, and capture the incoming tokens.
-		NodeToken out1 = server1.createOutgoingConnection(address2);
-		NodeToken out2 = server2.createOutgoingConnection(address1);
+		NetworkManager.NodeToken out1 = server1.createOutgoingConnection(address2);
+		NetworkManager.NodeToken out2 = server2.createOutgoingConnection(address1);
 		callbacks1.connectLatch.await();
 		callbacks2.connectLatch.await();
-		NodeToken in1 = callbacks1.recentIncomingConnection;
-		NodeToken in2 = callbacks2.recentIncomingConnection;
+		NetworkManager.NodeToken in1 = callbacks1.recentIncomingConnection;
+		NetworkManager.NodeToken in2 = callbacks2.recentIncomingConnection;
 		
 		// We now close out1, twice, and try to send a message on it to verify no errors on double-close and that the message is still allowed to send since the socket was already writable.
 		server1.closeConnection(out1);
@@ -243,8 +241,8 @@ public class TestNetworkManager {
 		public CountDownLatch outboundConnectLatch;
 		public CountDownLatch outboundDisconnectLatch;
 		public CountDownLatch outboundFailureLatch;
-		public volatile NodeToken recentIncomingConnection;
-		public volatile NodeToken recentOutgoingConnection;
+		public volatile NetworkManager.NodeToken recentIncomingConnection;
+		public volatile NetworkManager.NodeToken recentOutgoingConnection;
 		
 		public LatchedCallbacks() {
 			this.connectLatch = new CountDownLatch(1);
@@ -257,39 +255,39 @@ public class TestNetworkManager {
 		}
 
 		@Override
-		public void nodeDidConnect(NodeToken node) {
+		public void nodeDidConnect(NetworkManager.NodeToken node) {
 			this.recentIncomingConnection = node;
 			this.connectLatch.countDown();
 		}
 
 		@Override
-		public void nodeDidDisconnect(NodeToken node, IOException cause) {
+		public void nodeDidDisconnect(NetworkManager.NodeToken node, IOException cause) {
 			this.disconnectLatch.countDown();
 		}
 
 		@Override
-		public void nodeWriteReady(NodeToken node) {
+		public void nodeWriteReady(NetworkManager.NodeToken node) {
 			this.writeLatch.countDown();
 		}
 
 		@Override
-		public void nodeReadReady(NodeToken node) {
+		public void nodeReadReady(NetworkManager.NodeToken node) {
 			this.readLatch.countDown();
 		}
 
 		@Override
-		public void outboundNodeConnected(NodeToken node) {
+		public void outboundNodeConnected(NetworkManager.NodeToken node) {
 			this.recentOutgoingConnection = node;
 			this.outboundConnectLatch.countDown();
 		}
 
 		@Override
-		public void outboundNodeDisconnected(NodeToken node, IOException cause) {
+		public void outboundNodeDisconnected(NetworkManager.NodeToken node, IOException cause) {
 			this.outboundDisconnectLatch.countDown();
 		}
 
 		@Override
-		public void outboundNodeConnectionFailed(NodeToken token, IOException cause) {
+		public void outboundNodeConnectionFailed(NetworkManager.NodeToken token, IOException cause) {
 			this.outboundFailureLatch.countDown();
 		}
 	}

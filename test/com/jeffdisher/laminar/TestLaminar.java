@@ -22,9 +22,9 @@ import org.junit.Test;
 import com.jeffdisher.laminar.client.ClientConnection;
 import com.jeffdisher.laminar.client.ClientResult;
 import com.jeffdisher.laminar.client.ListenerConnection;
-import com.jeffdisher.laminar.network.ClientMessage;
-import com.jeffdisher.laminar.network.ClientResponse;
-import com.jeffdisher.laminar.network.ClientResponseType;
+import com.jeffdisher.laminar.types.ClientMessage;
+import com.jeffdisher.laminar.types.ClientResponse;
+import com.jeffdisher.laminar.types.ClientResponseType;
 import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.types.EventRecord;
 

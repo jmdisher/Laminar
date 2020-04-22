@@ -1,4 +1,4 @@
-package com.jeffdisher.laminar.network;
+package com.jeffdisher.laminar.components;
 
 import java.io.EOFException;
 import java.io.IOException;

@@ -1,9 +1,8 @@
-package com.jeffdisher.laminar.network;
+package com.jeffdisher.laminar.types;
 
 import java.nio.ByteBuffer;
 import java.util.UUID;
 
-import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.utils.Assert;
 
 

@@ -13,12 +13,12 @@ import java.util.UUID;
 import org.junit.Assert;
 import org.junit.Test;
 
-import com.jeffdisher.laminar.network.ClientMessage;
-import com.jeffdisher.laminar.network.ClientMessagePayload_Handshake;
-import com.jeffdisher.laminar.network.ClientMessagePayload_Reconnect;
-import com.jeffdisher.laminar.network.ClientMessagePayload_Temp;
-import com.jeffdisher.laminar.network.ClientMessageType;
-import com.jeffdisher.laminar.network.ClientResponse;
+import com.jeffdisher.laminar.types.ClientMessage;
+import com.jeffdisher.laminar.types.ClientMessagePayload_Handshake;
+import com.jeffdisher.laminar.types.ClientMessagePayload_Reconnect;
+import com.jeffdisher.laminar.types.ClientMessagePayload_Temp;
+import com.jeffdisher.laminar.types.ClientMessageType;
+import com.jeffdisher.laminar.types.ClientResponse;
 import com.jeffdisher.laminar.types.ClusterConfig;
 
 

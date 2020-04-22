@@ -10,11 +10,10 @@ import java.util.SortedMap;
 import java.util.TreeMap;
 import java.util.UUID;
 
-import com.jeffdisher.laminar.network.ClientMessage;
-import com.jeffdisher.laminar.network.ClientResponse;
-import com.jeffdisher.laminar.network.INetworkManagerBackgroundCallbacks;
-import com.jeffdisher.laminar.network.NetworkManager;
-import com.jeffdisher.laminar.network.NetworkManager.NodeToken;
+import com.jeffdisher.laminar.components.INetworkManagerBackgroundCallbacks;
+import com.jeffdisher.laminar.components.NetworkManager;
+import com.jeffdisher.laminar.types.ClientMessage;
+import com.jeffdisher.laminar.types.ClientResponse;
 import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.utils.Assert;
 
@@ -69,7 +68,7 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 	private final InetSocketAddress _serverAddress;
 	private final NetworkManager _network;
 	private final UUID _clientId;
-	private NodeToken _connection;
+	private NetworkManager.NodeToken _connection;
 	// We also track the latest config from the cluster - this is currently just used for testing but will eventually be used to govern reconnect decisions.
 	private ClusterConfig _currentClusterConfig;
 
@@ -195,24 +194,24 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 
 	// <INetworkManagerBackgroundCallbacks>
 	@Override
-	public void nodeDidConnect(NodeToken node) {
+	public void nodeDidConnect(NetworkManager.NodeToken node) {
 		throw Assert.unreachable("Incoming connections not exposed");
 	}
 
 	@Override
-	public void nodeDidDisconnect(NodeToken node, IOException cause) {
+	public void nodeDidDisconnect(NetworkManager.NodeToken node, IOException cause) {
 		throw Assert.unreachable("Incoming connections not exposed");
 	}
 
 	@Override
-	public synchronized void nodeWriteReady(NodeToken node) {
+	public synchronized void nodeWriteReady(NetworkManager.NodeToken node) {
 		Assert.assertTrue(_connection == node);
 		_canWrite = true;
 		this.notifyAll();
 	}
 
 	@Override
-	public synchronized void nodeReadReady(NodeToken node) {
+	public synchronized void nodeReadReady(NetworkManager.NodeToken node) {
 		Assert.assertTrue(_connection == node);
 		_pendingMessages += 1;
 		if (1 == _pendingMessages) {
@@ -221,7 +220,7 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 	}
 
 	@Override
-	public synchronized void outboundNodeConnected(NodeToken node) {
+	public synchronized void outboundNodeConnected(NetworkManager.NodeToken node) {
 		Assert.assertTrue(null == _connection);
 		_connection = node;
 		// Clear any now-stale connection error.
@@ -232,7 +231,7 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 	}
 
 	@Override
-	public synchronized void outboundNodeDisconnected(NodeToken node, IOException cause) {
+	public synchronized void outboundNodeDisconnected(NetworkManager.NodeToken node, IOException cause) {
 		Assert.assertTrue(_connection == node);
 		_connection = null;
 		// We will also need to reconnect and wait for CLIENT_READY so the client isn't ready.
@@ -246,7 +245,7 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 	}
 
 	@Override
-	public synchronized void outboundNodeConnectionFailed(NodeToken token, IOException cause) {
+	public synchronized void outboundNodeConnectionFailed(NetworkManager.NodeToken token, IOException cause) {
 		Assert.assertTrue(null == _connection);
 		// Store the cause and interrupt the background thread so it will attempt a reconnect.
 		_currentConnectionFailure = cause;

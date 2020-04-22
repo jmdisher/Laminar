@@ -4,6 +4,9 @@ import java.io.IOException;
 import java.nio.channels.ServerSocketChannel;
 import java.util.WeakHashMap;
 
+import com.jeffdisher.laminar.components.INetworkManagerBackgroundCallbacks;
+import com.jeffdisher.laminar.components.NetworkManager;
+
 
 /**
  * Top-level abstraction of a collection of network connections related to interactions with other servers.

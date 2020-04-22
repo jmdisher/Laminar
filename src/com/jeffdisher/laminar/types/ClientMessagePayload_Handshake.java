@@ -1,4 +1,4 @@
-package com.jeffdisher.laminar.network;
+package com.jeffdisher.laminar.types;
 
 import java.nio.ByteBuffer;
 import java.util.UUID;

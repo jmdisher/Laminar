@@ -14,6 +14,9 @@ import org.junit.Assert;
 import org.junit.Test;
 
 import com.jeffdisher.laminar.network.ClientManager.ClientNode;
+import com.jeffdisher.laminar.types.ClientMessage;
+import com.jeffdisher.laminar.types.ClientMessagePayload_Temp;
+import com.jeffdisher.laminar.types.ClientResponse;
 import com.jeffdisher.laminar.types.EventRecord;
 import com.jeffdisher.laminar.types.EventRecordType;
 

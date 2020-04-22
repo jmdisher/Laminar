@@ -4,7 +4,7 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.UUID;
 
-import com.jeffdisher.laminar.network.ClientResponse;
+import com.jeffdisher.laminar.types.ClientResponse;
 
 
 /**

@@ -1,9 +1,13 @@
-package com.jeffdisher.laminar.network;
+package com.jeffdisher.laminar.types;
 
 import java.util.UUID;
 
 import org.junit.Assert;
 import org.junit.Test;
+
+import com.jeffdisher.laminar.types.ClientMessage;
+import com.jeffdisher.laminar.types.ClientMessagePayload_Handshake;
+import com.jeffdisher.laminar.types.ClientMessagePayload_Temp;
 
 
 /**
