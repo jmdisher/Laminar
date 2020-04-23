@@ -215,7 +215,10 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 						listenerState.highPriorityMessage = null;
 					} else {
 						// Normal syncing operation so either load or wait for the next event for this listener.
-						_mainSetupListenerForNextEvent(node, listenerState);
+						long nextLocalEventToFetch = _mainSetupListenerForNextEvent(node, listenerState, _nextLocalEventOffset);
+						if (-1 != nextLocalEventToFetch) {
+							_diskManager.fetchEvent(nextLocalEventToFetch);
+						}
 					}
 				} else {
 					// This appears to have disconnected before we processed it.
@@ -253,7 +256,7 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 						normalState.nextNonce += 1;
 						_mainNormalMessage(node, normalState, incoming);
 					} else {
-						_mainEnqueueMessageToClient(node, ClientResponse.error(incoming.nonce, _lastCommittedMutationOffset));
+						_mainEnqueueMessageToClient(_commandQueue, node, ClientResponse.error(incoming.nonce, _lastCommittedMutationOffset));
 					}
 				} else if (null != listenerState) {
 					// Once a listener is in the listener state, they should never send us another message.
@@ -328,7 +331,7 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 				// This was requested for the specific tuple so it can't be missing.
 				Assert.assertTrue(null != tuple);
 				// Send the commit to the client..
-				_mainEnqueueMessageToClient(tuple.client, tuple.ack);
+				_mainEnqueueMessageToClient(_commandQueue, tuple.client, tuple.ack);
 				// If there is any special action to take, we want to invoke that now.
 				if (null != tuple.specialAction) {
 					tuple.specialAction.run();
@@ -374,8 +377,8 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 					if (record.clientId.equals(state.clientId)) {
 						// Send the received and commit messages (in the future, we probably want to skip received in reconnect but this avoids a special-case, for now).
 						// (we don't want to confuse the client on a potential double-reconnect so fake our latest commit as this one, so they at least make progress)
-						_mainEnqueueMessageToClient(state.token, ClientResponse.received(record.clientNonce, record.globalOffset));
-						_mainEnqueueMessageToClient(state.token, ClientResponse.committed(record.clientNonce, record.globalOffset));
+						_mainEnqueueMessageToClient(_commandQueue, state.token, ClientResponse.received(record.clientNonce, record.globalOffset));
+						_mainEnqueueMessageToClient(_commandQueue, state.token, ClientResponse.committed(record.clientNonce, record.globalOffset));
 						// Make sure to bump ahead the expected nonce, if this is later.
 						if (record.clientNonce >= state.earliestNextNonce) {
 							state.earliestNextNonce = record.clientNonce + 1;
@@ -386,7 +389,7 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 							moveToNext.add(state);
 						} else {
 							// We are done processing this reconnecting client so set it ready.
-							_mainEnqueueMessageToClient(state.token, ClientResponse.clientReady(state.earliestNextNonce, _lastCommittedMutationOffset, _currentConfig));
+							_mainEnqueueMessageToClient(_commandQueue, state.token, ClientResponse.clientReady(state.earliestNextNonce, _lastCommittedMutationOffset, _currentConfig));
 							// Make sure that this nonce is still the -1 value we used initially and then update it.
 							ClientState clientState = _clientManager._normalClients.get(state.token);
 							Assert.assertTrue(-1L == clientState.nextNonce);
@@ -465,7 +468,7 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 			// The HANDSHAKE is special so we return CLIENT_READY instead of a RECEIVED and COMMIT (which is otherwise all we send).
 			ClientResponse ready = ClientResponse.clientReady(state.nextNonce, _lastCommittedMutationOffset, _currentConfig);
 			System.out.println("HANDSHAKE: " + state.clientId);
-			_mainEnqueueMessageToClient(client, ready);
+			_mainEnqueueMessageToClient(_commandQueue, client, ready);
 			break;
 		}
 		case RECONNECT: {
@@ -504,7 +507,7 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 				// This is a degenerate case where they didn't miss anything so just send them the client ready.
 				ClientResponse ready = ClientResponse.clientReady(reconnectState.earliestNextNonce, _lastCommittedMutationOffset, _currentConfig);
 				System.out.println("Note:  RECONNECT degenerate case: " + state.clientId + " with nonce " + incoming.nonce);
-				_mainEnqueueMessageToClient(client, ready);
+				_mainEnqueueMessageToClient(_commandQueue, client, ready);
 				// Since we aren't processing anything, just over-write our reserved value, immediately (assert just for balance).
 				Assert.assertTrue(-1L == state.nextNonce);
 				state.nextNonce = reconnectState.earliestNextNonce;
@@ -555,7 +558,7 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 			// This is just for initial testing:  send the received, log it, and send the commit.
 			// (client outgoing message list is unbounded so this is safe to do all at once).
 			ClientResponse ack = ClientResponse.received(incoming.nonce, _lastCommittedMutationOffset);
-			_mainEnqueueMessageToClient(client, ack);
+			_mainEnqueueMessageToClient(_commandQueue, client, ack);
 			byte[] contents = ((ClientMessagePayload_Temp)incoming.payload).contents;
 			System.out.println("GOT TEMP FROM " + state.clientId + " nonce " + incoming.nonce + " data " + contents[0]);
 			// Create the MutationRecord and EventRecord.
@@ -577,7 +580,7 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 			// This is just for initial testing:  send the received, log it, and send the commit.
 			// (client outgoing message list is unbounded so this is safe to do all at once).
 			ClientResponse ack = ClientResponse.received(incoming.nonce, _lastCommittedMutationOffset);
-			_mainEnqueueMessageToClient(client, ack);
+			_mainEnqueueMessageToClient(_commandQueue, client, ack);
 			byte[] contents = ((ClientMessagePayload_Temp)incoming.payload).contents;
 			System.out.println("GOT POISON FROM " + state.clientId + ": \"" + new String(contents) + "\" (nonce " + incoming.nonce + ")");
 			// Create the MutationRecord and EventRecord.
@@ -614,7 +617,7 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 			// For now, however, we just send the received ack and enqueue this for commit (note that it DOES NOT generate an event - only a mutation).
 			// The more complex operation happens after the commit completes since that is when we will change our state and broadcast the new config to all clients and listeners.
 			ClientResponse ack = ClientResponse.received(incoming.nonce, _lastCommittedMutationOffset);
-			_mainEnqueueMessageToClient(client, ack);
+			_mainEnqueueMessageToClient(_commandQueue, client, ack);
 			ClusterConfig newConfig = ((ClientMessagePayload_UpdateConfig)incoming.payload).config;
 			System.out.println("GOT UPDATE_CONFIG FROM " + state.clientId + ": " + newConfig.entries.length + " entries (nonce " + incoming.nonce + ")");
 			
@@ -633,7 +636,7 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 				// For the clients, we just enqueue this.
 				for (ClientManager.ClientNode node : _clientManager._normalClients.keySet()) {
 					ClientResponse update = ClientResponse.updateConfig(_lastCommittedMutationOffset, newConfig);
-					_mainEnqueueMessageToClient(node, update);
+					_mainEnqueueMessageToClient(_commandQueue, node, update);
 				}
 				// For listeners, we either need to send this directly (if they are already waiting for the next event)
 				// or set their high-priority slot to preempt the next enqueue operation (since those ones are currently
@@ -670,10 +673,10 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 		}
 	}
 
-	private void _mainEnqueueMessageToClient(ClientNode client, ClientResponse ack) {
+	private void _mainEnqueueMessageToClient(UninterruptableQueue commandQueue, ClientNode client, ClientResponse ack) {
 		// Main thread helper.
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
-		_commandQueue.put(new Runnable() {
+		commandQueue.put(new Runnable() {
 			@Override
 			public void run() {
 				Assert.assertTrue(Thread.currentThread() == _mainThread);
@@ -693,11 +696,12 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 			}});
 	}
 
-	private void _mainSetupListenerForNextEvent(ClientNode client, ListenerState state) {
+	private long _mainSetupListenerForNextEvent(ClientNode client, ListenerState state, long nextLocalEventOffset) {
 		// Main thread helper.
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		// See if there is a pending request for this offset.
 		long nextLocalOffset = state.lastSentLocalOffset + 1;
+		long nextLocalEventToFetch = -1;
 		List<ClientManager.ClientNode> waitingList = _clientManager._listenersWaitingOnLocalOffset.get(nextLocalOffset);
 		if (null == waitingList) {
 			// Nobody is currently waiting so set up the record.
@@ -705,11 +709,13 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 			_clientManager._listenersWaitingOnLocalOffset.put(nextLocalOffset, waitingList);
 			// Unless this is the next offset (meaning we are waiting for a client to send it), then request the load.
 			// Note that this, like all uses of "local" or "event-based" offsets, will eventually need to be per-topic.
-			if (nextLocalOffset < _nextLocalEventOffset) {
-				_diskManager.fetchEvent(nextLocalOffset);
+			if (nextLocalOffset < nextLocalEventOffset) {
+				// We will need this entry fetched.
+				nextLocalEventToFetch = nextLocalOffset;
 			}
 		}
 		waitingList.add(client);
+		return nextLocalEventToFetch;
 	}
 
 	private void _mainSendRecordToListeners(EventRecord record) {
