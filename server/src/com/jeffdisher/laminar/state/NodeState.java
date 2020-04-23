@@ -247,7 +247,10 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 					
 					// We will ignore the nonce on a new connection.
 					// Note that the client maps are modified by this helper.
-					_mainTransitionNewConnectionState(node, incoming);
+					long mutationOffsetToFetch = _mainTransitionNewConnectionState(_commandQueue, node, incoming, _lastCommittedMutationOffset, _currentConfig, _nextLocalEventOffset);
+					if (-1 != mutationOffsetToFetch) {
+						_diskManager.fetchMutation(mutationOffsetToFetch);
+					}
 				} else if (null != normalState) {
 					Assert.assertTrue(null == listenerState);
 					
@@ -448,7 +451,8 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 	// </IConsoleManagerBackgroundCallbacks>
 
 
-	private void _mainTransitionNewConnectionState(ClientNode client, ClientMessage incoming) {
+	private long _mainTransitionNewConnectionState(UninterruptableQueue commandQueue, ClientNode client, ClientMessage incoming, long lastCommittedMutationOffset, ClusterConfig currentConfig, long nextLocalEventOffset) {
+		long mutationOffsetToFetch = -1;
 		// Main thread helper.
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		switch (incoming.type) {
@@ -466,9 +470,9 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 			_clientManager._normalClients.put(client, state);
 			
 			// The HANDSHAKE is special so we return CLIENT_READY instead of a RECEIVED and COMMIT (which is otherwise all we send).
-			ClientResponse ready = ClientResponse.clientReady(state.nextNonce, _lastCommittedMutationOffset, _currentConfig);
+			ClientResponse ready = ClientResponse.clientReady(state.nextNonce, lastCommittedMutationOffset, currentConfig);
 			System.out.println("HANDSHAKE: " + state.clientId);
-			_clientManager._mainEnqueueMessageToClient(_commandQueue, client, ready);
+			_clientManager._mainEnqueueMessageToClient(commandQueue, client, ready);
 			break;
 		}
 		case RECONNECT: {
@@ -489,7 +493,7 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 			// We still use a specific ReconnectionState to track the progress of the sync.
 			// We don't add them to our map of _normalClients until they finish syncing so we put them into our map of
 			// _reconnectingClients and _reconnectingClientsByGlobalOffset.
-			ReconnectingClientState reconnectState = new ReconnectingClientState(client, reconnect.clientId, incoming.nonce, reconnect.lastCommitGlobalOffset, _lastCommittedMutationOffset);
+			ReconnectingClientState reconnectState = new ReconnectingClientState(client, reconnect.clientId, incoming.nonce, reconnect.lastCommitGlobalOffset, lastCommittedMutationOffset);
 			boolean doesRequireFetch = false;
 			long offsetToFetch = reconnectState.lastCheckedGlobalOffset + 1;
 			if (reconnectState.lastCheckedGlobalOffset < reconnectState.finalGlobalOffsetToCheck) {
@@ -502,12 +506,12 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 				doesRequireFetch = true;
 			}
 			if (doesRequireFetch) {
-				_diskManager.fetchMutation(offsetToFetch);
+				mutationOffsetToFetch = offsetToFetch;
 			} else {
 				// This is a degenerate case where they didn't miss anything so just send them the client ready.
-				ClientResponse ready = ClientResponse.clientReady(reconnectState.earliestNextNonce, _lastCommittedMutationOffset, _currentConfig);
+				ClientResponse ready = ClientResponse.clientReady(reconnectState.earliestNextNonce, lastCommittedMutationOffset, currentConfig);
 				System.out.println("Note:  RECONNECT degenerate case: " + state.clientId + " with nonce " + incoming.nonce);
-				_clientManager._mainEnqueueMessageToClient(_commandQueue, client, ready);
+				_clientManager._mainEnqueueMessageToClient(commandQueue, client, ready);
 				// Since we aren't processing anything, just over-write our reserved value, immediately (assert just for balance).
 				Assert.assertTrue(-1L == state.nextNonce);
 				state.nextNonce = reconnectState.earliestNextNonce;
@@ -520,7 +524,7 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 			
 			// Note that this message overloads the nonce as the last received local offset.
 			long lastReceivedLocalOffset = incoming.nonce;
-			if ((lastReceivedLocalOffset < 0L) || (lastReceivedLocalOffset >= _nextLocalEventOffset)) {
+			if ((lastReceivedLocalOffset < 0L) || (lastReceivedLocalOffset >= nextLocalEventOffset)) {
 				Assert.unimplemented("This listener is invalid so disconnect it");
 			}
 			
@@ -533,7 +537,7 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 			// In this case, we will synthesize the current config as an EventRecord (we have a special type for config
 			// changes), send them that message, and then we will wait for the socket to become writable, again, where
 			// we will begin streaming EventRecords to them.
-			EventRecord initialConfig = EventRecord.synthesizeRecordForConfig(_currentConfig);
+			EventRecord initialConfig = EventRecord.synthesizeRecordForConfig(currentConfig);
 			// This is the only message we send on this socket which isn't specifically related to the
 			// "fetch+send+repeat" cycle so we will send it directly, waiting for the writable callback from the socket
 			// to start the initial fetch.
@@ -545,6 +549,7 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 			Assert.unimplemented("This is an invalid message for this client type and should be disconnected");
 			break;
 		}
+		return mutationOffsetToFetch;
 	}
 
 	private void _mainNormalMessage(ClientNode client, ClientState state, ClientMessage incoming) {
