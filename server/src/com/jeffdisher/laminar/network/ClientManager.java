@@ -8,6 +8,7 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import java.util.WeakHashMap;
 
 import com.jeffdisher.laminar.components.INetworkManagerBackgroundCallbacks;
@@ -17,7 +18,10 @@ import com.jeffdisher.laminar.state.ListenerState;
 import com.jeffdisher.laminar.state.ReconnectingClientState;
 import com.jeffdisher.laminar.state.UninterruptableQueue;
 import com.jeffdisher.laminar.types.ClientMessage;
+import com.jeffdisher.laminar.types.ClientMessagePayload_Handshake;
+import com.jeffdisher.laminar.types.ClientMessagePayload_Reconnect;
 import com.jeffdisher.laminar.types.ClientResponse;
+import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.types.EventRecord;
 import com.jeffdisher.laminar.utils.Assert;
 
@@ -183,6 +187,110 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 			_nodes.put(node, realNode);
 		}
 		return realNode;
+	}
+
+	/**
+	 * TODO: Make private once NodeState -> ClientManager refactoring is complete.
+	 */
+	public long _mainTransitionNewConnectionState(UninterruptableQueue commandQueue, ClientNode client, ClientMessage incoming, long lastCommittedMutationOffset, ClusterConfig currentConfig, long nextLocalEventOffset) {
+		long mutationOffsetToFetch = -1;
+		// Main thread helper.
+		Assert.assertTrue(Thread.currentThread() == _mainThread);
+		switch (incoming.type) {
+		case INVALID:
+			Assert.unimplemented("Invalid message type - disconnect client");
+			break;
+		case HANDSHAKE: {
+			// This is the first message a client sends us in order to make sure we know their UUID and the version is
+			// correct and any other options are supported.
+			UUID clientId = ((ClientMessagePayload_Handshake)incoming.payload).clientId;
+			// Create the new state and change the connection state in the maps.
+			ClientState state = new ClientState(clientId, 1L);
+			boolean didRemove = _newClients.remove(client);
+			Assert.assertTrue(didRemove);
+			_normalClients.put(client, state);
+			
+			// The HANDSHAKE is special so we return CLIENT_READY instead of a RECEIVED and COMMIT (which is otherwise all we send).
+			ClientResponse ready = ClientResponse.clientReady(state.nextNonce, lastCommittedMutationOffset, currentConfig);
+			System.out.println("HANDSHAKE: " + state.clientId);
+			_mainEnqueueMessageToClient(commandQueue, client, ready);
+			break;
+		}
+		case RECONNECT: {
+			// This is the first message an old client sends when it reconnects after a network failure or cluster fail-over.
+			// This is like a HANDSHAKE but more complex in that we need to re-read our history to see if anything they
+			// sent us before the disconnect actually did commit, even though we couldn't tell them it did (so they know
+			// what to re-send).
+			ClientMessagePayload_Reconnect reconnect = (ClientMessagePayload_Reconnect)incoming.payload;
+			
+			// Note that, even though we haven't sent them the CLIENT_READY message yet, we still add this to our
+			// _normalClients map because the network interaction state machine is exactly the same.
+			// (set a bogus nonce to fail if we receive anything before we finish and set it).
+			ClientState state = new ClientState(reconnect.clientId, -1L);
+			boolean didRemove = _newClients.remove(client);
+			Assert.assertTrue(didRemove);
+			_normalClients.put(client, state);
+			
+			// We still use a specific ReconnectionState to track the progress of the sync.
+			// We don't add them to our map of _normalClients until they finish syncing so we put them into our map of
+			// _reconnectingClients and _reconnectingClientsByGlobalOffset.
+			ReconnectingClientState reconnectState = new ReconnectingClientState(client, reconnect.clientId, incoming.nonce, reconnect.lastCommitGlobalOffset, lastCommittedMutationOffset);
+			boolean doesRequireFetch = false;
+			long offsetToFetch = reconnectState.lastCheckedGlobalOffset + 1;
+			if (reconnectState.lastCheckedGlobalOffset < reconnectState.finalGlobalOffsetToCheck) {
+				List<ReconnectingClientState> reconnectingList = _reconnectingClientsByGlobalOffset.get(offsetToFetch);
+				if (null == reconnectingList) {
+					reconnectingList = new LinkedList<>();
+					_reconnectingClientsByGlobalOffset.put(offsetToFetch, reconnectingList);
+				}
+				reconnectingList.add(reconnectState);
+				doesRequireFetch = true;
+			}
+			if (doesRequireFetch) {
+				mutationOffsetToFetch = offsetToFetch;
+			} else {
+				// This is a degenerate case where they didn't miss anything so just send them the client ready.
+				ClientResponse ready = ClientResponse.clientReady(reconnectState.earliestNextNonce, lastCommittedMutationOffset, currentConfig);
+				System.out.println("Note:  RECONNECT degenerate case: " + state.clientId + " with nonce " + incoming.nonce);
+				_mainEnqueueMessageToClient(commandQueue, client, ready);
+				// Since we aren't processing anything, just over-write our reserved value, immediately (assert just for balance).
+				Assert.assertTrue(-1L == state.nextNonce);
+				state.nextNonce = reconnectState.earliestNextNonce;
+			}
+			break;
+		}
+		case LISTEN: {
+			// This is the first message a client sends when they want to register as a listener.
+			// In this case, they won't send any other messages to us and just expect a constant stream of raw EventRecords to be sent to them.
+			
+			// Note that this message overloads the nonce as the last received local offset.
+			long lastReceivedLocalOffset = incoming.nonce;
+			if ((lastReceivedLocalOffset < 0L) || (lastReceivedLocalOffset >= nextLocalEventOffset)) {
+				Assert.unimplemented("This listener is invalid so disconnect it");
+			}
+			
+			// Create the new state and change the connection state in the maps.
+			ListenerState state = new ListenerState(lastReceivedLocalOffset);
+			boolean didRemove = _newClients.remove(client);
+			Assert.assertTrue(didRemove);
+			_listenerClients.put(client, state);
+			
+			// In this case, we will synthesize the current config as an EventRecord (we have a special type for config
+			// changes), send them that message, and then we will wait for the socket to become writable, again, where
+			// we will begin streaming EventRecords to them.
+			EventRecord initialConfig = EventRecord.synthesizeRecordForConfig(currentConfig);
+			// This is the only message we send on this socket which isn't specifically related to the
+			// "fetch+send+repeat" cycle so we will send it directly, waiting for the writable callback from the socket
+			// to start the initial fetch.
+			// If we weren't sending a message here, we would start the cycle by calling _backgroundSetupListenerForNextEvent(), given that the socket starts writable.
+			_sendEventToListener(client, initialConfig);
+			break;
+		}
+		default:
+			Assert.unimplemented("This is an invalid message for this client type and should be disconnected");
+			break;
+		}
+		return mutationOffsetToFetch;
 	}
 
 	/**
