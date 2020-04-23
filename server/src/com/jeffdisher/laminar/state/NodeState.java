@@ -162,9 +162,12 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 	// <IClientManagerBackgroundCallbacks>
 	@Override
 	public void clientConnectedToUs(ClientManager.ClientNode node) {
+		// Called on an IO thread.
+		Assert.assertTrue(Thread.currentThread() != _mainThread);
 		_commandQueue.put(new Runnable() {
 			@Override
 			public void run() {
+				Assert.assertTrue(Thread.currentThread() == _mainThread);
 				// A fresh connection is a new client.
 				_newClients.add(node);
 			}});
@@ -172,9 +175,12 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 
 	@Override
 	public void clientDisconnectedFromUs(ClientManager.ClientNode node) {
+		// Called on an IO thread.
+		Assert.assertTrue(Thread.currentThread() != _mainThread);
 		_commandQueue.put(new Runnable() {
 			@Override
 			public void run() {
+				Assert.assertTrue(Thread.currentThread() == _mainThread);
 				// A disconnect is a transition for all clients so try to remove from them all.
 				// Note that this node may still be in an active list but since we always resolve it against this map, we will fail to resolve it.
 				// We add a check to make sure that this is consistent.
@@ -202,9 +208,12 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 
 	@Override
 	public void clientWriteReady(ClientManager.ClientNode node) {
+		// Called on an IO thread.
+		Assert.assertTrue(Thread.currentThread() != _mainThread);
 		_commandQueue.put(new Runnable() {
 			@Override
 			public void run() {
+				Assert.assertTrue(Thread.currentThread() == _mainThread);
 				// Set the writable flag or send a pending message.
 				// Clients start in the ready state so this couldn't be a new client (since we never sent them a message).
 				Assert.assertTrue(!_newClients.contains(node));
@@ -232,7 +241,7 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 						listenerState.highPriorityMessage = null;
 					} else {
 						// Normal syncing operation so either load or wait for the next event for this listener.
-						_backgroundSetupListenerForNextEvent(node, listenerState);
+						_mainSetupListenerForNextEvent(node, listenerState);
 					}
 				} else {
 					// This appears to have disconnected before we processed it.
@@ -243,9 +252,12 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 
 	@Override
 	public void clientReadReady(ClientManager.ClientNode node) {
+		// Called on an IO thread.
+		Assert.assertTrue(Thread.currentThread() != _mainThread);
 		_commandQueue.put(new Runnable() {
 			@Override
 			public void run() {
+				Assert.assertTrue(Thread.currentThread() == _mainThread);
 				// Check what state the client is in.
 				boolean isNew = _newClients.contains(node);
 				ClientState normalState = _normalClients.get(node);
@@ -258,16 +270,16 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 					
 					// We will ignore the nonce on a new connection.
 					// Note that the client maps are modified by this helper.
-					_backgroundTransitionNewConnectionState(node, incoming);
+					_mainTransitionNewConnectionState(node, incoming);
 				} else if (null != normalState) {
 					Assert.assertTrue(null == listenerState);
 					
 					// We can do the nonce check here, before we enter the state machine for the specific message type/contents.
 					if (normalState.nextNonce == incoming.nonce) {
 						normalState.nextNonce += 1;
-						_backgroundNormalMessage(node, normalState, incoming);
+						_mainNormalMessage(node, normalState, incoming);
 					} else {
-						_backgroundEnqueueMessageToClient(node, ClientResponse.error(incoming.nonce, _lastCommittedMutationOffset));
+						_mainEnqueueMessageToClient(node, ClientResponse.error(incoming.nonce, _lastCommittedMutationOffset));
 					}
 				} else if (null != listenerState) {
 					// Once a listener is in the listener state, they should never send us another message.
@@ -327,9 +339,12 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 	// <IDiskManagerBackgroundCallbacks>
 	@Override
 	public void mutationWasCommitted(MutationRecord completed) {
+		// Called on an IO thread.
+		Assert.assertTrue(Thread.currentThread() != _mainThread);
 		_commandQueue.put(new Runnable() {
 			@Override
 			public void run() {
+				Assert.assertTrue(Thread.currentThread() == _mainThread);
 				// Update our global commit offset (set this first since other methods we are calling might want to read for common state).
 				// We setup this commit so it must be sequential (this is a good check to make sure the commits aren't being re-ordered in the disk layer, too).
 				Assert.assertTrue((_lastCommittedMutationOffset + 1) == completed.globalOffset);
@@ -339,7 +354,7 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 				// This was requested for the specific tuple so it can't be missing.
 				Assert.assertTrue(null != tuple);
 				// Send the commit to the client..
-				_backgroundEnqueueMessageToClient(tuple.client, tuple.ack);
+				_mainEnqueueMessageToClient(tuple.client, tuple.ack);
 				// If there is any special action to take, we want to invoke that now.
 				if (null != tuple.specialAction) {
 					tuple.specialAction.run();
@@ -349,24 +364,30 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 
 	@Override
 	public void eventWasCommitted(EventRecord completed) {
+		// Called on an IO thread.
+		Assert.assertTrue(Thread.currentThread() != _mainThread);
 		_commandQueue.put(new Runnable() {
 			@Override
 			public void run() {
+				Assert.assertTrue(Thread.currentThread() == _mainThread);
 				// We will eventually need to recor
 				// Update our global commit offset (set this first since other methods we are calling might want to read for common state).
 				// We setup this commit so it must be sequential (this is a good check to make sure the commits aren't being re-ordered in the disk layer, too).
 				Assert.assertTrue((_lastCommittedEventOffset + 1) == completed.localOffset);
 				_lastCommittedEventOffset = completed.localOffset;
 				// See if any listeners want this.
-				_backgroundSendRecordToListeners(completed);
+				_mainSendRecordToListeners(completed);
 			}});
 	}
 
 	@Override
 	public void mutationWasFetched(MutationRecord record) {
+		// Called on an IO thread.
+		Assert.assertTrue(Thread.currentThread() != _mainThread);
 		_commandQueue.put(new Runnable() {
 			@Override
 			public void run() {
+				Assert.assertTrue(Thread.currentThread() == _mainThread);
 				// See which syncing clients requested this (we will remove and rebuild the list since it is usually 1 element).
 				List<ReconnectingClientState> reconnecting = _reconnectingClientsByGlobalOffset.remove(record.globalOffset);
 				// Currently, only clients can request this, so this list must exist.
@@ -379,8 +400,8 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 					if (record.clientId.equals(state.clientId)) {
 						// Send the received and commit messages (in the future, we probably want to skip received in reconnect but this avoids a special-case, for now).
 						// (we don't want to confuse the client on a potential double-reconnect so fake our latest commit as this one, so they at least make progress)
-						_backgroundEnqueueMessageToClient(state.token, ClientResponse.received(record.clientNonce, record.globalOffset));
-						_backgroundEnqueueMessageToClient(state.token, ClientResponse.committed(record.clientNonce, record.globalOffset));
+						_mainEnqueueMessageToClient(state.token, ClientResponse.received(record.clientNonce, record.globalOffset));
+						_mainEnqueueMessageToClient(state.token, ClientResponse.committed(record.clientNonce, record.globalOffset));
 						// Make sure to bump ahead the expected nonce, if this is later.
 						if (record.clientNonce >= state.earliestNextNonce) {
 							state.earliestNextNonce = record.clientNonce + 1;
@@ -391,7 +412,7 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 							moveToNext.add(state);
 						} else {
 							// We are done processing this reconnecting client so set it ready.
-							_backgroundEnqueueMessageToClient(state.token, ClientResponse.clientReady(state.earliestNextNonce, _lastCommittedMutationOffset, _currentConfig));
+							_mainEnqueueMessageToClient(state.token, ClientResponse.clientReady(state.earliestNextNonce, _lastCommittedMutationOffset, _currentConfig));
 							// Make sure that this nonce is still the -1 value we used initially and then update it.
 							ClientState clientState = _normalClients.get(state.token);
 							Assert.assertTrue(-1L == clientState.nextNonce);
@@ -422,11 +443,14 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 
 	@Override
 	public void eventWasFetched(EventRecord record) {
+		// Called on an IO thread.
+		Assert.assertTrue(Thread.currentThread() != _mainThread);
 		_commandQueue.put(new Runnable() {
 			@Override
 			public void run() {
+				Assert.assertTrue(Thread.currentThread() == _mainThread);
 				// See what listeners requested this.
-				_backgroundSendRecordToListeners(record);
+				_mainSendRecordToListeners(record);
 			}});
 	}
 	// </IDiskManagerBackgroundCallbacks>
@@ -440,13 +464,16 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 		_commandQueue.put(new Runnable() {
 			@Override
 			public void run() {
+				Assert.assertTrue(Thread.currentThread() == _mainThread);
 				_keepRunning = false;
 			}});
 	}
 	// </IConsoleManagerBackgroundCallbacks>
 
 
-	private void _backgroundTransitionNewConnectionState(ClientNode client, ClientMessage incoming) {
+	private void _mainTransitionNewConnectionState(ClientNode client, ClientMessage incoming) {
+		// Main thread helper.
+		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		switch (incoming.type) {
 		case INVALID:
 			Assert.unimplemented("Invalid message type - disconnect client");
@@ -464,7 +491,7 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 			// The HANDSHAKE is special so we return CLIENT_READY instead of a RECEIVED and COMMIT (which is otherwise all we send).
 			ClientResponse ready = ClientResponse.clientReady(state.nextNonce, _lastCommittedMutationOffset, _currentConfig);
 			System.out.println("HANDSHAKE: " + state.clientId);
-			_backgroundEnqueueMessageToClient(client, ready);
+			_mainEnqueueMessageToClient(client, ready);
 			break;
 		}
 		case RECONNECT: {
@@ -503,7 +530,7 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 				// This is a degenerate case where they didn't miss anything so just send them the client ready.
 				ClientResponse ready = ClientResponse.clientReady(reconnectState.earliestNextNonce, _lastCommittedMutationOffset, _currentConfig);
 				System.out.println("Note:  RECONNECT degenerate case: " + state.clientId + " with nonce " + incoming.nonce);
-				_backgroundEnqueueMessageToClient(client, ready);
+				_mainEnqueueMessageToClient(client, ready);
 				// Since we aren't processing anything, just over-write our reserved value, immediately (assert just for balance).
 				Assert.assertTrue(-1L == state.nextNonce);
 				state.nextNonce = reconnectState.earliestNextNonce;
@@ -543,7 +570,9 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 		}
 	}
 
-	private void _backgroundNormalMessage(ClientNode client, ClientState state, ClientMessage incoming) {
+	private void _mainNormalMessage(ClientNode client, ClientState state, ClientMessage incoming) {
+		// Main thread helper.
+		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		switch (incoming.type) {
 		case INVALID:
 			Assert.unimplemented("Invalid message type");
@@ -552,7 +581,7 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 			// This is just for initial testing:  send the received, log it, and send the commit.
 			// (client outgoing message list is unbounded so this is safe to do all at once).
 			ClientResponse ack = ClientResponse.received(incoming.nonce, _lastCommittedMutationOffset);
-			_backgroundEnqueueMessageToClient(client, ack);
+			_mainEnqueueMessageToClient(client, ack);
 			byte[] contents = ((ClientMessagePayload_Temp)incoming.payload).contents;
 			System.out.println("GOT TEMP FROM " + state.clientId + " nonce " + incoming.nonce + " data " + contents[0]);
 			// Create the MutationRecord and EventRecord.
@@ -574,7 +603,7 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 			// This is just for initial testing:  send the received, log it, and send the commit.
 			// (client outgoing message list is unbounded so this is safe to do all at once).
 			ClientResponse ack = ClientResponse.received(incoming.nonce, _lastCommittedMutationOffset);
-			_backgroundEnqueueMessageToClient(client, ack);
+			_mainEnqueueMessageToClient(client, ack);
 			byte[] contents = ((ClientMessagePayload_Temp)incoming.payload).contents;
 			System.out.println("GOT POISON FROM " + state.clientId + ": \"" + new String(contents) + "\" (nonce " + incoming.nonce + ")");
 			// Create the MutationRecord and EventRecord.
@@ -611,7 +640,7 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 			// For now, however, we just send the received ack and enqueue this for commit (note that it DOES NOT generate an event - only a mutation).
 			// The more complex operation happens after the commit completes since that is when we will change our state and broadcast the new config to all clients and listeners.
 			ClientResponse ack = ClientResponse.received(incoming.nonce, _lastCommittedMutationOffset);
-			_backgroundEnqueueMessageToClient(client, ack);
+			_mainEnqueueMessageToClient(client, ack);
 			ClusterConfig newConfig = ((ClientMessagePayload_UpdateConfig)incoming.payload).config;
 			System.out.println("GOT UPDATE_CONFIG FROM " + state.clientId + ": " + newConfig.entries.length + " entries (nonce " + incoming.nonce + ")");
 			
@@ -630,7 +659,7 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 				// For the clients, we just enqueue this.
 				for (ClientManager.ClientNode node : _normalClients.keySet()) {
 					ClientResponse update = ClientResponse.updateConfig(_lastCommittedMutationOffset, newConfig);
-					_backgroundEnqueueMessageToClient(node, update);
+					_mainEnqueueMessageToClient(node, update);
 				}
 				// For listeners, we either need to send this directly (if they are already waiting for the next event)
 				// or set their high-priority slot to preempt the next enqueue operation (since those ones are currently
@@ -667,10 +696,13 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 		}
 	}
 
-	private void _backgroundEnqueueMessageToClient(ClientNode client, ClientResponse ack) {
+	private void _mainEnqueueMessageToClient(ClientNode client, ClientResponse ack) {
+		// Main thread helper.
+		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		_commandQueue.put(new Runnable() {
 			@Override
 			public void run() {
+				Assert.assertTrue(Thread.currentThread() == _mainThread);
 				// Look up the client to make sure they are still connected (messages to disconnected clients are just dropped).
 				ClientState state = _normalClients.get(client);
 				if (null != state) {
@@ -687,7 +719,9 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 			}});
 	}
 
-	private void _backgroundSetupListenerForNextEvent(ClientNode client, ListenerState state) {
+	private void _mainSetupListenerForNextEvent(ClientNode client, ListenerState state) {
+		// Main thread helper.
+		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		// See if there is a pending request for this offset.
 		long nextLocalOffset = state.lastSentLocalOffset + 1;
 		List<ClientManager.ClientNode> waitingList = _listenersWaitingOnLocalOffset.get(nextLocalOffset);
@@ -704,7 +738,9 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 		waitingList.add(client);
 	}
 
-	private void _backgroundSendRecordToListeners(EventRecord record) {
+	private void _mainSendRecordToListeners(EventRecord record) {
+		// Main thread helper.
+		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		List<ClientManager.ClientNode> waitingList = _listenersWaitingOnLocalOffset.remove(record.localOffset);
 		if (null != waitingList) {
 			for (ClientManager.ClientNode node : waitingList) {
