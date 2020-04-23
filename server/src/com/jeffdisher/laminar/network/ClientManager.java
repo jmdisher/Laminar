@@ -140,13 +140,47 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 	@Override
 	public void nodeDidConnect(NetworkManager.NodeToken node) {
 		ClientNode realNode = _translateNode(node);
-		_callbacks.clientConnectedToUs(realNode);
+		// We handle this here but we ask to handle this on a main thread callback.
+		_callbacks.ioEnqueueCommandForMainThread(new Runnable() {
+			@Override
+			public void run() {
+				Assert.assertTrue(Thread.currentThread() == _mainThread);
+				// A fresh connection is a new client.
+				_newClients.add(realNode);
+			}});
 	}
 
 	@Override
 	public void nodeDidDisconnect(NetworkManager.NodeToken node, IOException cause) {
 		ClientNode realNode = _translateNode(node);
-		_callbacks.clientDisconnectedFromUs(realNode);
+		// We handle this here but we ask to handle this on a main thread callback.
+		_callbacks.ioEnqueueCommandForMainThread(new Runnable() {
+			@Override
+			public void run() {
+				Assert.assertTrue(Thread.currentThread() == _mainThread);
+				// A disconnect is a transition for all clients so try to remove from them all.
+				// Note that this node may still be in an active list but since we always resolve it against this map, we will fail to resolve it.
+				// We add a check to make sure that this is consistent.
+				boolean removedNew = _newClients.remove(realNode);
+				boolean removedNormal = (null != _normalClients.remove(realNode));
+				boolean removedListener = (null != _listenerClients.remove(realNode));
+				boolean removeConsistent = false;
+				if (removedNew) {
+					System.out.println("Disconnect new client");
+					removeConsistent = true;
+				}
+				if (removedNormal) {
+					Assert.assertTrue(!removeConsistent);
+					System.out.println("Disconnect normal client");
+					removeConsistent = true;
+				}
+				if (removedListener) {
+					Assert.assertTrue(!removeConsistent);
+					System.out.println("Disconnect listener client");
+					removeConsistent = true;
+				}
+				Assert.assertTrue(removeConsistent);
+			}});
 	}
 
 	@Override

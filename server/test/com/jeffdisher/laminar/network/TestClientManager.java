@@ -36,16 +36,16 @@ public class TestClientManager {
 		// Create a server.
 		int port = PORT_BASE + 1;
 		ServerSocketChannel socket = createSocket(port);
-		CountDownLatch connectLatch = new CountDownLatch(1);
-		CountDownLatch disconnectLatch = new CountDownLatch(1);
 		CountDownLatch readLatch = new CountDownLatch(1);
-		LatchedCallbacks callbacks = new LatchedCallbacks(connectLatch, disconnectLatch, null, readLatch);
+		LatchedCallbacks callbacks = new LatchedCallbacks(null, readLatch);
 		ClientManager manager = new ClientManager(socket, callbacks);
 		manager.startAndWaitForReady();
 		
 		// Create the connection and send the "temp" message through, directly.
+		ClientNode connectedNode = null;
 		try (Socket client = new Socket("localhost", port)) {
-			connectLatch.await();
+			connectedNode = callbacks.runRunnableAndGetNewClientNode(manager);
+			Assert.assertNotNull(connectedNode);
 			OutputStream toServer = client.getOutputStream();
 			byte[] payload = message.serialize();
 			byte[] frame = new byte[payload.length + Short.BYTES];
@@ -54,8 +54,9 @@ public class TestClientManager {
 			toServer.write(frame);
 			readLatch.await();
 		}
-		disconnectLatch.await();
-		ClientMessage output = manager.receive(callbacks.recentConnection);
+		ClientNode noNode = callbacks.runRunnableAndGetNewClientNode(manager);
+		Assert.assertNull(noNode);
+		ClientMessage output = manager.receive(connectedNode);
 		Assert.assertEquals(message.type, output.type);
 		Assert.assertEquals(message.nonce, output.nonce);
 		Assert.assertArrayEquals(((ClientMessagePayload_Temp)message.payload).contents, ((ClientMessagePayload_Temp)output.payload).contents);
@@ -70,18 +71,17 @@ public class TestClientManager {
 		// Create a server.
 		int port = PORT_BASE + 2;
 		ServerSocketChannel socket = createSocket(port);
-		CountDownLatch connectLatch = new CountDownLatch(1);
-		CountDownLatch disconnectLatch = new CountDownLatch(1);
 		CountDownLatch writeLatch = new CountDownLatch(1);
-		LatchedCallbacks callbacks = new LatchedCallbacks(connectLatch, disconnectLatch, writeLatch, null);
+		LatchedCallbacks callbacks = new LatchedCallbacks(writeLatch, null);
 		ClientManager manager = new ClientManager(socket, callbacks);
 		manager.startAndWaitForReady();
 		
 		// Create the connection, send the commit message, and read it, directly.
 		try (Socket client = new Socket("localhost", port)) {
-			connectLatch.await();
+			ClientNode connectedNode = callbacks.runRunnableAndGetNewClientNode(manager);
+			Assert.assertNotNull(connectedNode);
 			InputStream fromServer = client.getInputStream();
-			manager.send(callbacks.recentConnection, commit);
+			manager.send(connectedNode, commit);
 			// Allocate the frame for the full buffer we know we are going to read.
 			byte[] serialized = commit.serialize();
 			byte[] frame = new byte[Short.BYTES + serialized.length];
@@ -102,7 +102,8 @@ public class TestClientManager {
 			Assert.assertEquals(commit.nonce, deserialized.nonce);
 			Assert.assertEquals(commit.lastCommitGlobalOffset, deserialized.lastCommitGlobalOffset);
 		}
-		disconnectLatch.await();
+		ClientNode noNode = callbacks.runRunnableAndGetNewClientNode(manager);
+		Assert.assertNull(noNode);
 		
 		manager.stopAndWaitForTermination();
 	}
@@ -114,18 +115,17 @@ public class TestClientManager {
 		// Create a server.
 		int port = PORT_BASE + 3;
 		ServerSocketChannel socket = createSocket(port);
-		CountDownLatch connectLatch = new CountDownLatch(1);
-		CountDownLatch disconnectLatch = new CountDownLatch(1);
 		CountDownLatch writeLatch = new CountDownLatch(1);
-		LatchedCallbacks callbacks = new LatchedCallbacks(connectLatch, disconnectLatch, writeLatch, null);
+		LatchedCallbacks callbacks = new LatchedCallbacks(writeLatch, null);
 		ClientManager manager = new ClientManager(socket, callbacks);
 		manager.startAndWaitForReady();
 		
 		// Create the connection, send the commit message, and read it, directly.
 		try (Socket client = new Socket("localhost", port)) {
-			connectLatch.await();
+			ClientNode connectedNode = callbacks.runRunnableAndGetNewClientNode(manager);
+			Assert.assertNotNull(connectedNode);
 			InputStream fromServer = client.getInputStream();
-			manager.sendEventToListener(callbacks.recentConnection, record);
+			manager.sendEventToListener(connectedNode, record);
 			// Allocate the frame for the full buffer we know we are going to read.
 			byte[] serialized = record.serialize();
 			byte[] frame = new byte[Short.BYTES + serialized.length];
@@ -147,7 +147,8 @@ public class TestClientManager {
 			Assert.assertEquals(record.clientId, deserialized.clientId);
 			Assert.assertArrayEquals(record.payload, deserialized.payload);
 		}
-		disconnectLatch.await();
+		ClientNode noNode = callbacks.runRunnableAndGetNewClientNode(manager);
+		Assert.assertNull(noNode);
 		
 		manager.stopAndWaitForTermination();
 	}
@@ -165,28 +166,42 @@ public class TestClientManager {
 	 * Used for simple cases where the external test only wants to verify that a call was made when expected.
 	 */
 	private static class LatchedCallbacks implements IClientManagerBackgroundCallbacks {
-		private final CountDownLatch _clientConnected;
-		private final CountDownLatch _clientDisconnected;
 		private final CountDownLatch _writeReady;
 		private final CountDownLatch _readReady;
-		public volatile ClientNode recentConnection;
+		private Runnable _pendingRunnable;
 		
-		public LatchedCallbacks(CountDownLatch clientConnected, CountDownLatch clientDisconnected, CountDownLatch writeReady, CountDownLatch readReady) {
-			_clientConnected = clientConnected;
-			_clientDisconnected = clientDisconnected;
+		public LatchedCallbacks(CountDownLatch writeReady, CountDownLatch readReady) {
 			_writeReady = writeReady;
 			_readReady = readReady;
 		}
 
-		@Override
-		public void clientConnectedToUs(ClientNode node) {
-			this.recentConnection = node;
-			_clientConnected.countDown();
+		public synchronized ClientNode runRunnableAndGetNewClientNode(ClientManager managerToRead) throws InterruptedException {
+			while (null == _pendingRunnable) {
+				this.wait();
+			}
+			_pendingRunnable.run();
+			_pendingRunnable = null;
+			this.notifyAll();
+			ClientNode node = null;
+			if (!managerToRead._newClients.isEmpty()) {
+				Assert.assertEquals(1, managerToRead._newClients.size());
+				node = managerToRead._newClients.iterator().next();
+			}
+			return node;
 		}
 
 		@Override
-		public void clientDisconnectedFromUs(ClientNode node) {
-			_clientDisconnected.countDown();
+		public synchronized void ioEnqueueCommandForMainThread(Runnable command) {
+			while (null != _pendingRunnable) {
+				try {
+					this.wait();
+				} catch (InterruptedException e) {
+					// We don't use interruption in this test - this is just for lock-step connection testing.
+					Assert.fail(e.getLocalizedMessage());
+				}
+			}
+			_pendingRunnable = command;
+			this.notifyAll();
 		}
 
 		@Override

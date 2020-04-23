@@ -132,49 +132,10 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 
 	// <IClientManagerBackgroundCallbacks>
 	@Override
-	public void clientConnectedToUs(ClientManager.ClientNode node) {
+	public void ioEnqueueCommandForMainThread(Runnable command) {
 		// Called on an IO thread.
 		Assert.assertTrue(Thread.currentThread() != _mainThread);
-		_commandQueue.put(new Runnable() {
-			@Override
-			public void run() {
-				Assert.assertTrue(Thread.currentThread() == _mainThread);
-				// A fresh connection is a new client.
-				_clientManager._newClients.add(node);
-			}});
-	}
-
-	@Override
-	public void clientDisconnectedFromUs(ClientManager.ClientNode node) {
-		// Called on an IO thread.
-		Assert.assertTrue(Thread.currentThread() != _mainThread);
-		_commandQueue.put(new Runnable() {
-			@Override
-			public void run() {
-				Assert.assertTrue(Thread.currentThread() == _mainThread);
-				// A disconnect is a transition for all clients so try to remove from them all.
-				// Note that this node may still be in an active list but since we always resolve it against this map, we will fail to resolve it.
-				// We add a check to make sure that this is consistent.
-				boolean removedNew = _clientManager._newClients.remove(node);
-				boolean removedNormal = (null != _clientManager._normalClients.remove(node));
-				boolean removedListener = (null != _clientManager._listenerClients.remove(node));
-				boolean removeConsistent = false;
-				if (removedNew) {
-					System.out.println("Disconnect new client");
-					removeConsistent = true;
-				}
-				if (removedNormal) {
-					Assert.assertTrue(!removeConsistent);
-					System.out.println("Disconnect normal client");
-					removeConsistent = true;
-				}
-				if (removedListener) {
-					Assert.assertTrue(!removeConsistent);
-					System.out.println("Disconnect listener client");
-					removeConsistent = true;
-				}
-				Assert.assertTrue(removeConsistent);
-			}});
+		_commandQueue.put(command);
 	}
 
 	@Override
