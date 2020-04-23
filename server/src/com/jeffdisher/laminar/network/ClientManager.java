@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.nio.channels.ServerSocketChannel;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -14,6 +15,7 @@ import com.jeffdisher.laminar.components.NetworkManager;
 import com.jeffdisher.laminar.state.ClientState;
 import com.jeffdisher.laminar.state.ListenerState;
 import com.jeffdisher.laminar.state.ReconnectingClientState;
+import com.jeffdisher.laminar.state.UninterruptableQueue;
 import com.jeffdisher.laminar.types.ClientMessage;
 import com.jeffdisher.laminar.types.ClientResponse;
 import com.jeffdisher.laminar.types.EventRecord;
@@ -28,6 +30,7 @@ import com.jeffdisher.laminar.utils.Assert;
  * only hand-off to the coordination thread, outside.
  */
 public class ClientManager implements INetworkManagerBackgroundCallbacks {
+	private final Thread _mainThread;
 	private final NetworkManager _networkManager;
 	private final IClientManagerBackgroundCallbacks _callbacks;
 	private final WeakHashMap<NetworkManager.NodeToken, ClientNode> _nodes;
@@ -52,6 +55,7 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 	public final Map<Long, List<ReconnectingClientState>> _reconnectingClientsByGlobalOffset;
 
 	public ClientManager(ServerSocketChannel serverSocket, IClientManagerBackgroundCallbacks callbacks) throws IOException {
+		_mainThread = Thread.currentThread();
 		// This is really just a high-level wrapper over the common NetworkManager so create that here.
 		_networkManager = NetworkManager.bidirectional(serverSocket, this);
 		_callbacks = callbacks;
@@ -83,30 +87,26 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 	 * Sends the given ClientResponse to the given Client.  This is used by the server when responding to a message
 	 * previously sent by a writing ("normal") client.
 	 * Note that this will assert that the client's write buffer was empty.
+	 * TODO:  Remove this method once NodeState -> ClientManager refactoring is done.
 	 * 
 	 * @param client The client to which to send the message.
 	 * @param toSend The response to send.
 	 */
 	public void send(ClientNode client, ClientResponse toSend) {
-		byte[] serialized = toSend.serialize();
-		boolean didSend = _networkManager.trySendMessage(client.token, serialized);
-		// We only send when ready.
-		Assert.assertTrue(didSend);
+		_send(client, toSend);
 	}
 
 	/**
 	 * Sends the given EventRecord to the given Client.  This is used by the server when streaming data to a read-only
 	 * ("listener") client.
 	 * Note that this will assert that the client's write buffer was empty.
+	 * TODO:  Remove this method once NodeState -> ClientManager refactoring is done.
 	 * 
 	 * @param client The client to which to send the record.
 	 * @param toSend The record to send.
 	 */
 	public void sendEventToListener(ClientNode client, EventRecord toSend) {
-		byte[] serialized = toSend.serialize();
-		boolean didSend = _networkManager.trySendMessage(client.token, serialized);
-		// We only send when ready.
-		Assert.assertTrue(didSend);
+		_sendEventToListener(client, toSend);
 	}
 
 	/**
@@ -183,6 +183,91 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 			_nodes.put(node, realNode);
 		}
 		return realNode;
+	}
+
+	/**
+	 * TODO: Make private once NodeState -> ClientManager refactoring is complete.
+	 */
+	public void _mainEnqueueMessageToClient(UninterruptableQueue commandQueue, ClientNode client, ClientResponse ack) {
+		// Main thread helper.
+		Assert.assertTrue(Thread.currentThread() == _mainThread);
+		commandQueue.put(new Runnable() {
+			@Override
+			public void run() {
+				Assert.assertTrue(Thread.currentThread() == _mainThread);
+				// Look up the client to make sure they are still connected (messages to disconnected clients are just dropped).
+				ClientState state = _normalClients.get(client);
+				if (null != state) {
+					// See if the client is writable.
+					if (state.writable) {
+						// Just write the message.
+						_send(client, ack);
+						state.writable = false;
+					} else {
+						// Writing not yet available so add this to the list.
+						state.outgoingMessages.add(ack);
+					}
+				}
+			}});
+	}
+
+	/**
+	 * TODO: Make private once NodeState -> ClientManager refactoring is complete.
+	 */
+	public long _mainSetupListenerForNextEvent(ClientNode client, ListenerState state, long nextLocalEventOffset) {
+		// Main thread helper.
+		Assert.assertTrue(Thread.currentThread() == _mainThread);
+		// See if there is a pending request for this offset.
+		long nextLocalOffset = state.lastSentLocalOffset + 1;
+		long nextLocalEventToFetch = -1;
+		List<ClientManager.ClientNode> waitingList = _listenersWaitingOnLocalOffset.get(nextLocalOffset);
+		if (null == waitingList) {
+			// Nobody is currently waiting so set up the record.
+			waitingList = new LinkedList<>();
+			_listenersWaitingOnLocalOffset.put(nextLocalOffset, waitingList);
+			// Unless this is the next offset (meaning we are waiting for a client to send it), then request the load.
+			// Note that this, like all uses of "local" or "event-based" offsets, will eventually need to be per-topic.
+			if (nextLocalOffset < nextLocalEventOffset) {
+				// We will need this entry fetched.
+				nextLocalEventToFetch = nextLocalOffset;
+			}
+		}
+		waitingList.add(client);
+		return nextLocalEventToFetch;
+	}
+
+	/**
+	 * TODO: Make private once NodeState -> ClientManager refactoring is complete.
+	 */
+	public void _mainSendRecordToListeners(EventRecord record) {
+		// Main thread helper.
+		Assert.assertTrue(Thread.currentThread() == _mainThread);
+		List<ClientManager.ClientNode> waitingList = _listenersWaitingOnLocalOffset.remove(record.localOffset);
+		if (null != waitingList) {
+			for (ClientManager.ClientNode node : waitingList) {
+				ListenerState listenerState = _listenerClients.get(node);
+				// (make sure this is still connected)
+				if (null != listenerState) {
+					_sendEventToListener(node, record);
+					// Update the state to be the offset of this event.
+					listenerState.lastSentLocalOffset = record.localOffset;
+				}
+			}
+		}
+	}
+
+	private void _send(ClientNode client, ClientResponse toSend) {
+		byte[] serialized = toSend.serialize();
+		boolean didSend = _networkManager.trySendMessage(client.token, serialized);
+		// We only send when ready.
+		Assert.assertTrue(didSend);
+	}
+
+	private void _sendEventToListener(ClientNode client, EventRecord toSend) {
+		byte[] serialized = toSend.serialize();
+		boolean didSend = _networkManager.trySendMessage(client.token, serialized);
+		// We only send when ready.
+		Assert.assertTrue(didSend);
 	}
 
 
