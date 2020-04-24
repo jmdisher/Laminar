@@ -41,24 +41,23 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 	private final IClientManagerBackgroundCallbacks _callbacks;
 	private final WeakHashMap<NetworkManager.NodeToken, ClientNode> _nodes;
 
-	// TODO:  Make these private once the NodeState -> ClientManager refactoring is done ("_" remaining to make it clear that these _SHOULD_ be private).
 	// Note that we track clients in 1 of 3 different states:  new, normal, listener.
 	// -new clients just connected and haven't yet sent a message so we don't know what they are doing.
 	// -normal clients are the kind which send mutative operations and wait for acks
 	// -listener clients are only listen to a stream of EventRecords
 	// All clients start in "new" and move to "normal" or "listener" after their first message.
-	public final Set<ClientManager.ClientNode> _newClients;
-	public final Map<ClientManager.ClientNode, ClientState> _normalClients;
-	public final Map<ClientManager.ClientNode, ListenerState> _listenerClients;
-	public final Map<Long, ClientCommitTuple> _pendingMessageCommits;
+	private final Set<ClientManager.ClientNode> _newClients;
+	private final Map<ClientManager.ClientNode, ClientState> _normalClients;
+	private final Map<ClientManager.ClientNode, ListenerState> _listenerClients;
+	private final Map<Long, ClientCommitTuple> _pendingMessageCommits;
 	// This is a map of local offsets to the list of listener clients waiting for them.
 	// A key is only in this map if a load request for it is outstanding or it is an offset which hasn't yet been sent from a client.
 	// The map uses the ClientNode since these may have disconnected.
 	// Note that no listener should ever appear in _writableClients or _readableClients as these messages are sent immediately (since they would be unbounded buffers, otherwise).
 	// This also means that there is currently no asynchronous load/send on the listener path as it is fully lock-step between network and disk.  This will be changed later.
 	// (in the future, this will change to handle multiple topics).
-	public final Map<Long, List<ClientManager.ClientNode>> _listenersWaitingOnLocalOffset;
-	public final Map<Long, List<ReconnectingClientState>> _reconnectingClientsByGlobalOffset;
+	private final Map<Long, List<ClientManager.ClientNode>> _listenersWaitingOnLocalOffset;
+	private final Map<Long, List<ReconnectingClientState>> _reconnectingClientsByGlobalOffset;
 
 	public ClientManager(ServerSocketChannel serverSocket, IClientManagerBackgroundCallbacks callbacks) throws IOException {
 		_mainThread = Thread.currentThread();
@@ -270,6 +269,21 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 		}
 	}
 
+	/**
+	 * This helper exists purely for testing purposes.  It will assert if there are more than 1 connected clients in new
+	 * state.
+	 * 
+	 * @return The only client in "new" state or null, if there aren't any.
+	 */
+	public ClientNode testingGetOneClientNode() {
+		ClientNode toReturn = null;
+		if (!_newClients.isEmpty()) {
+			Assert.assertTrue(1 == _newClients.size());
+			toReturn = _newClients.iterator().next();
+		}
+		return toReturn;
+	}
+
 	@Override
 	public void nodeDidConnect(NetworkManager.NodeToken node) {
 		ClientNode realNode = _translateNode(node);
@@ -412,10 +426,7 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 		return realNode;
 	}
 
-	/**
-	 * TODO: Make private once NodeState -> ClientManager refactoring is complete.
-	 */
-	public long _mainTransitionNewConnectionState(ClientNode client, ClientMessage incoming, long lastCommittedMutationOffset, ClusterConfig currentConfig, long nextLocalEventOffset) {
+	private long _mainTransitionNewConnectionState(ClientNode client, ClientMessage incoming, long lastCommittedMutationOffset, ClusterConfig currentConfig, long nextLocalEventOffset) {
 		long mutationOffsetToFetch = -1;
 		// Main thread helper.
 		Assert.assertTrue(Thread.currentThread() == _mainThread);

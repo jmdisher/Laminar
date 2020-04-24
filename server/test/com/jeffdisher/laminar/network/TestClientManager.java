@@ -8,7 +8,6 @@ import java.net.Socket;
 import java.nio.ByteBuffer;
 import java.nio.channels.ServerSocketChannel;
 import java.util.UUID;
-import java.util.concurrent.CountDownLatch;
 import java.util.function.Consumer;
 
 import org.junit.Assert;
@@ -91,8 +90,6 @@ public class TestClientManager {
 			Assert.assertNotNull(connectedNode);
 			UUID clientId = UUID.randomUUID();
 			_writeFramedMessage(client.getOutputStream(), ClientMessage.handshake(clientId).serialize());
-			manager._newClients.remove(connectedNode);
-			manager._normalClients.put(connectedNode, new ClientState(clientId, -1L));
 			
 			InputStream fromServer = client.getInputStream();
 			manager.send(connectedNode, commit);
@@ -204,11 +201,7 @@ public class TestClientManager {
 		
 		public synchronized ClientNode runRunnableAndGetNewClientNode(ClientManager managerToRead) throws InterruptedException {
 			_lockedRunOnce();
-			ClientNode node = null;
-			if (!managerToRead._newClients.isEmpty()) {
-				Assert.assertEquals(1, managerToRead._newClients.size());
-				node = managerToRead._newClients.iterator().next();
-			}
+			ClientNode node = managerToRead.testingGetOneClientNode();
 			return node;
 		}
 		
