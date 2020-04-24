@@ -8,7 +8,6 @@ import com.jeffdisher.laminar.console.ConsoleManager;
 import com.jeffdisher.laminar.console.IConsoleManagerBackgroundCallbacks;
 import com.jeffdisher.laminar.disk.DiskManager;
 import com.jeffdisher.laminar.disk.IDiskManagerBackgroundCallbacks;
-import com.jeffdisher.laminar.network.ClientCommitTuple;
 import com.jeffdisher.laminar.network.ClientManager;
 import com.jeffdisher.laminar.network.ClientManager.ClientNode;
 import com.jeffdisher.laminar.network.ClusterManager;
@@ -253,18 +252,11 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 				// We setup this commit so it must be sequential (this is a good check to make sure the commits aren't being re-ordered in the disk layer, too).
 				Assert.assertTrue((arg.lastCommittedMutationOffset + 1) == completed.globalOffset);
 				_lastCommittedMutationOffset = completed.globalOffset;
-				// Look up the tuple so we know which clients and listeners should be told about the commit.
-				ClientCommitTuple tuple = _clientManager._pendingMessageCommits.remove(completed.globalOffset);
-				// This was requested for the specific tuple so it can't be missing.
-				Assert.assertTrue(null != tuple);
-				// Create the commit from the information in the tuple.
-				ClientResponse commit = ClientResponse.committed(tuple.clientNonce, completed.globalOffset);
-				// Send the commit to the client.
-				_clientManager._mainEnqueueMessageToClient(tuple.client, commit);
+				Consumer<StateSnapshot> specialAction = _clientManager.mainProcessingPendingMessageCommits(completed.globalOffset);
 				// If there is any special action to take, we want to invoke that now.
-				if (null != tuple.specialAction) {
+				if (null != specialAction) {
 					// We need a new snapshot since we just changed state in this command, above.
-					tuple.specialAction.accept(new StateSnapshot(_currentConfig, _lastCommittedMutationOffset, _lastCommittedEventOffset, _nextLocalEventOffset));
+					specialAction.accept(new StateSnapshot(_currentConfig, _lastCommittedMutationOffset, _lastCommittedEventOffset, _nextLocalEventOffset));
 				}
 			}});
 	}
@@ -398,7 +390,7 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 			MutationRecord mutation = MutationRecord.generateRecord(MutationRecordType.TEMP, globalOffset, state.clientId, incoming.nonce, contents);
 			EventRecord event = EventRecord.generateRecord(EventRecordType.TEMP, globalOffset, localOffset, state.clientId, incoming.nonce, contents);
 			// Set up the client to be notified that the message committed once the MutationRecord is durable.
-			_clientManager._pendingMessageCommits.put(globalOffset, new ClientCommitTuple(client, incoming.nonce, null));
+			_clientManager.mainStorePendingMessageCommit(client, globalOffset, incoming.nonce, null);
 			// Now request that both of these records be committed.
 			_diskManager.commitEvent(event);
 			// TODO:  We probably want to lock-step the mutation on the event commit since we will be able to detect the broken data, that way, and replay it.
@@ -418,7 +410,7 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 			MutationRecord mutation = MutationRecord.generateRecord(MutationRecordType.TEMP, globalOffset, state.clientId, incoming.nonce, contents);
 			EventRecord event = EventRecord.generateRecord(EventRecordType.TEMP, globalOffset, localOffset, state.clientId, incoming.nonce, contents);
 			// Set up the client to be notified that the message committed once the MutationRecord is durable.
-			_clientManager._pendingMessageCommits.put(globalOffset, new ClientCommitTuple(client, incoming.nonce, null));
+			_clientManager.mainStorePendingMessageCommit(client, globalOffset, incoming.nonce, null);
 			// Now request that both of these records be committed.
 			_diskManager.commitEvent(event);
 			// TODO:  We probably want to lock-step the mutation on the event commit since we will be able to detect the broken data, that way, and replay it.
@@ -449,7 +441,7 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 				// We change the config but this would render the snapshot stale so we do it last, to make that clear.
 				_currentConfig = newConfig;
 			};
-			_clientManager._pendingMessageCommits.put(globalOffset, new ClientCommitTuple(client, incoming.nonce, specialAction));
+			_clientManager.mainStorePendingMessageCommit(client, globalOffset, incoming.nonce, specialAction);
 			// Request that the MutationRecord be committed (no EventRecord).
 			_diskManager.commitMutation(mutation);
 		}
