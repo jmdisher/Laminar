@@ -4,7 +4,7 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.UUID;
 
-import com.jeffdisher.laminar.network.ClientManager;
+import com.jeffdisher.laminar.components.NetworkManager;
 import com.jeffdisher.laminar.types.ClientResponse;
 
 
@@ -13,7 +13,7 @@ import com.jeffdisher.laminar.types.ClientResponse;
  * This is updated by NodeState until the resyncing of the attached client is completed.
  */
 public class ReconnectingClientState {
-	public final ClientManager.ClientNode token;
+	public final NetworkManager.NodeToken token;
 	public final List<ClientResponse> outgoingMessages = new LinkedList<>();
 	public boolean writable = true;
 	public final UUID clientId;
@@ -21,7 +21,7 @@ public class ReconnectingClientState {
 	public long lastCheckedGlobalOffset;
 	public final long finalGlobalOffsetToCheck;
 
-	public ReconnectingClientState(ClientManager.ClientNode token, UUID clientId, long earliestNextNonce, long lastCheckedGlobalOffset, long finalGlobalOffsetToCheck) {
+	public ReconnectingClientState(NetworkManager.NodeToken token, UUID clientId, long earliestNextNonce, long lastCheckedGlobalOffset, long finalGlobalOffsetToCheck) {
 		this.token = token;
 		this.clientId = clientId;
 		this.earliestNextNonce = earliestNextNonce;

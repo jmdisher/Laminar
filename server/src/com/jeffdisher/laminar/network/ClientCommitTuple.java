@@ -1,6 +1,6 @@
 package com.jeffdisher.laminar.network;
 
-import com.jeffdisher.laminar.network.ClientManager.ClientNode;
+import com.jeffdisher.laminar.components.NetworkManager;
 
 
 /**
@@ -8,10 +8,10 @@ import com.jeffdisher.laminar.network.ClientManager.ClientNode;
  * can be sent once the commit callback comes from the disk layer.
  */
 public class ClientCommitTuple {
-	public final ClientNode client;
+	public final NetworkManager.NodeToken client;
 	public final long clientNonce;
 	
-	public ClientCommitTuple(ClientNode client, long clientNonce) {
+	public ClientCommitTuple(NetworkManager.NodeToken client, long clientNonce) {
 		this.client = client;
 		this.clientNonce = clientNonce;
 	}

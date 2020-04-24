@@ -13,7 +13,7 @@ import java.util.function.Consumer;
 import org.junit.Assert;
 import org.junit.Test;
 
-import com.jeffdisher.laminar.network.ClientManager.ClientNode;
+import com.jeffdisher.laminar.components.NetworkManager;
 import com.jeffdisher.laminar.state.StateSnapshot;
 import com.jeffdisher.laminar.types.ClientMessage;
 import com.jeffdisher.laminar.types.ClientMessagePayload_Temp;
@@ -43,7 +43,7 @@ public class TestClientManager {
 		manager.startAndWaitForReady();
 		
 		// Create the connection and send the "temp" message through, directly.
-		ClientNode connectedNode = null;
+		NetworkManager.NodeToken connectedNode = null;
 		try (Socket client = new Socket("localhost", port)) {
 			connectedNode = callbacks.runRunnableAndGetNewClientNode(manager);
 			Assert.assertNotNull(connectedNode);
@@ -62,7 +62,7 @@ public class TestClientManager {
 		// We should see the message appear in callbacks.
 		ClientMessage output = callbacks.runAndGetNextMessage();
 		Assert.assertNotNull(output);
-		ClientNode noNode = callbacks.runRunnableAndGetNewClientNode(manager);
+		NetworkManager.NodeToken noNode = callbacks.runRunnableAndGetNewClientNode(manager);
 		Assert.assertNull(noNode);
 		Assert.assertEquals(message.type, output.type);
 		Assert.assertEquals(message.nonce, output.nonce);
@@ -84,7 +84,7 @@ public class TestClientManager {
 		
 		// Create the connection, send the commit message, and read it, directly.
 		try (Socket client = new Socket("localhost", port)) {
-			ClientNode connectedNode = callbacks.runRunnableAndGetNewClientNode(manager);
+			NetworkManager.NodeToken connectedNode = callbacks.runRunnableAndGetNewClientNode(manager);
 			Assert.assertNotNull(connectedNode);
 			UUID clientId = UUID.randomUUID();
 			_writeFramedMessage(client.getOutputStream(), ClientMessage.handshake(clientId).serialize());
@@ -101,7 +101,7 @@ public class TestClientManager {
 			Assert.assertEquals(commit.nonce, deserialized.nonce);
 			Assert.assertEquals(commit.lastCommitGlobalOffset, deserialized.lastCommitGlobalOffset);
 		}
-		ClientNode noNode = callbacks.runRunnableAndGetNewClientNode(manager);
+		NetworkManager.NodeToken noNode = callbacks.runRunnableAndGetNewClientNode(manager);
 		Assert.assertNull(noNode);
 		
 		manager.stopAndWaitForTermination();
@@ -120,7 +120,7 @@ public class TestClientManager {
 		
 		// Create the connection, send the commit message, and read it, directly.
 		try (Socket client = new Socket("localhost", port)) {
-			ClientNode connectedNode = callbacks.runRunnableAndGetNewClientNode(manager);
+			NetworkManager.NodeToken connectedNode = callbacks.runRunnableAndGetNewClientNode(manager);
 			Assert.assertNotNull(connectedNode);
 			// Write the listen since we want to go into the listener state.
 			_writeFramedMessage(client.getOutputStream(), ClientMessage.listen(0L).serialize());
@@ -145,7 +145,7 @@ public class TestClientManager {
 			Assert.assertEquals(record.clientId, deserialized.clientId);
 			Assert.assertArrayEquals(record.payload, deserialized.payload);
 		}
-		ClientNode noNode = callbacks.runRunnableAndGetNewClientNode(manager);
+		NetworkManager.NodeToken noNode = callbacks.runRunnableAndGetNewClientNode(manager);
 		Assert.assertNull(noNode);
 		
 		manager.stopAndWaitForTermination();
@@ -192,9 +192,9 @@ public class TestClientManager {
 		private Consumer<StateSnapshot> _pendingConsumer;
 		public ClientMessage recentMessage;
 		
-		public synchronized ClientNode runRunnableAndGetNewClientNode(ClientManager managerToRead) throws InterruptedException {
+		public synchronized NetworkManager.NodeToken runRunnableAndGetNewClientNode(ClientManager managerToRead) throws InterruptedException {
 			_lockedRunOnce();
-			ClientNode node = managerToRead.testingGetOneClientNode();
+			NetworkManager.NodeToken node = managerToRead.testingGetOneClientNode();
 			return node;
 		}
 		

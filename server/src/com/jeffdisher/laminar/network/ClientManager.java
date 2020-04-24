@@ -9,7 +9,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
-import java.util.WeakHashMap;
 import java.util.function.Consumer;
 
 import com.jeffdisher.laminar.components.INetworkManagerBackgroundCallbacks;
@@ -39,16 +38,15 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 	private final Thread _mainThread;
 	private final NetworkManager _networkManager;
 	private final IClientManagerBackgroundCallbacks _callbacks;
-	private final WeakHashMap<NetworkManager.NodeToken, ClientNode> _nodes;
 
 	// Note that we track clients in 1 of 3 different states:  new, normal, listener.
 	// -new clients just connected and haven't yet sent a message so we don't know what they are doing.
 	// -normal clients are the kind which send mutative operations and wait for acks
 	// -listener clients are only listen to a stream of EventRecords
 	// All clients start in "new" and move to "normal" or "listener" after their first message.
-	private final Set<ClientManager.ClientNode> _newClients;
-	private final Map<ClientManager.ClientNode, ClientState> _normalClients;
-	private final Map<ClientManager.ClientNode, ListenerState> _listenerClients;
+	private final Set<NetworkManager.NodeToken> _newClients;
+	private final Map<NetworkManager.NodeToken, ClientState> _normalClients;
+	private final Map<NetworkManager.NodeToken, ListenerState> _listenerClients;
 	private final Map<Long, ClientCommitTuple> _pendingMessageCommits;
 	// This is a map of local offsets to the list of listener clients waiting for them.
 	// A key is only in this map if a load request for it is outstanding or it is an offset which hasn't yet been sent from a client.
@@ -56,7 +54,7 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 	// Note that no listener should ever appear in _writableClients or _readableClients as these messages are sent immediately (since they would be unbounded buffers, otherwise).
 	// This also means that there is currently no asynchronous load/send on the listener path as it is fully lock-step between network and disk.  This will be changed later.
 	// (in the future, this will change to handle multiple topics).
-	private final Map<Long, List<ClientManager.ClientNode>> _listenersWaitingOnLocalOffset;
+	private final Map<Long, List<NetworkManager.NodeToken>> _listenersWaitingOnLocalOffset;
 	private final Map<Long, List<ReconnectingClientState>> _reconnectingClientsByGlobalOffset;
 
 	public ClientManager(ServerSocketChannel serverSocket, IClientManagerBackgroundCallbacks callbacks) throws IOException {
@@ -64,7 +62,6 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 		// This is really just a high-level wrapper over the common NetworkManager so create that here.
 		_networkManager = NetworkManager.bidirectional(serverSocket, this);
 		_callbacks = callbacks;
-		_nodes = new WeakHashMap<>();
 		
 		_newClients = new HashSet<>();
 		_normalClients = new HashMap<>();
@@ -94,7 +91,7 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 	 * 
 	 * @param node The incoming connection to close.
 	 */
-	public void disconnectClient(ClientNode node) {
+	public void disconnectClient(NetworkManager.NodeToken node) {
 		_disconnectClient(node);
 		_newClients.remove(node);
 		_normalClients.remove(node);
@@ -108,8 +105,8 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 	 * @param client The client from which to read the message.
 	 * @return The message.
 	 */
-	public ClientMessage receive(ClientNode client) {
-		byte[] serialized = _networkManager.readWaitingMessage(client.token);
+	public ClientMessage receive(NetworkManager.NodeToken client) {
+		byte[] serialized = _networkManager.readWaitingMessage(client);
 		// We only read when data is available.
 		Assert.assertTrue(null != serialized);
 		return ClientMessage.deserialize(serialized);
@@ -121,15 +118,15 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 	public void mainDisconnectAllClientsAndListeners() {
 		// Called on main thread.
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
-		for (ClientManager.ClientNode node : _newClients) {
+		for (NetworkManager.NodeToken node : _newClients) {
 			_disconnectClient(node);
 		}
 		_newClients.clear();
-		for (ClientManager.ClientNode node : _normalClients.keySet()) {
+		for (NetworkManager.NodeToken node : _normalClients.keySet()) {
 			_disconnectClient(node);
 		}
 		_normalClients.clear();
-		for (ClientManager.ClientNode node : _listenerClients.keySet()) {
+		for (NetworkManager.NodeToken node : _listenerClients.keySet()) {
 			_disconnectClient(node);
 		}
 		_listenerClients.clear();
@@ -139,7 +136,7 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 		// Called on main thread.
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		// For the clients, we just enqueue this.
-		for (ClientManager.ClientNode node : _normalClients.keySet()) {
+		for (NetworkManager.NodeToken node : _normalClients.keySet()) {
 			ClientResponse update = ClientResponse.updateConfig(snapshot.lastCommittedMutationOffset, newConfig);
 			_mainEnqueueMessageToClient(node, update);
 		}
@@ -149,13 +146,13 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 		// We use the high-priority slot because it doesn't have a message queue and they don't need every update, just the most recent.
 		EventRecord updateConfigPseudoRecord = EventRecord.synthesizeRecordForConfig(newConfig);
 		// Set this in all of them and remove the ones we are going to eagerly handle.
-		for (ClientManager.ClientNode node : _listenerClients.keySet()) {
+		for (NetworkManager.NodeToken node : _listenerClients.keySet()) {
 			ListenerState listenerState = _listenerClients.get(node);
 			listenerState.highPriorityMessage = updateConfigPseudoRecord;
 		}
-		List<ClientManager.ClientNode> waitingForNewEvent = _listenersWaitingOnLocalOffset.remove(snapshot.nextLocalEventOffset);
+		List<NetworkManager.NodeToken> waitingForNewEvent = _listenersWaitingOnLocalOffset.remove(snapshot.nextLocalEventOffset);
 		if (null != waitingForNewEvent) {
-			for (ClientManager.ClientNode node : waitingForNewEvent) {
+			for (NetworkManager.NodeToken node : waitingForNewEvent) {
 				ListenerState listenerState = _listenerClients.get(node);
 				// Make sure they are still connected.
 				if (null != listenerState) {
@@ -168,7 +165,7 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 		}
 	}
 
-	public void mainStorePendingMessageCommit(ClientNode client, long globalOffsetOfCommit, long clientNonce) {
+	public void mainStorePendingMessageCommit(NetworkManager.NodeToken client, long globalOffsetOfCommit, long clientNonce) {
 		// Called on main thread.
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		_pendingMessageCommits.put(globalOffsetOfCommit, new ClientCommitTuple(client, clientNonce));
@@ -254,8 +251,8 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 	 * 
 	 * @return The only client in "new" state or null, if there aren't any.
 	 */
-	public ClientNode testingGetOneClientNode() {
-		ClientNode toReturn = null;
+	public NetworkManager.NodeToken testingGetOneClientNode() {
+		NetworkManager.NodeToken toReturn = null;
 		if (!_newClients.isEmpty()) {
 			Assert.assertTrue(1 == _newClients.size());
 			toReturn = _newClients.iterator().next();
@@ -268,26 +265,24 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 	 * messages.  It may be removed, in future, if TestClientManager changes to do this in the response shape it is
 	 * designed to handle.
 	 */
-	public void testingSend(ClientNode target, ClientResponse toSend) {
+	public void testingSend(NetworkManager.NodeToken target, ClientResponse toSend) {
 		_send(target, toSend);
 	}
 
 	@Override
 	public void nodeDidConnect(NetworkManager.NodeToken node) {
-		ClientNode realNode = _translateNode(node);
 		// We handle this here but we ask to handle this on a main thread callback.
 		_callbacks.ioEnqueueCommandForMainThread(new Consumer<StateSnapshot>() {
 			@Override
 			public void accept(StateSnapshot arg) {
 				Assert.assertTrue(Thread.currentThread() == _mainThread);
 				// A fresh connection is a new client.
-				_newClients.add(realNode);
+				_newClients.add(node);
 			}});
 	}
 
 	@Override
 	public void nodeDidDisconnect(NetworkManager.NodeToken node, IOException cause) {
-		ClientNode realNode = _translateNode(node);
 		// We handle this here but we ask to handle this on a main thread callback.
 		_callbacks.ioEnqueueCommandForMainThread(new Consumer<StateSnapshot>() {
 			@Override
@@ -296,9 +291,9 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 				// A disconnect is a transition for all clients so try to remove from them all.
 				// Note that this node may still be in an active list but since we always resolve it against this map, we will fail to resolve it.
 				// We add a check to make sure that this is consistent.
-				boolean removedNew = _newClients.remove(realNode);
-				boolean removedNormal = (null != _normalClients.remove(realNode));
-				boolean removedListener = (null != _listenerClients.remove(realNode));
+				boolean removedNew = _newClients.remove(node);
+				boolean removedNormal = (null != _normalClients.remove(node));
+				boolean removedListener = (null != _listenerClients.remove(node));
 				boolean removeConsistent = false;
 				if (removedNew) {
 					System.out.println("Disconnect new client");
@@ -322,7 +317,6 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 	public void nodeWriteReady(NetworkManager.NodeToken node) {
 		// Called on IO thread.
 		Assert.assertTrue(Thread.currentThread() != _mainThread);
-		ClientNode realNode = _translateNode(node);
 		// We handle this here but we ask to handle this on a main thread callback.
 		_callbacks.ioEnqueueCommandForMainThread(new Consumer<StateSnapshot>() {
 			@Override
@@ -330,9 +324,9 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 				Assert.assertTrue(Thread.currentThread() == _mainThread);
 				// Set the writable flag or send a pending message.
 				// Clients start in the ready state so this couldn't be a new client (since we never sent them a message).
-				Assert.assertTrue(!_newClients.contains(realNode));
-				ClientState normalState = _normalClients.get(realNode);
-				ListenerState listenerState = _listenerClients.get(realNode);
+				Assert.assertTrue(!_newClients.contains(node));
+				ClientState normalState = _normalClients.get(node);
+				ListenerState listenerState = _listenerClients.get(node);
 				if (null != normalState) {
 					Assert.assertTrue(null == listenerState);
 					// Normal client.
@@ -343,18 +337,18 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 						normalState.writable = true;
 					} else {
 						ClientResponse toSend = normalState.outgoingMessages.remove(0);
-						_send(realNode, toSend);
+						_send(node, toSend);
 					}
 				} else if (null != listenerState) {
 					// Listener.
 					// The socket is now writable so first check if there is a high-priority message waiting.
 					if (null != listenerState.highPriorityMessage) {
 						// Send the high-priority message and we will proceed to sync when we get the next writable callback.
-						_sendEventToListener(realNode, listenerState.highPriorityMessage);
+						_sendEventToListener(node, listenerState.highPriorityMessage);
 						listenerState.highPriorityMessage = null;
 					} else {
 						// Normal syncing operation so either load or wait for the next event for this listener.
-						long nextLocalEventToFetch = _mainSetupListenerForNextEvent(realNode, listenerState, arg.nextLocalEventOffset);
+						long nextLocalEventToFetch = _mainSetupListenerForNextEvent(node, listenerState, arg.nextLocalEventOffset);
 						if (-1 != nextLocalEventToFetch) {
 							_callbacks.mainRequestEventFetch(nextLocalEventToFetch);
 						}
@@ -370,16 +364,15 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 	public void nodeReadReady(NetworkManager.NodeToken node) {
 		// Called on an IO thread.
 		Assert.assertTrue(Thread.currentThread() != _mainThread);
-		ClientNode realNode = _translateNode(node);
 		_callbacks.ioEnqueueCommandForMainThread(new Consumer<StateSnapshot>() {
 			@Override
 			public void accept(StateSnapshot arg) {
 				Assert.assertTrue(Thread.currentThread() == _mainThread);
 				// Check what state the client is in.
-				boolean isNew = _newClients.contains(realNode);
-				ClientState normalState = _normalClients.get(realNode);
-				ListenerState listenerState = _listenerClients.get(realNode);
-				ClientMessage incoming = receive(realNode);
+				boolean isNew = _newClients.contains(node);
+				ClientState normalState = _normalClients.get(node);
+				ListenerState listenerState = _listenerClients.get(node);
+				ClientMessage incoming = receive(node);
 				
 				if (isNew) {
 					Assert.assertTrue(null == normalState);
@@ -387,7 +380,7 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 					
 					// We will ignore the nonce on a new connection.
 					// Note that the client maps are modified by this helper.
-					long mutationOffsetToFetch = _mainTransitionNewConnectionState(realNode, incoming, arg.lastCommittedMutationOffset, arg.currentConfig, arg.nextLocalEventOffset);
+					long mutationOffsetToFetch = _mainTransitionNewConnectionState(node, incoming, arg.lastCommittedMutationOffset, arg.currentConfig, arg.nextLocalEventOffset);
 					if (-1 != mutationOffsetToFetch) {
 						_callbacks.mainRequestMutationFetch(mutationOffsetToFetch);
 					}
@@ -401,11 +394,11 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 						Assert.assertTrue(globalMutationOffsetOfAcceptedMessage > 0L);
 						// We enqueue the ack, immediately.
 						ClientResponse ack = ClientResponse.received(incoming.nonce, arg.lastCommittedMutationOffset);
-						_mainEnqueueMessageToClient(realNode, ack);
+						_mainEnqueueMessageToClient(node, ack);
 						// Set up the client to be notified that the message committed once the MutationRecord is durable.
-						mainStorePendingMessageCommit(realNode, globalMutationOffsetOfAcceptedMessage, incoming.nonce);
+						mainStorePendingMessageCommit(node, globalMutationOffsetOfAcceptedMessage, incoming.nonce);
 					} else {
-						_mainEnqueueMessageToClient(realNode, ClientResponse.error(incoming.nonce, arg.lastCommittedMutationOffset));
+						_mainEnqueueMessageToClient(node, ClientResponse.error(incoming.nonce, arg.lastCommittedMutationOffset));
 					}
 				} else if (null != listenerState) {
 					// Once a listener is in the listener state, they should never send us another message.
@@ -436,16 +429,7 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 	}
 
 
-	private ClientNode _translateNode(NetworkManager.NodeToken node) {
-		ClientNode realNode = _nodes.get(node);
-		if (null == realNode) {
-			realNode = new ClientNode(node);
-			_nodes.put(node, realNode);
-		}
-		return realNode;
-	}
-
-	private long _mainTransitionNewConnectionState(ClientNode client, ClientMessage incoming, long lastCommittedMutationOffset, ClusterConfig currentConfig, long nextLocalEventOffset) {
+	private long _mainTransitionNewConnectionState(NetworkManager.NodeToken client, ClientMessage incoming, long lastCommittedMutationOffset, ClusterConfig currentConfig, long nextLocalEventOffset) {
 		long mutationOffsetToFetch = -1;
 		// Main thread helper.
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
@@ -546,7 +530,7 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 		return mutationOffsetToFetch;
 	}
 
-	private void _mainEnqueueMessageToClient(ClientNode client, ClientResponse ack) {
+	private void _mainEnqueueMessageToClient(NetworkManager.NodeToken client, ClientResponse ack) {
 		// Main thread helper.
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		// Look up the client to make sure they are still connected (messages to disconnected clients are just dropped).
@@ -564,13 +548,13 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 		}
 	}
 
-	private long _mainSetupListenerForNextEvent(ClientNode client, ListenerState state, long nextLocalEventOffset) {
+	private long _mainSetupListenerForNextEvent(NetworkManager.NodeToken client, ListenerState state, long nextLocalEventOffset) {
 		// Main thread helper.
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		// See if there is a pending request for this offset.
 		long nextLocalOffset = state.lastSentLocalOffset + 1;
 		long nextLocalEventToFetch = -1;
-		List<ClientManager.ClientNode> waitingList = _listenersWaitingOnLocalOffset.get(nextLocalOffset);
+		List<NetworkManager.NodeToken> waitingList = _listenersWaitingOnLocalOffset.get(nextLocalOffset);
 		if (null == waitingList) {
 			// Nobody is currently waiting so set up the record.
 			waitingList = new LinkedList<>();
@@ -589,9 +573,9 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 	private void _mainSendRecordToListeners(EventRecord record) {
 		// Main thread helper.
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
-		List<ClientManager.ClientNode> waitingList = _listenersWaitingOnLocalOffset.remove(record.localOffset);
+		List<NetworkManager.NodeToken> waitingList = _listenersWaitingOnLocalOffset.remove(record.localOffset);
 		if (null != waitingList) {
-			for (ClientManager.ClientNode node : waitingList) {
+			for (NetworkManager.NodeToken node : waitingList) {
 				ListenerState listenerState = _listenerClients.get(node);
 				// (make sure this is still connected)
 				if (null != listenerState) {
@@ -603,33 +587,21 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 		}
 	}
 
-	private void _send(ClientNode client, ClientResponse toSend) {
+	private void _send(NetworkManager.NodeToken client, ClientResponse toSend) {
 		byte[] serialized = toSend.serialize();
-		boolean didSend = _networkManager.trySendMessage(client.token, serialized);
+		boolean didSend = _networkManager.trySendMessage(client, serialized);
 		// We only send when ready.
 		Assert.assertTrue(didSend);
 	}
 
-	private void _sendEventToListener(ClientNode client, EventRecord toSend) {
+	private void _sendEventToListener(NetworkManager.NodeToken client, EventRecord toSend) {
 		byte[] serialized = toSend.serialize();
-		boolean didSend = _networkManager.trySendMessage(client.token, serialized);
+		boolean didSend = _networkManager.trySendMessage(client, serialized);
 		// We only send when ready.
 		Assert.assertTrue(didSend);
 	}
 
-	private void _disconnectClient(ClientNode node) {
-		_networkManager.closeConnection(node.token);
-	}
-
-
-	/**
-	 * This is just a wrapper of the NodeToken to ensure that callers maintain the distinction between different kinds
-	 * of network connections.
-	 */
-	public static class ClientNode {
-		private final NetworkManager.NodeToken token;
-		private ClientNode(NetworkManager.NodeToken token) {
-			this.token = token;
-		}
+	private void _disconnectClient(NetworkManager.NodeToken node) {
+		_networkManager.closeConnection(node);
 	}
 }
