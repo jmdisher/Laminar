@@ -10,7 +10,6 @@ import com.jeffdisher.laminar.console.IConsoleManagerBackgroundCallbacks;
 import com.jeffdisher.laminar.disk.DiskManager;
 import com.jeffdisher.laminar.disk.IDiskManagerBackgroundCallbacks;
 import com.jeffdisher.laminar.network.ClientManager;
-import com.jeffdisher.laminar.network.ClientManager.ClientNode;
 import com.jeffdisher.laminar.network.ClusterManager;
 import com.jeffdisher.laminar.network.IClientManagerBackgroundCallbacks;
 import com.jeffdisher.laminar.network.IClusterManagerBackgroundCallbacks;
@@ -271,7 +270,7 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 				Assert.assertTrue((arg.lastCommittedEventOffset + 1) == completed.localOffset);
 				_lastCommittedEventOffset = completed.localOffset;
 				// See if any listeners want this.
-				_clientManager._mainSendRecordToListeners(completed);
+				_clientManager.mainSendRecordToListeners(completed);
 			}});
 	}
 
@@ -296,7 +295,7 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 			public void accept(StateSnapshot arg) {
 				Assert.assertTrue(Thread.currentThread() == _mainThread);
 				// See what listeners requested this.
-				_clientManager._mainSendRecordToListeners(record);
+				_clientManager.mainSendRecordToListeners(record);
 			}});
 	}
 	// </IDiskManagerBackgroundCallbacks>

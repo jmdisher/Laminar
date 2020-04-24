@@ -268,6 +268,12 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 		}
 	}
 
+	public void mainSendRecordToListeners(EventRecord record) {
+		// Called on main thread.
+		Assert.assertTrue(Thread.currentThread() == _mainThread);
+		_mainSendRecordToListeners(record);
+	}
+
 	/**
 	 * This helper exists purely for testing purposes.  It will assert if there are more than 1 connected clients in new
 	 * state.
@@ -549,10 +555,7 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 		return mutationOffsetToFetch;
 	}
 
-	/**
-	 * TODO: Make private once NodeState -> ClientManager refactoring is complete.
-	 */
-	public void _mainEnqueueMessageToClient(ClientNode client, ClientResponse ack) {
+	private void _mainEnqueueMessageToClient(ClientNode client, ClientResponse ack) {
 		// Main thread helper.
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		// Look up the client to make sure they are still connected (messages to disconnected clients are just dropped).
@@ -570,10 +573,7 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 		}
 	}
 
-	/**
-	 * TODO: Make private once NodeState -> ClientManager refactoring is complete.
-	 */
-	public long _mainSetupListenerForNextEvent(ClientNode client, ListenerState state, long nextLocalEventOffset) {
+	private long _mainSetupListenerForNextEvent(ClientNode client, ListenerState state, long nextLocalEventOffset) {
 		// Main thread helper.
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		// See if there is a pending request for this offset.
@@ -595,10 +595,7 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 		return nextLocalEventToFetch;
 	}
 
-	/**
-	 * TODO: Make private once NodeState -> ClientManager refactoring is complete.
-	 */
-	public void _mainSendRecordToListeners(EventRecord record) {
+	private void _mainSendRecordToListeners(EventRecord record) {
 		// Main thread helper.
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		List<ClientManager.ClientNode> waitingList = _listenersWaitingOnLocalOffset.remove(record.localOffset);
