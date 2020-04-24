@@ -426,18 +426,7 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 			_diskManager.commitMutation(mutation);
 			
 			// Now that we did the usual work, disconnect everyone.
-			for (ClientManager.ClientNode node : _clientManager._newClients) {
-				_clientManager.disconnectClient(node);
-			}
-			_clientManager._newClients.clear();
-			for (ClientManager.ClientNode node : _clientManager._normalClients.keySet()) {
-				_clientManager.disconnectClient(node);
-			}
-			_clientManager._normalClients.clear();
-			for (ClientManager.ClientNode node : _clientManager._listenerClients.keySet()) {
-				_clientManager.disconnectClient(node);
-			}
-			_clientManager._listenerClients.clear();
+			_clientManager.mainDisconnectAllClientsAndListeners();
 		}
 			break;
 		case UPDATE_CONFIG: {

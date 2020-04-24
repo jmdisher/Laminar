@@ -121,7 +121,10 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 	 * @param node The incoming connection to close.
 	 */
 	public void disconnectClient(ClientNode node) {
-		_networkManager.closeConnection(node.token);
+		_disconnectClient(node);
+		_newClients.remove(node);
+		_normalClients.remove(node);
+		_listenerClients.remove(node);
 	}
 
 	/**
@@ -136,6 +139,26 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 		// We only read when data is available.
 		Assert.assertTrue(null != serialized);
 		return ClientMessage.deserialize(serialized);
+	}
+
+	/**
+	 * This is currently just used to implement the POISON method, for testing.
+	 */
+	public void mainDisconnectAllClientsAndListeners() {
+		// Called on main thread.
+		Assert.assertTrue(Thread.currentThread() == _mainThread);
+		for (ClientManager.ClientNode node : _newClients) {
+			_disconnectClient(node);
+		}
+		_newClients.clear();
+		for (ClientManager.ClientNode node : _normalClients.keySet()) {
+			_disconnectClient(node);
+		}
+		_normalClients.clear();
+		for (ClientManager.ClientNode node : _listenerClients.keySet()) {
+			_disconnectClient(node);
+		}
+		_listenerClients.clear();
 	}
 
 	@Override
@@ -462,6 +485,10 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 		boolean didSend = _networkManager.trySendMessage(client.token, serialized);
 		// We only send when ready.
 		Assert.assertTrue(didSend);
+	}
+
+	private void _disconnectClient(ClientNode node) {
+		_networkManager.closeConnection(node.token);
 	}
 
 
