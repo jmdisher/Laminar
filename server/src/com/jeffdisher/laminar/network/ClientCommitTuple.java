@@ -4,7 +4,6 @@ import java.util.function.Consumer;
 
 import com.jeffdisher.laminar.network.ClientManager.ClientNode;
 import com.jeffdisher.laminar.state.StateSnapshot;
-import com.jeffdisher.laminar.types.ClientResponse;
 
 
 /**
@@ -15,12 +14,12 @@ import com.jeffdisher.laminar.types.ClientResponse;
  */
 public class ClientCommitTuple {
 	public final ClientNode client;
-	public final ClientResponse ack;
+	public final long clientNonce;
 	public final Consumer<StateSnapshot> specialAction;
 	
-	public ClientCommitTuple(ClientNode client, ClientResponse ack, Consumer<StateSnapshot> specialAction) {
+	public ClientCommitTuple(ClientNode client, long clientNonce, Consumer<StateSnapshot> specialAction) {
 		this.client = client;
-		this.ack = ack;
+		this.clientNonce = clientNonce;
 		this.specialAction = specialAction;
 	}
 }
