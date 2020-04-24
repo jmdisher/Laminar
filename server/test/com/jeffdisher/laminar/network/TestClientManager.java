@@ -15,7 +15,6 @@ import org.junit.Test;
 
 import com.jeffdisher.laminar.network.ClientManager.ClientNode;
 import com.jeffdisher.laminar.state.ClientState;
-import com.jeffdisher.laminar.state.ListenerState;
 import com.jeffdisher.laminar.state.StateSnapshot;
 import com.jeffdisher.laminar.types.ClientMessage;
 import com.jeffdisher.laminar.types.ClientMessagePayload_Temp;
@@ -138,11 +137,6 @@ public class TestClientManager {
 			byte[] serialized = record.serialize();
 			byte[] raw = _readFramedMessage(fromServer);
 			Assert.assertEquals(serialized.length, raw.length);
-			// Wait for the socket to become writable, again.
-			while (null == callbacks.writableListener) {
-				callbacks.runRunnableAndGetNewClientNode(manager);
-			}
-			callbacks.writableListener = null;
 			// Deserialize the buffer.
 			EventRecord deserialized = EventRecord.deserialize(raw);
 			Assert.assertEquals(record.globalOffset, deserialized.globalOffset);
@@ -234,13 +228,6 @@ public class TestClientManager {
 		}
 
 		@Override
-		public void mainListenerWriteReady(ClientNode node, ListenerState listenerState) {
-			// This test assumes there is only one.
-			Assert.assertNull(this.writableListener);
-			this.writableListener = node;
-		}
-
-		@Override
 		public long mainHandleValidClientMessage(UUID clientId, ClientMessage incoming) {
 			this.recentMessage = incoming;
 			return 1L;
@@ -248,6 +235,11 @@ public class TestClientManager {
 
 		@Override
 		public void mainRequestMutationFetch(long mutationOffsetToFetch) {
+			Assert.fail("Not used in test");
+		}
+
+		@Override
+		public void mainRequestEventFetch(long nextLocalEventToFetch) {
 			Assert.fail("Not used in test");
 		}
 

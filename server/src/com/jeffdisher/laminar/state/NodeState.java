@@ -160,24 +160,6 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 	}
 
 	@Override
-	public void mainListenerWriteReady(ClientManager.ClientNode node, ListenerState listenerState) {
-		// Called on the main thread.
-		Assert.assertTrue(Thread.currentThread() == _mainThread);
-		// The socket is now writable so first check if there is a high-priority message waiting.
-		if (null != listenerState.highPriorityMessage) {
-			// Send the high-priority message and we will proceed to sync when we get the next writable callback.
-			_clientManager.sendEventToListener(node, listenerState.highPriorityMessage);
-			listenerState.highPriorityMessage = null;
-		} else {
-			// Normal syncing operation so either load or wait for the next event for this listener.
-			long nextLocalEventToFetch = _clientManager._mainSetupListenerForNextEvent(node, listenerState, _nextLocalEventOffset);
-			if (-1 != nextLocalEventToFetch) {
-				_diskManager.fetchEvent(nextLocalEventToFetch);
-			}
-		}
-	}
-
-	@Override
 	public long mainHandleValidClientMessage(UUID clientId, ClientMessage incoming) {
 		// Called on main thread.
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
@@ -192,6 +174,14 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		Assert.assertTrue(mutationOffsetToFetch > 0L);
 		_diskManager.fetchMutation(mutationOffsetToFetch);
+	}
+
+	@Override
+	public void mainRequestEventFetch(long nextLocalEventToFetch) {
+		// Called on main thread.
+		Assert.assertTrue(Thread.currentThread() == _mainThread);
+		Assert.assertTrue(nextLocalEventToFetch > 0L);
+		_diskManager.fetchEvent(nextLocalEventToFetch);
 	}
 	// </IClientManagerBackgroundCallbacks>
 

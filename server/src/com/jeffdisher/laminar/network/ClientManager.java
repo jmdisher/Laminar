@@ -350,7 +350,18 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 					_callbacks.mainNormalClientWriteReady(realNode, normalState);
 				} else if (null != listenerState) {
 					// Listener.
-					_callbacks.mainListenerWriteReady(realNode, listenerState);
+					// The socket is now writable so first check if there is a high-priority message waiting.
+					if (null != listenerState.highPriorityMessage) {
+						// Send the high-priority message and we will proceed to sync when we get the next writable callback.
+						_sendEventToListener(realNode, listenerState.highPriorityMessage);
+						listenerState.highPriorityMessage = null;
+					} else {
+						// Normal syncing operation so either load or wait for the next event for this listener.
+						long nextLocalEventToFetch = _mainSetupListenerForNextEvent(realNode, listenerState, arg.nextLocalEventOffset);
+						if (-1 != nextLocalEventToFetch) {
+							_callbacks.mainRequestEventFetch(nextLocalEventToFetch);
+						}
+					}
 				} else {
 					// This appears to have disconnected before we processed it.
 					System.out.println("NOTE: Processed write ready from disconnected client");
