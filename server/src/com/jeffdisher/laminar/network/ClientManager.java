@@ -10,12 +10,14 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.WeakHashMap;
+import java.util.function.Consumer;
 
 import com.jeffdisher.laminar.components.INetworkManagerBackgroundCallbacks;
 import com.jeffdisher.laminar.components.NetworkManager;
 import com.jeffdisher.laminar.state.ClientState;
 import com.jeffdisher.laminar.state.ListenerState;
 import com.jeffdisher.laminar.state.ReconnectingClientState;
+import com.jeffdisher.laminar.state.StateSnapshot;
 import com.jeffdisher.laminar.state.UninterruptableQueue;
 import com.jeffdisher.laminar.types.ClientMessage;
 import com.jeffdisher.laminar.types.ClientMessagePayload_Handshake;
@@ -141,9 +143,9 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 	public void nodeDidConnect(NetworkManager.NodeToken node) {
 		ClientNode realNode = _translateNode(node);
 		// We handle this here but we ask to handle this on a main thread callback.
-		_callbacks.ioEnqueueCommandForMainThread(new Runnable() {
+		_callbacks.ioEnqueueCommandForMainThread(new Consumer<StateSnapshot>() {
 			@Override
-			public void run() {
+			public void accept(StateSnapshot arg) {
 				Assert.assertTrue(Thread.currentThread() == _mainThread);
 				// A fresh connection is a new client.
 				_newClients.add(realNode);
@@ -154,9 +156,9 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 	public void nodeDidDisconnect(NetworkManager.NodeToken node, IOException cause) {
 		ClientNode realNode = _translateNode(node);
 		// We handle this here but we ask to handle this on a main thread callback.
-		_callbacks.ioEnqueueCommandForMainThread(new Runnable() {
+		_callbacks.ioEnqueueCommandForMainThread(new Consumer<StateSnapshot>() {
 			@Override
-			public void run() {
+			public void accept(StateSnapshot arg) {
 				Assert.assertTrue(Thread.currentThread() == _mainThread);
 				// A disconnect is a transition for all clients so try to remove from them all.
 				// Note that this node may still be in an active list but since we always resolve it against this map, we will fail to resolve it.
@@ -189,9 +191,9 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 		Assert.assertTrue(Thread.currentThread() != _mainThread);
 		ClientNode realNode = _translateNode(node);
 		// We handle this here but we ask to handle this on a main thread callback.
-		_callbacks.ioEnqueueCommandForMainThread(new Runnable() {
+		_callbacks.ioEnqueueCommandForMainThread(new Consumer<StateSnapshot>() {
 			@Override
-			public void run() {
+			public void accept(StateSnapshot arg) {
 				Assert.assertTrue(Thread.currentThread() == _mainThread);
 				// Set the writable flag or send a pending message.
 				// Clients start in the ready state so this couldn't be a new client (since we never sent them a message).
@@ -356,9 +358,9 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 	public void _mainEnqueueMessageToClient(UninterruptableQueue commandQueue, ClientNode client, ClientResponse ack) {
 		// Main thread helper.
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
-		commandQueue.put(new Runnable() {
+		commandQueue.put(new Consumer<StateSnapshot>() {
 			@Override
-			public void run() {
+			public void accept(StateSnapshot arg) {
 				Assert.assertTrue(Thread.currentThread() == _mainThread);
 				// Look up the client to make sure they are still connected (messages to disconnected clients are just dropped).
 				ClientState state = _normalClients.get(client);

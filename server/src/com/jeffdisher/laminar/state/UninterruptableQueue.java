@@ -1,6 +1,7 @@
 package com.jeffdisher.laminar.state;
 
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.function.Consumer;
 
 import com.jeffdisher.laminar.utils.Assert;
 
@@ -11,14 +12,14 @@ import com.jeffdisher.laminar.utils.Assert;
  * This also allows for a more restricted API to make sure no accidental incorrect uses happen.
  */
 public class UninterruptableQueue {
-	private final LinkedBlockingQueue<Runnable> _queue = new LinkedBlockingQueue<>();
+	private final LinkedBlockingQueue<Consumer<StateSnapshot>> _queue = new LinkedBlockingQueue<>();
 
 	/**
-	 * Adds the given Runnable to the end of the queue.
+	 * Adds the given StateSnapshot Consumer to the end of the queue.
 	 * 
-	 * @param input The Runnable to add to the queue.
+	 * @param input The Consumer to add to the queue.
 	 */
-	public void put(Runnable input) {
+	public void put(Consumer<StateSnapshot> input) {
 		try {
 			_queue.put(input);
 		} catch (InterruptedException e) {
@@ -28,11 +29,11 @@ public class UninterruptableQueue {
 	}
 
 	/**
-	 * Block until a Runnable becomes available, removing it from the head of the queue and returning it, when it does.
+	 * Block until a Consumer becomes available, removing it from the head of the queue and returning it, when it does.
 	 * 
-	 * @return The Runnable from the head of the queue.
+	 * @return The Consumer from the head of the queue.
 	 */
-	public Runnable blockingGet() {
+	public Consumer<StateSnapshot> blockingGet() {
 		try {
 			return _queue.take();
 		} catch (InterruptedException e) {

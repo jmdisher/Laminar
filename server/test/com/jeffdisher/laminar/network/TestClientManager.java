@@ -9,6 +9,7 @@ import java.nio.ByteBuffer;
 import java.nio.channels.ServerSocketChannel;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
+import java.util.function.Consumer;
 
 import org.junit.Assert;
 import org.junit.Test;
@@ -16,6 +17,7 @@ import org.junit.Test;
 import com.jeffdisher.laminar.network.ClientManager.ClientNode;
 import com.jeffdisher.laminar.state.ClientState;
 import com.jeffdisher.laminar.state.ListenerState;
+import com.jeffdisher.laminar.state.StateSnapshot;
 import com.jeffdisher.laminar.types.ClientMessage;
 import com.jeffdisher.laminar.types.ClientMessagePayload_Temp;
 import com.jeffdisher.laminar.types.ClientResponse;
@@ -197,7 +199,7 @@ public class TestClientManager {
 	 */
 	private static class LatchedCallbacks implements IClientManagerBackgroundCallbacks {
 		private CountDownLatch _readReady;
-		private Runnable _pendingRunnable;
+		private Consumer<StateSnapshot> _pendingConsumer;
 		public ClientNode writableClient;
 		public ClientNode writableListener;
 		
@@ -212,11 +214,11 @@ public class TestClientManager {
 		}
 
 		public synchronized ClientNode runRunnableAndGetNewClientNode(ClientManager managerToRead) throws InterruptedException {
-			while (null == _pendingRunnable) {
+			while (null == _pendingConsumer) {
 				this.wait();
 			}
-			_pendingRunnable.run();
-			_pendingRunnable = null;
+			_pendingConsumer.accept(new StateSnapshot(null, 0L, 0L, 0L));
+			_pendingConsumer = null;
 			this.notifyAll();
 			ClientNode node = null;
 			if (!managerToRead._newClients.isEmpty()) {
@@ -227,8 +229,8 @@ public class TestClientManager {
 		}
 
 		@Override
-		public synchronized void ioEnqueueCommandForMainThread(Runnable command) {
-			while (null != _pendingRunnable) {
+		public synchronized void ioEnqueueCommandForMainThread(Consumer<StateSnapshot> command) {
+			while (null != _pendingConsumer) {
 				try {
 					this.wait();
 				} catch (InterruptedException e) {
@@ -236,7 +238,7 @@ public class TestClientManager {
 					Assert.fail(e.getLocalizedMessage());
 				}
 			}
-			_pendingRunnable = command;
+			_pendingConsumer = command;
 			this.notifyAll();
 		}
 

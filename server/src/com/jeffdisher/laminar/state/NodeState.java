@@ -2,6 +2,7 @@ package com.jeffdisher.laminar.state;
 
 import java.util.LinkedList;
 import java.util.List;
+import java.util.function.Consumer;
 
 import com.jeffdisher.laminar.console.ConsoleManager;
 import com.jeffdisher.laminar.console.IConsoleManagerBackgroundCallbacks;
@@ -84,8 +85,10 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 		_keepRunning = true;
 		while (_keepRunning) {
 			// Poll for the next work item.
-			Runnable next = _commandQueue.blockingGet();
-			next.run();
+			Consumer<StateSnapshot> next = _commandQueue.blockingGet();
+			// Create the state snapshot and pass it to the consumer.
+			StateSnapshot snapshot = new StateSnapshot(_currentConfig, _lastCommittedMutationOffset, _lastCommittedEventOffset, _nextLocalEventOffset);
+			next.accept(snapshot);
 		}
 	}
 
@@ -132,7 +135,7 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 
 	// <IClientManagerBackgroundCallbacks>
 	@Override
-	public void ioEnqueueCommandForMainThread(Runnable command) {
+	public void ioEnqueueCommandForMainThread(Consumer<StateSnapshot> command) {
 		// Called on an IO thread.
 		Assert.assertTrue(Thread.currentThread() != _mainThread);
 		_commandQueue.put(command);
@@ -175,9 +178,9 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 	public void clientReadReady(ClientManager.ClientNode node) {
 		// Called on an IO thread.
 		Assert.assertTrue(Thread.currentThread() != _mainThread);
-		_commandQueue.put(new Runnable() {
+		_commandQueue.put(new Consumer<StateSnapshot>() {
 			@Override
-			public void run() {
+			public void accept(StateSnapshot arg) {
 				Assert.assertTrue(Thread.currentThread() == _mainThread);
 				// Check what state the client is in.
 				boolean isNew = _clientManager._newClients.contains(node);
@@ -191,7 +194,7 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 					
 					// We will ignore the nonce on a new connection.
 					// Note that the client maps are modified by this helper.
-					long mutationOffsetToFetch = _clientManager._mainTransitionNewConnectionState(_commandQueue, node, incoming, _lastCommittedMutationOffset, _currentConfig, _nextLocalEventOffset);
+					long mutationOffsetToFetch = _clientManager._mainTransitionNewConnectionState(_commandQueue, node, incoming, arg.lastCommittedMutationOffset, arg.currentConfig, arg.nextLocalEventOffset);
 					if (-1 != mutationOffsetToFetch) {
 						_diskManager.fetchMutation(mutationOffsetToFetch);
 					}
@@ -203,7 +206,7 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 						normalState.nextNonce += 1;
 						_mainNormalMessage(node, normalState, incoming);
 					} else {
-						_clientManager._mainEnqueueMessageToClient(_commandQueue, node, ClientResponse.error(incoming.nonce, _lastCommittedMutationOffset));
+						_clientManager._mainEnqueueMessageToClient(_commandQueue, node, ClientResponse.error(incoming.nonce, arg.lastCommittedMutationOffset));
 					}
 				} else if (null != listenerState) {
 					// Once a listener is in the listener state, they should never send us another message.
@@ -265,13 +268,13 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 	public void mutationWasCommitted(MutationRecord completed) {
 		// Called on an IO thread.
 		Assert.assertTrue(Thread.currentThread() != _mainThread);
-		_commandQueue.put(new Runnable() {
+		_commandQueue.put(new Consumer<StateSnapshot>() {
 			@Override
-			public void run() {
+			public void accept(StateSnapshot arg) {
 				Assert.assertTrue(Thread.currentThread() == _mainThread);
 				// Update our global commit offset (set this first since other methods we are calling might want to read for common state).
 				// We setup this commit so it must be sequential (this is a good check to make sure the commits aren't being re-ordered in the disk layer, too).
-				Assert.assertTrue((_lastCommittedMutationOffset + 1) == completed.globalOffset);
+				Assert.assertTrue((arg.lastCommittedMutationOffset + 1) == completed.globalOffset);
 				_lastCommittedMutationOffset = completed.globalOffset;
 				// Look up the tuple so we know which clients and listeners should be told about the commit.
 				ClientCommitTuple tuple = _clientManager._pendingMessageCommits.remove(completed.globalOffset);
@@ -290,14 +293,14 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 	public void eventWasCommitted(EventRecord completed) {
 		// Called on an IO thread.
 		Assert.assertTrue(Thread.currentThread() != _mainThread);
-		_commandQueue.put(new Runnable() {
+		_commandQueue.put(new Consumer<StateSnapshot>() {
 			@Override
-			public void run() {
+			public void accept(StateSnapshot arg) {
 				Assert.assertTrue(Thread.currentThread() == _mainThread);
 				// We will eventually need to recor
 				// Update our global commit offset (set this first since other methods we are calling might want to read for common state).
 				// We setup this commit so it must be sequential (this is a good check to make sure the commits aren't being re-ordered in the disk layer, too).
-				Assert.assertTrue((_lastCommittedEventOffset + 1) == completed.localOffset);
+				Assert.assertTrue((arg.lastCommittedEventOffset + 1) == completed.localOffset);
 				_lastCommittedEventOffset = completed.localOffset;
 				// See if any listeners want this.
 				_clientManager._mainSendRecordToListeners(completed);
@@ -308,9 +311,9 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 	public void mutationWasFetched(MutationRecord record) {
 		// Called on an IO thread.
 		Assert.assertTrue(Thread.currentThread() != _mainThread);
-		_commandQueue.put(new Runnable() {
+		_commandQueue.put(new Consumer<StateSnapshot>() {
 			@Override
-			public void run() {
+			public void accept(StateSnapshot arg) {
 				Assert.assertTrue(Thread.currentThread() == _mainThread);
 				// See which syncing clients requested this (we will remove and rebuild the list since it is usually 1 element).
 				List<ReconnectingClientState> reconnecting = _clientManager._reconnectingClientsByGlobalOffset.remove(record.globalOffset);
@@ -336,7 +339,7 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 							moveToNext.add(state);
 						} else {
 							// We are done processing this reconnecting client so set it ready.
-							_clientManager._mainEnqueueMessageToClient(_commandQueue, state.token, ClientResponse.clientReady(state.earliestNextNonce, _lastCommittedMutationOffset, _currentConfig));
+							_clientManager._mainEnqueueMessageToClient(_commandQueue, state.token, ClientResponse.clientReady(state.earliestNextNonce, arg.lastCommittedMutationOffset, arg.currentConfig));
 							// Make sure that this nonce is still the -1 value we used initially and then update it.
 							ClientState clientState = _clientManager._normalClients.get(state.token);
 							Assert.assertTrue(-1L == clientState.nextNonce);
@@ -369,9 +372,9 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 	public void eventWasFetched(EventRecord record) {
 		// Called on an IO thread.
 		Assert.assertTrue(Thread.currentThread() != _mainThread);
-		_commandQueue.put(new Runnable() {
+		_commandQueue.put(new Consumer<StateSnapshot>() {
 			@Override
-			public void run() {
+			public void accept(StateSnapshot arg) {
 				Assert.assertTrue(Thread.currentThread() == _mainThread);
 				// See what listeners requested this.
 				_clientManager._mainSendRecordToListeners(record);
@@ -385,9 +388,9 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 		// This MUST NOT be called on the main thread.
 		Assert.assertTrue(Thread.currentThread() != _mainThread);
 		
-		_commandQueue.put(new Runnable() {
+		_commandQueue.put(new Consumer<StateSnapshot>() {
 			@Override
-			public void run() {
+			public void accept(StateSnapshot arg) {
 				Assert.assertTrue(Thread.currentThread() == _mainThread);
 				_keepRunning = false;
 			}});
