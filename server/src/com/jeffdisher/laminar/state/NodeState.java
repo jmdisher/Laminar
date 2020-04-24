@@ -261,7 +261,8 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 				_clientManager._mainEnqueueMessageToClient(tuple.client, tuple.ack);
 				// If there is any special action to take, we want to invoke that now.
 				if (null != tuple.specialAction) {
-					tuple.specialAction.run();
+					// We need a new snapshot since we just changed state in this command, above.
+					tuple.specialAction.accept(new StateSnapshot(_currentConfig, _lastCommittedMutationOffset, _lastCommittedEventOffset, _nextLocalEventOffset));
 				}
 			}});
 	}
@@ -446,13 +447,10 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 			ClientResponse commit = ClientResponse.committed(incoming.nonce, globalOffset);
 			// Set up the client to be notified that the message committed once the MutationRecord is durable.
 			// (we want a special action for this in order to notify all connected clients and listeners of the new config).
-			Runnable specialAction = () -> {
-				// Set our config.
-				_currentConfig = newConfig;
-				
+			Consumer<StateSnapshot> specialAction = (snapshot) -> {
 				// For the clients, we just enqueue this.
 				for (ClientManager.ClientNode node : _clientManager._normalClients.keySet()) {
-					ClientResponse update = ClientResponse.updateConfig(_lastCommittedMutationOffset, newConfig);
+					ClientResponse update = ClientResponse.updateConfig(snapshot.lastCommittedMutationOffset, newConfig);
 					_clientManager._mainEnqueueMessageToClient(node, update);
 				}
 				// For listeners, we either need to send this directly (if they are already waiting for the next event)
@@ -465,7 +463,7 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 					ListenerState listenerState = _clientManager._listenerClients.get(node);
 					listenerState.highPriorityMessage = updateConfigPseudoRecord;
 				}
-				List<ClientManager.ClientNode> waitingForNewEvent = _clientManager._listenersWaitingOnLocalOffset.remove(_nextLocalEventOffset);
+				List<ClientManager.ClientNode> waitingForNewEvent = _clientManager._listenersWaitingOnLocalOffset.remove(snapshot.nextLocalEventOffset);
 				if (null != waitingForNewEvent) {
 					for (ClientManager.ClientNode node : waitingForNewEvent) {
 						ListenerState listenerState = _clientManager._listenerClients.get(node);
@@ -478,6 +476,8 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 						}
 					}
 				}
+				// We change the config but this would render the snapshot stale so we do it last, to make that clear.
+				_currentConfig = newConfig;
 			};
 			_clientManager._pendingMessageCommits.put(globalOffset, new ClientCommitTuple(client, commit, specialAction));
 			// Request that the MutationRecord be committed (no EventRecord).
