@@ -139,50 +139,36 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 	}
 
 	@Override
-	public void clientWriteReady(ClientManager.ClientNode node) {
-		// Called on an IO thread.
-		Assert.assertTrue(Thread.currentThread() != _mainThread);
-		_commandQueue.put(new Runnable() {
-			@Override
-			public void run() {
-				Assert.assertTrue(Thread.currentThread() == _mainThread);
-				// Set the writable flag or send a pending message.
-				// Clients start in the ready state so this couldn't be a new client (since we never sent them a message).
-				Assert.assertTrue(!_clientManager._newClients.contains(node));
-				ClientState normalState = _clientManager._normalClients.get(node);
-				ListenerState listenerState = _clientManager._listenerClients.get(node);
-				if (null != normalState) {
-					Assert.assertTrue(null == listenerState);
-					// Normal client.
-					// This can't already be writable.
-					Assert.assertTrue(!normalState.writable);
-					// Check to see if there are any outgoing messages.  If so, just send the first.  Otherwise, set the writable flag.
-					if (normalState.outgoingMessages.isEmpty()) {
-						normalState.writable = true;
-					} else {
-						ClientResponse toSend = normalState.outgoingMessages.remove(0);
-						_clientManager.send(node, toSend);
-					}
-				} else if (null != listenerState) {
-					Assert.assertTrue(null != listenerState);
-					// Listener.
-					// The socket is now writable so first check if there is a high-priority message waiting.
-					if (null != listenerState.highPriorityMessage) {
-						// Send the high-priority message and we will proceed to sync when we get the next writable callback.
-						_clientManager.sendEventToListener(node, listenerState.highPriorityMessage);
-						listenerState.highPriorityMessage = null;
-					} else {
-						// Normal syncing operation so either load or wait for the next event for this listener.
-						long nextLocalEventToFetch = _clientManager._mainSetupListenerForNextEvent(node, listenerState, _nextLocalEventOffset);
-						if (-1 != nextLocalEventToFetch) {
-							_diskManager.fetchEvent(nextLocalEventToFetch);
-						}
-					}
-				} else {
-					// This appears to have disconnected before we processed it.
-					System.out.println("NOTE: Processed write ready from disconnected client");
-				}
-			}});
+	public void mainNormalClientWriteReady(ClientManager.ClientNode node, ClientState normalState) {
+		// Called on the main thread.
+		Assert.assertTrue(Thread.currentThread() == _mainThread);
+		// This can't already be writable.
+		Assert.assertTrue(!normalState.writable);
+		// Check to see if there are any outgoing messages.  If so, just send the first.  Otherwise, set the writable flag.
+		if (normalState.outgoingMessages.isEmpty()) {
+			normalState.writable = true;
+		} else {
+			ClientResponse toSend = normalState.outgoingMessages.remove(0);
+			_clientManager.send(node, toSend);
+		}
+	}
+
+	@Override
+	public void mainListenerWriteReady(ClientManager.ClientNode node, ListenerState listenerState) {
+		// Called on the main thread.
+		Assert.assertTrue(Thread.currentThread() == _mainThread);
+		// The socket is now writable so first check if there is a high-priority message waiting.
+		if (null != listenerState.highPriorityMessage) {
+			// Send the high-priority message and we will proceed to sync when we get the next writable callback.
+			_clientManager.sendEventToListener(node, listenerState.highPriorityMessage);
+			listenerState.highPriorityMessage = null;
+		} else {
+			// Normal syncing operation so either load or wait for the next event for this listener.
+			long nextLocalEventToFetch = _clientManager._mainSetupListenerForNextEvent(node, listenerState, _nextLocalEventOffset);
+			if (-1 != nextLocalEventToFetch) {
+				_diskManager.fetchEvent(nextLocalEventToFetch);
+			}
+		}
 	}
 
 	@Override

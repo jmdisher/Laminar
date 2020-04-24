@@ -185,8 +185,31 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 
 	@Override
 	public void nodeWriteReady(NetworkManager.NodeToken node) {
+		// Called on IO thread.
+		Assert.assertTrue(Thread.currentThread() != _mainThread);
 		ClientNode realNode = _translateNode(node);
-		_callbacks.clientWriteReady(realNode);
+		// We handle this here but we ask to handle this on a main thread callback.
+		_callbacks.ioEnqueueCommandForMainThread(new Runnable() {
+			@Override
+			public void run() {
+				Assert.assertTrue(Thread.currentThread() == _mainThread);
+				// Set the writable flag or send a pending message.
+				// Clients start in the ready state so this couldn't be a new client (since we never sent them a message).
+				Assert.assertTrue(!_newClients.contains(realNode));
+				ClientState normalState = _normalClients.get(realNode);
+				ListenerState listenerState = _listenerClients.get(realNode);
+				if (null != normalState) {
+					Assert.assertTrue(null == listenerState);
+					// Normal client.
+					_callbacks.mainNormalClientWriteReady(realNode, normalState);
+				} else if (null != listenerState) {
+					// Listener.
+					_callbacks.mainListenerWriteReady(realNode, listenerState);
+				} else {
+					// This appears to have disconnected before we processed it.
+					System.out.println("NOTE: Processed write ready from disconnected client");
+				}
+			}});
 	}
 
 	@Override
