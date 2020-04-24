@@ -18,7 +18,6 @@ import com.jeffdisher.laminar.state.ClientState;
 import com.jeffdisher.laminar.state.ListenerState;
 import com.jeffdisher.laminar.state.ReconnectingClientState;
 import com.jeffdisher.laminar.state.StateSnapshot;
-import com.jeffdisher.laminar.state.UninterruptableQueue;
 import com.jeffdisher.laminar.types.ClientMessage;
 import com.jeffdisher.laminar.types.ClientMessagePayload_Handshake;
 import com.jeffdisher.laminar.types.ClientMessagePayload_Reconnect;
@@ -251,7 +250,7 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 	/**
 	 * TODO: Make private once NodeState -> ClientManager refactoring is complete.
 	 */
-	public long _mainTransitionNewConnectionState(UninterruptableQueue commandQueue, ClientNode client, ClientMessage incoming, long lastCommittedMutationOffset, ClusterConfig currentConfig, long nextLocalEventOffset) {
+	public long _mainTransitionNewConnectionState(ClientNode client, ClientMessage incoming, long lastCommittedMutationOffset, ClusterConfig currentConfig, long nextLocalEventOffset) {
 		long mutationOffsetToFetch = -1;
 		// Main thread helper.
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
@@ -272,7 +271,7 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 			// The HANDSHAKE is special so we return CLIENT_READY instead of a RECEIVED and COMMIT (which is otherwise all we send).
 			ClientResponse ready = ClientResponse.clientReady(state.nextNonce, lastCommittedMutationOffset, currentConfig);
 			System.out.println("HANDSHAKE: " + state.clientId);
-			_mainEnqueueMessageToClient(commandQueue, client, ready);
+			_mainEnqueueMessageToClient(client, ready);
 			break;
 		}
 		case RECONNECT: {
@@ -311,7 +310,7 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 				// This is a degenerate case where they didn't miss anything so just send them the client ready.
 				ClientResponse ready = ClientResponse.clientReady(reconnectState.earliestNextNonce, lastCommittedMutationOffset, currentConfig);
 				System.out.println("Note:  RECONNECT degenerate case: " + state.clientId + " with nonce " + incoming.nonce);
-				_mainEnqueueMessageToClient(commandQueue, client, ready);
+				_mainEnqueueMessageToClient(client, ready);
 				// Since we aren't processing anything, just over-write our reserved value, immediately (assert just for balance).
 				Assert.assertTrue(-1L == state.nextNonce);
 				state.nextNonce = reconnectState.earliestNextNonce;
@@ -355,7 +354,7 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 	/**
 	 * TODO: Make private once NodeState -> ClientManager refactoring is complete.
 	 */
-	public void _mainEnqueueMessageToClient(UninterruptableQueue commandQueue, ClientNode client, ClientResponse ack) {
+	public void _mainEnqueueMessageToClient(ClientNode client, ClientResponse ack) {
 		// Main thread helper.
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		// Look up the client to make sure they are still connected (messages to disconnected clients are just dropped).
