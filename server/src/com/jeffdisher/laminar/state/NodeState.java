@@ -183,7 +183,13 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 		// We can do the nonce check here, before we enter the state machine for the specific message type/contents.
 		if (normalState.nextNonce == incoming.nonce) {
 			normalState.nextNonce += 1;
-			_mainNormalMessage(node, normalState, incoming);
+			long globalMutationOffsetOfAcceptedMessage = _mainNormalMessage(node, normalState, incoming);
+			Assert.assertTrue(globalMutationOffsetOfAcceptedMessage > 0L);
+			// We enqueue the ack, immediately.
+			ClientResponse ack = ClientResponse.received(incoming.nonce, _lastCommittedMutationOffset);
+			_clientManager._mainEnqueueMessageToClient(node, ack);
+			// Set up the client to be notified that the message committed once the MutationRecord is durable.
+			_clientManager.mainStorePendingMessageCommit(node, globalMutationOffsetOfAcceptedMessage, incoming.nonce);
 		} else {
 			_clientManager._mainEnqueueMessageToClient(node, ClientResponse.error(incoming.nonce, _lastCommittedMutationOffset));
 		}
@@ -330,18 +336,17 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 	// </IConsoleManagerBackgroundCallbacks>
 
 
-	private void _mainNormalMessage(ClientNode client, ClientState state, ClientMessage incoming) {
+	private long _mainNormalMessage(ClientNode client, ClientState state, ClientMessage incoming) {
 		// Main thread helper.
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
+		// We return 0 if this is an error or the globalMutationOffset we assigned to the message so it can be acked.
+		long globalMutationOffsetOfAcceptedMessage = 0L;
 		switch (incoming.type) {
 		case INVALID:
 			Assert.unimplemented("Invalid message type");
 			break;
 		case TEMP: {
 			// This is just for initial testing:  send the received, log it, and send the commit.
-			// (client outgoing message list is unbounded so this is safe to do all at once).
-			ClientResponse ack = ClientResponse.received(incoming.nonce, _lastCommittedMutationOffset);
-			_clientManager._mainEnqueueMessageToClient(client, ack);
 			byte[] contents = ((ClientMessagePayload_Temp)incoming.payload).contents;
 			System.out.println("GOT TEMP FROM " + state.clientId + " nonce " + incoming.nonce + " data " + contents[0]);
 			// Create the MutationRecord and EventRecord.
@@ -349,19 +354,15 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 			long localOffset = _nextLocalEventOffset++;
 			MutationRecord mutation = MutationRecord.generateRecord(MutationRecordType.TEMP, globalOffset, state.clientId, incoming.nonce, contents);
 			EventRecord event = EventRecord.generateRecord(EventRecordType.TEMP, globalOffset, localOffset, state.clientId, incoming.nonce, contents);
-			// Set up the client to be notified that the message committed once the MutationRecord is durable.
-			_clientManager.mainStorePendingMessageCommit(client, globalOffset, incoming.nonce);
 			// Now request that both of these records be committed.
 			_diskManager.commitEvent(event);
 			// TODO:  We probably want to lock-step the mutation on the event commit since we will be able to detect the broken data, that way, and replay it.
 			_diskManager.commitMutation(mutation);
+			globalMutationOffsetOfAcceptedMessage = globalOffset;
 		}
 			break;
 		case POISON: {
 			// This is just for initial testing:  send the received, log it, and send the commit.
-			// (client outgoing message list is unbounded so this is safe to do all at once).
-			ClientResponse ack = ClientResponse.received(incoming.nonce, _lastCommittedMutationOffset);
-			_clientManager._mainEnqueueMessageToClient(client, ack);
 			byte[] contents = ((ClientMessagePayload_Temp)incoming.payload).contents;
 			System.out.println("GOT POISON FROM " + state.clientId + ": \"" + new String(contents) + "\" (nonce " + incoming.nonce + ")");
 			// Create the MutationRecord and EventRecord.
@@ -369,8 +370,6 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 			long localOffset = _nextLocalEventOffset++;
 			MutationRecord mutation = MutationRecord.generateRecord(MutationRecordType.TEMP, globalOffset, state.clientId, incoming.nonce, contents);
 			EventRecord event = EventRecord.generateRecord(EventRecordType.TEMP, globalOffset, localOffset, state.clientId, incoming.nonce, contents);
-			// Set up the client to be notified that the message committed once the MutationRecord is durable.
-			_clientManager.mainStorePendingMessageCommit(client, globalOffset, incoming.nonce);
 			// Now request that both of these records be committed.
 			_diskManager.commitEvent(event);
 			// TODO:  We probably want to lock-step the mutation on the event commit since we will be able to detect the broken data, that way, and replay it.
@@ -378,14 +377,13 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 			
 			// Now that we did the usual work, disconnect everyone.
 			_clientManager.mainDisconnectAllClientsAndListeners();
+			globalMutationOffsetOfAcceptedMessage = globalOffset;
 		}
 			break;
 		case UPDATE_CONFIG: {
 			// Eventually, this will kick-off the joint consensus where we change to having 2 active configs until this commits on all nodes and the local disk.
 			// For now, however, we just send the received ack and enqueue this for commit (note that it DOES NOT generate an event - only a mutation).
 			// The more complex operation happens after the commit completes since that is when we will change our state and broadcast the new config to all clients and listeners.
-			ClientResponse ack = ClientResponse.received(incoming.nonce, _lastCommittedMutationOffset);
-			_clientManager._mainEnqueueMessageToClient(client, ack);
 			ClusterConfig newConfig = ((ClientMessagePayload_UpdateConfig)incoming.payload).config;
 			System.out.println("GOT UPDATE_CONFIG FROM " + state.clientId + ": " + newConfig.entries.length + " entries (nonce " + incoming.nonce + ")");
 			
@@ -396,15 +394,15 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 			// Store the config in our map relating to joint consensus, waiting until this commits and becomes active.
 			_configsPendingCommit.put(globalOffset, newConfig);
 			
-			// Set up the client to be notified that the message committed once the MutationRecord is durable.
-			_clientManager.mainStorePendingMessageCommit(client, globalOffset, incoming.nonce);
 			// Request that the MutationRecord be committed (no EventRecord).
 			_diskManager.commitMutation(mutation);
+			globalMutationOffsetOfAcceptedMessage = globalOffset;
 		}
 			break;
 		default:
 			Assert.unimplemented("This is an invalid message for this client type and should be disconnected");
 			break;
 		}
+		return globalMutationOffsetOfAcceptedMessage;
 	}
 }
