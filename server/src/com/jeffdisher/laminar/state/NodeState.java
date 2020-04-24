@@ -1,7 +1,5 @@
 package com.jeffdisher.laminar.state;
 
-import java.util.LinkedList;
-import java.util.List;
 import java.util.function.Consumer;
 
 import com.jeffdisher.laminar.console.ConsoleManager;
@@ -287,56 +285,7 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 			@Override
 			public void accept(StateSnapshot arg) {
 				Assert.assertTrue(Thread.currentThread() == _mainThread);
-				// See which syncing clients requested this (we will remove and rebuild the list since it is usually 1 element).
-				List<ReconnectingClientState> reconnecting = _clientManager._reconnectingClientsByGlobalOffset.remove(record.globalOffset);
-				// Currently, only clients can request this, so this list must exist.
-				Assert.assertTrue(null != reconnecting);
-				List<ReconnectingClientState> stillWaiting = new LinkedList<>();
-				List<ReconnectingClientState> moveToNext = new LinkedList<>();
-				for (ReconnectingClientState state : reconnecting) {
-					// Make sure that the UUID matches.
-					// (in the future, we might want this to aggressively check if the client is still connected to short-circuit multiple-reconnects from the same client)
-					if (record.clientId.equals(state.clientId)) {
-						// Send the received and commit messages (in the future, we probably want to skip received in reconnect but this avoids a special-case, for now).
-						// (we don't want to confuse the client on a potential double-reconnect so fake our latest commit as this one, so they at least make progress)
-						_clientManager._mainEnqueueMessageToClient(state.token, ClientResponse.received(record.clientNonce, record.globalOffset));
-						_clientManager._mainEnqueueMessageToClient(state.token, ClientResponse.committed(record.clientNonce, record.globalOffset));
-						// Make sure to bump ahead the expected nonce, if this is later.
-						if (record.clientNonce >= state.earliestNextNonce) {
-							state.earliestNextNonce = record.clientNonce + 1;
-						}
-						// Check if there is still more to see for this record (we might have run off the end of the latest commit when we started).
-						long nextMutationOffset = record.globalOffset + 1;
-						if (nextMutationOffset <= state.finalGlobalOffsetToCheck) {
-							moveToNext.add(state);
-						} else {
-							// We are done processing this reconnecting client so set it ready.
-							_clientManager._mainEnqueueMessageToClient(state.token, ClientResponse.clientReady(state.earliestNextNonce, arg.lastCommittedMutationOffset, arg.currentConfig));
-							// Make sure that this nonce is still the -1 value we used initially and then update it.
-							ClientState clientState = _clientManager._normalClients.get(state.token);
-							Assert.assertTrue(-1L == clientState.nextNonce);
-							clientState.nextNonce = state.earliestNextNonce;
-						}
-					} else {
-						stillWaiting.add(state);
-					}
-				}
-				// See if there was anyone in the new list.
-				if (!stillWaiting.isEmpty()) {
-					_clientManager._reconnectingClientsByGlobalOffset.put(record.globalOffset, stillWaiting);
-				}
-				// Only move this list to the next offset if we still have more and there were any.
-				if (!moveToNext.isEmpty()) {
-					long nextMutationOffset = record.globalOffset + 1;
-					List<ReconnectingClientState> nextList = _clientManager._reconnectingClientsByGlobalOffset.get(nextMutationOffset);
-					if (null != nextList) {
-						nextList.addAll(moveToNext);
-					} else {
-						_clientManager._reconnectingClientsByGlobalOffset.put(nextMutationOffset, moveToNext);
-					}
-					// Request that this be loaded.
-					_diskManager.fetchMutation(nextMutationOffset);
-				}
+				_clientManager.mainReplayMutationForReconnects(arg, record);
 			}});
 	}
 
