@@ -194,13 +194,13 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 		}
 	}
 
-	public void mainStorePendingMessageCommit(ClientNode client, long globalOffsetOfCommit, long clientNonce, Consumer<StateSnapshot> specialAction) {
+	public void mainStorePendingMessageCommit(ClientNode client, long globalOffsetOfCommit, long clientNonce) {
 		// Called on main thread.
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
-		_pendingMessageCommits.put(globalOffsetOfCommit, new ClientCommitTuple(client, clientNonce, specialAction));
+		_pendingMessageCommits.put(globalOffsetOfCommit, new ClientCommitTuple(client, clientNonce));
 	}
 
-	public Consumer<StateSnapshot> mainProcessingPendingMessageCommits(long globalOffsetOfCommit) {
+	public void mainProcessingPendingMessageCommits(long globalOffsetOfCommit) {
 		// Called on main thread.
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		// Look up the tuple so we know which clients and listeners should be told about the commit.
@@ -211,7 +211,6 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 		ClientResponse commit = ClientResponse.committed(tuple.clientNonce, globalOffsetOfCommit);
 		// Send the commit to the client.
 		_mainEnqueueMessageToClient(tuple.client, commit);
-		return tuple.specialAction;
 	}
 
 	public void mainReplayMutationForReconnects(StateSnapshot snapshot, MutationRecord record) {

@@ -1,5 +1,7 @@
 package com.jeffdisher.laminar.state;
 
+import java.util.HashMap;
+import java.util.Map;
 import java.util.function.Consumer;
 
 import com.jeffdisher.laminar.console.ConsoleManager;
@@ -41,6 +43,8 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 
 	private RaftState _currentState;
 	private ClusterConfig _currentConfig;
+	// This map is usually empty but contains any ClusterConfigs which haven't yet committed (meaning they are part of joint consensus).
+	private final Map<Long, ClusterConfig> _configsPendingCommit;
 	// The next global mutation offset to assign to an incoming message.
 	private long _nextGlobalMutationOffset;
 	// Note that "local" event offsets will eventually need to be per-topic.
@@ -58,6 +62,7 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 		// Note that we default to the LEADER state (typically forced into a FOLLOWER state when an existing LEADER attempts to append entries).
 		_currentState = RaftState.LEADER;
 		_currentConfig = initialConfig;
+		_configsPendingCommit = new HashMap<>();
 		// Global offsets are 1-indexed so the first one is 1L.
 		_nextGlobalMutationOffset = 1L;
 		_nextLocalEventOffset = 1L;
@@ -250,11 +255,17 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 				// We setup this commit so it must be sequential (this is a good check to make sure the commits aren't being re-ordered in the disk layer, too).
 				Assert.assertTrue((arg.lastCommittedMutationOffset + 1) == completed.globalOffset);
 				_lastCommittedMutationOffset = completed.globalOffset;
-				Consumer<StateSnapshot> specialAction = _clientManager.mainProcessingPendingMessageCommits(completed.globalOffset);
-				// If there is any special action to take, we want to invoke that now.
-				if (null != specialAction) {
+				_clientManager.mainProcessingPendingMessageCommits(completed.globalOffset);
+				
+				// Check to make sure we weren't waiting for this to commit to change config.
+				ClusterConfig newConfig = _configsPendingCommit.remove(completed.globalOffset);
+				if (null != newConfig) {
 					// We need a new snapshot since we just changed state in this command, above.
-					specialAction.accept(new StateSnapshot(_currentConfig, _lastCommittedMutationOffset, _lastCommittedEventOffset, _nextLocalEventOffset));
+					StateSnapshot newSnapshot = new StateSnapshot(_currentConfig, _lastCommittedMutationOffset, _lastCommittedEventOffset, _nextLocalEventOffset);
+					// This requires that we broadcast the config update to the connected clients and listeners.
+					_clientManager.mainBroadcastConfigUpdate(newSnapshot, newConfig);
+					// We change the config but this would render the snapshot stale so we do it last, to make that clear.
+					_currentConfig = newConfig;
 				}
 			}});
 	}
@@ -339,7 +350,7 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 			MutationRecord mutation = MutationRecord.generateRecord(MutationRecordType.TEMP, globalOffset, state.clientId, incoming.nonce, contents);
 			EventRecord event = EventRecord.generateRecord(EventRecordType.TEMP, globalOffset, localOffset, state.clientId, incoming.nonce, contents);
 			// Set up the client to be notified that the message committed once the MutationRecord is durable.
-			_clientManager.mainStorePendingMessageCommit(client, globalOffset, incoming.nonce, null);
+			_clientManager.mainStorePendingMessageCommit(client, globalOffset, incoming.nonce);
 			// Now request that both of these records be committed.
 			_diskManager.commitEvent(event);
 			// TODO:  We probably want to lock-step the mutation on the event commit since we will be able to detect the broken data, that way, and replay it.
@@ -359,7 +370,7 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 			MutationRecord mutation = MutationRecord.generateRecord(MutationRecordType.TEMP, globalOffset, state.clientId, incoming.nonce, contents);
 			EventRecord event = EventRecord.generateRecord(EventRecordType.TEMP, globalOffset, localOffset, state.clientId, incoming.nonce, contents);
 			// Set up the client to be notified that the message committed once the MutationRecord is durable.
-			_clientManager.mainStorePendingMessageCommit(client, globalOffset, incoming.nonce, null);
+			_clientManager.mainStorePendingMessageCommit(client, globalOffset, incoming.nonce);
 			// Now request that both of these records be committed.
 			_diskManager.commitEvent(event);
 			// TODO:  We probably want to lock-step the mutation on the event commit since we will be able to detect the broken data, that way, and replay it.
@@ -382,15 +393,11 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 			long globalOffset = _nextGlobalMutationOffset++;
 			MutationRecord mutation = MutationRecord.generateRecord(MutationRecordType.UPDATE_CONFIG, globalOffset, state.clientId, incoming.nonce, newConfig.serialize());
 			
+			// Store the config in our map relating to joint consensus, waiting until this commits and becomes active.
+			_configsPendingCommit.put(globalOffset, newConfig);
+			
 			// Set up the client to be notified that the message committed once the MutationRecord is durable.
-			// (we want a special action for this in order to notify all connected clients and listeners of the new config).
-			Consumer<StateSnapshot> specialAction = (snapshot) -> {
-				// This requires that we broadcast the config update to the connected clients and listeners.
-				_clientManager.mainBroadcastConfigUpdate(snapshot, newConfig);
-				// We change the config but this would render the snapshot stale so we do it last, to make that clear.
-				_currentConfig = newConfig;
-			};
-			_clientManager.mainStorePendingMessageCommit(client, globalOffset, incoming.nonce, specialAction);
+			_clientManager.mainStorePendingMessageCommit(client, globalOffset, incoming.nonce);
 			// Request that the MutationRecord be committed (no EventRecord).
 			_diskManager.commitMutation(mutation);
 		}
