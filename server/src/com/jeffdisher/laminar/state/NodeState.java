@@ -175,47 +175,24 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 	}
 
 	@Override
-	public void clientReadReady(ClientManager.ClientNode node) {
-		// Called on an IO thread.
-		Assert.assertTrue(Thread.currentThread() != _mainThread);
-		_commandQueue.put(new Consumer<StateSnapshot>() {
-			@Override
-			public void accept(StateSnapshot arg) {
-				Assert.assertTrue(Thread.currentThread() == _mainThread);
-				// Check what state the client is in.
-				boolean isNew = _clientManager._newClients.contains(node);
-				ClientState normalState = _clientManager._normalClients.get(node);
-				ListenerState listenerState = _clientManager._listenerClients.get(node);
-				ClientMessage incoming = _clientManager.receive(node);
-				
-				if (isNew) {
-					Assert.assertTrue(null == normalState);
-					Assert.assertTrue(null == listenerState);
-					
-					// We will ignore the nonce on a new connection.
-					// Note that the client maps are modified by this helper.
-					long mutationOffsetToFetch = _clientManager._mainTransitionNewConnectionState(node, incoming, arg.lastCommittedMutationOffset, arg.currentConfig, arg.nextLocalEventOffset);
-					if (-1 != mutationOffsetToFetch) {
-						_diskManager.fetchMutation(mutationOffsetToFetch);
-					}
-				} else if (null != normalState) {
-					Assert.assertTrue(null == listenerState);
-					
-					// We can do the nonce check here, before we enter the state machine for the specific message type/contents.
-					if (normalState.nextNonce == incoming.nonce) {
-						normalState.nextNonce += 1;
-						_mainNormalMessage(node, normalState, incoming);
-					} else {
-						_clientManager._mainEnqueueMessageToClient(node, ClientResponse.error(incoming.nonce, arg.lastCommittedMutationOffset));
-					}
-				} else if (null != listenerState) {
-					// Once a listener is in the listener state, they should never send us another message.
-					Assert.unimplemented("TODO: Disconnect listener on invalid state transition");
-				} else {
-					// This appears to have disconnected before we processed it.
-					System.out.println("NOTE: Processed read ready from disconnected client");
-				}
-			}});
+	public void mainNormalClientMessageRecieved(ClientManager.ClientNode node, ClientState normalState, ClientMessage incoming) {
+		// Called on main thread.
+		Assert.assertTrue(Thread.currentThread() == _mainThread);
+		// We can do the nonce check here, before we enter the state machine for the specific message type/contents.
+		if (normalState.nextNonce == incoming.nonce) {
+			normalState.nextNonce += 1;
+			_mainNormalMessage(node, normalState, incoming);
+		} else {
+			_clientManager._mainEnqueueMessageToClient(node, ClientResponse.error(incoming.nonce, _lastCommittedMutationOffset));
+		}
+	}
+
+	@Override
+	public void mainRequestMutationFetch(long mutationOffsetToFetch) {
+		// Called on main thread.
+		Assert.assertTrue(Thread.currentThread() == _mainThread);
+		Assert.assertTrue(mutationOffsetToFetch > 0L);
+		_diskManager.fetchMutation(mutationOffsetToFetch);
 	}
 	// </IClientManagerBackgroundCallbacks>
 

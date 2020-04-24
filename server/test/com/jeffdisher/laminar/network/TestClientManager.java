@@ -21,6 +21,7 @@ import com.jeffdisher.laminar.state.StateSnapshot;
 import com.jeffdisher.laminar.types.ClientMessage;
 import com.jeffdisher.laminar.types.ClientMessagePayload_Temp;
 import com.jeffdisher.laminar.types.ClientResponse;
+import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.types.EventRecord;
 import com.jeffdisher.laminar.types.EventRecordType;
 
@@ -40,8 +41,7 @@ public class TestClientManager {
 		// Create a server.
 		int port = PORT_BASE + 1;
 		ServerSocketChannel socket = createSocket(port);
-		CountDownLatch readLatch = new CountDownLatch(1);
-		LatchedCallbacks callbacks = new LatchedCallbacks(readLatch);
+		LatchedCallbacks callbacks = new LatchedCallbacks();
 		ClientManager manager = new ClientManager(socket, callbacks);
 		manager.startAndWaitForReady();
 		
@@ -51,20 +51,22 @@ public class TestClientManager {
 			connectedNode = callbacks.runRunnableAndGetNewClientNode(manager);
 			Assert.assertNotNull(connectedNode);
 			OutputStream toServer = client.getOutputStream();
+			// Write our handshake to end up in the "normal client" state.
 			_writeFramedMessage(toServer, ClientMessage.handshake(UUID.randomUUID()).serialize());
-			// Wait until the read latch for the handshake and then discard it (temporary while the ClientManager refactoring is done).
-			callbacks.awaitAndResetReadLatch(1);
-			manager.receive(connectedNode);
-			byte[] payload = message.serialize();
-			byte[] frame = new byte[payload.length + Short.BYTES];
-			ByteBuffer.wrap(frame).putShort((short)payload.length);
-			System.arraycopy(payload, 0, frame, 2, payload.length);
-			toServer.write(frame);
-			readLatch.await();
+			// Run the callbacks once to allow the ClientManager to do the state transition.
+			ClientMessage readMessage = callbacks.runAndGetNextMessage();
+			Assert.assertNull(readMessage);
+			// (we need to run it a second time because of the way the CLIENT_READY is queued)
+			readMessage = callbacks.runAndGetNextMessage();
+			Assert.assertNull(readMessage);
+			// Write the message.
+			_writeFramedMessage(toServer, message.serialize());
 		}
+		// We should see the message appear in callbacks.
+		ClientMessage output = callbacks.runAndGetNextMessage();
+		Assert.assertNotNull(output);
 		ClientNode noNode = callbacks.runRunnableAndGetNewClientNode(manager);
 		Assert.assertNull(noNode);
-		ClientMessage output = manager.receive(connectedNode);
 		Assert.assertEquals(message.type, output.type);
 		Assert.assertEquals(message.nonce, output.nonce);
 		Assert.assertArrayEquals(((ClientMessagePayload_Temp)message.payload).contents, ((ClientMessagePayload_Temp)output.payload).contents);
@@ -79,7 +81,7 @@ public class TestClientManager {
 		// Create a server.
 		int port = PORT_BASE + 2;
 		ServerSocketChannel socket = createSocket(port);
-		LatchedCallbacks callbacks = new LatchedCallbacks(null);
+		LatchedCallbacks callbacks = new LatchedCallbacks();
 		ClientManager manager = new ClientManager(socket, callbacks);
 		manager.startAndWaitForReady();
 		
@@ -122,7 +124,7 @@ public class TestClientManager {
 		// Create a server.
 		int port = PORT_BASE + 3;
 		ServerSocketChannel socket = createSocket(port);
-		LatchedCallbacks callbacks = new LatchedCallbacks(new CountDownLatch(1));
+		LatchedCallbacks callbacks = new LatchedCallbacks();
 		ClientManager manager = new ClientManager(socket, callbacks);
 		manager.startAndWaitForReady();
 		
@@ -130,12 +132,8 @@ public class TestClientManager {
 		try (Socket client = new Socket("localhost", port)) {
 			ClientNode connectedNode = callbacks.runRunnableAndGetNewClientNode(manager);
 			Assert.assertNotNull(connectedNode);
+			// Write the listen since we want to go into the listener state.
 			_writeFramedMessage(client.getOutputStream(), ClientMessage.listen(0L).serialize());
-			// Wait until the read latch for the handshake and then discard it (temporary while the ClientManager refactoring is done).
-			callbacks.awaitAndResetReadLatch(1);
-			manager.receive(connectedNode);
-			manager._newClients.remove(connectedNode);
-			manager._listenerClients.put(connectedNode, new ListenerState(0L));
 			
 			InputStream fromServer = client.getInputStream();
 			manager.sendEventToListener(connectedNode, record);
@@ -198,34 +196,27 @@ public class TestClientManager {
 	 * Used for simple cases where the external test only wants to verify that a call was made when expected.
 	 */
 	private static class LatchedCallbacks implements IClientManagerBackgroundCallbacks {
-		private CountDownLatch _readReady;
+		private final ClusterConfig _dummyConfig = ClusterConfig.configFromEntries(new ClusterConfig.ConfigEntry[] {new ClusterConfig.ConfigEntry(new InetSocketAddress(5), new InetSocketAddress(6))});
 		private Consumer<StateSnapshot> _pendingConsumer;
 		public ClientNode writableClient;
 		public ClientNode writableListener;
+		public ClientMessage recentMessage;
 		
-		public LatchedCallbacks(CountDownLatch readReady) {
-			_readReady = readReady;
-		}
-
-		public void awaitAndResetReadLatch(int i) throws InterruptedException {
-			// This is a temporary method during ClientManager refactoring.
-			_readReady.await();
-			_readReady = new CountDownLatch(i);
-		}
-
 		public synchronized ClientNode runRunnableAndGetNewClientNode(ClientManager managerToRead) throws InterruptedException {
-			while (null == _pendingConsumer) {
-				this.wait();
-			}
-			_pendingConsumer.accept(new StateSnapshot(null, 0L, 0L, 0L));
-			_pendingConsumer = null;
-			this.notifyAll();
+			_lockedRunOnce();
 			ClientNode node = null;
 			if (!managerToRead._newClients.isEmpty()) {
 				Assert.assertEquals(1, managerToRead._newClients.size());
 				node = managerToRead._newClients.iterator().next();
 			}
 			return node;
+		}
+		
+		public synchronized ClientMessage runAndGetNextMessage() throws InterruptedException {
+			_lockedRunOnce();
+			ClientMessage message = this.recentMessage;
+			this.recentMessage = null;
+			return message;
 		}
 
 		@Override
@@ -257,10 +248,22 @@ public class TestClientManager {
 		}
 
 		@Override
-		public void clientReadReady(ClientNode node) {
-			if (null != _readReady) {
-				_readReady.countDown();
+		public void mainNormalClientMessageRecieved(ClientNode node, ClientState normalState, ClientMessage incoming) {
+			this.recentMessage = incoming;
+		}
+
+		@Override
+		public void mainRequestMutationFetch(long mutationOffsetToFetch) {
+			Assert.fail("Not used in test");
+		}
+
+		private void _lockedRunOnce() throws InterruptedException {
+			while (null == _pendingConsumer) {
+				this.wait();
 			}
+			_pendingConsumer.accept(new StateSnapshot(_dummyConfig, 1L, 1L, 1L));
+			_pendingConsumer = null;
+			this.notifyAll();
 		}
 	}
 }

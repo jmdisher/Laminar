@@ -5,6 +5,7 @@ import java.util.function.Consumer;
 import com.jeffdisher.laminar.state.ClientState;
 import com.jeffdisher.laminar.state.ListenerState;
 import com.jeffdisher.laminar.state.StateSnapshot;
+import com.jeffdisher.laminar.types.ClientMessage;
 
 
 /**
@@ -17,5 +18,7 @@ public interface IClientManagerBackgroundCallbacks {
 
 	void mainListenerWriteReady(ClientManager.ClientNode node, ListenerState listenerState);
 
-	void clientReadReady(ClientManager.ClientNode node);
+	void mainNormalClientMessageRecieved(ClientManager.ClientNode node, ClientState normalState, ClientMessage incoming);
+
+	void mainRequestMutationFetch(long mutationOffsetToFetch);
 }

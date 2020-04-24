@@ -215,8 +215,41 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 
 	@Override
 	public void nodeReadReady(NetworkManager.NodeToken node) {
+		// Called on an IO thread.
+		Assert.assertTrue(Thread.currentThread() != _mainThread);
 		ClientNode realNode = _translateNode(node);
-		_callbacks.clientReadReady(realNode);
+		_callbacks.ioEnqueueCommandForMainThread(new Consumer<StateSnapshot>() {
+			@Override
+			public void accept(StateSnapshot arg) {
+				Assert.assertTrue(Thread.currentThread() == _mainThread);
+				// Check what state the client is in.
+				boolean isNew = _newClients.contains(realNode);
+				ClientState normalState = _normalClients.get(realNode);
+				ListenerState listenerState = _listenerClients.get(realNode);
+				ClientMessage incoming = receive(realNode);
+				
+				if (isNew) {
+					Assert.assertTrue(null == normalState);
+					Assert.assertTrue(null == listenerState);
+					
+					// We will ignore the nonce on a new connection.
+					// Note that the client maps are modified by this helper.
+					long mutationOffsetToFetch = _mainTransitionNewConnectionState(realNode, incoming, arg.lastCommittedMutationOffset, arg.currentConfig, arg.nextLocalEventOffset);
+					if (-1 != mutationOffsetToFetch) {
+						_callbacks.mainRequestMutationFetch(mutationOffsetToFetch);
+					}
+				} else if (null != normalState) {
+					Assert.assertTrue(null == listenerState);
+					
+					_callbacks.mainNormalClientMessageRecieved(realNode, normalState, incoming);
+				} else if (null != listenerState) {
+					// Once a listener is in the listener state, they should never send us another message.
+					Assert.unimplemented("TODO: Disconnect listener on invalid state transition");
+				} else {
+					// This appears to have disconnected before we processed it.
+					System.out.println("NOTE: Processed read ready from disconnected client");
+				}
+			}});
 	}
 
 	@Override
