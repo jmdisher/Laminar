@@ -448,34 +448,8 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 			// Set up the client to be notified that the message committed once the MutationRecord is durable.
 			// (we want a special action for this in order to notify all connected clients and listeners of the new config).
 			Consumer<StateSnapshot> specialAction = (snapshot) -> {
-				// For the clients, we just enqueue this.
-				for (ClientManager.ClientNode node : _clientManager._normalClients.keySet()) {
-					ClientResponse update = ClientResponse.updateConfig(snapshot.lastCommittedMutationOffset, newConfig);
-					_clientManager._mainEnqueueMessageToClient(node, update);
-				}
-				// For listeners, we either need to send this directly (if they are already waiting for the next event)
-				// or set their high-priority slot to preempt the next enqueue operation (since those ones are currently
-				// waiting on an in-progress disk fetch).
-				// We use the high-priority slot because it doesn't have a message queue and they don't need every update, just the most recent.
-				EventRecord updateConfigPseudoRecord = EventRecord.synthesizeRecordForConfig(newConfig);
-				// Set this in all of them and remove the ones we are going to eagerly handle.
-				for (ClientManager.ClientNode node : _clientManager._listenerClients.keySet()) {
-					ListenerState listenerState = _clientManager._listenerClients.get(node);
-					listenerState.highPriorityMessage = updateConfigPseudoRecord;
-				}
-				List<ClientManager.ClientNode> waitingForNewEvent = _clientManager._listenersWaitingOnLocalOffset.remove(snapshot.nextLocalEventOffset);
-				if (null != waitingForNewEvent) {
-					for (ClientManager.ClientNode node : waitingForNewEvent) {
-						ListenerState listenerState = _clientManager._listenerClients.get(node);
-						// Make sure they are still connected.
-						if (null != listenerState) {
-							// Send this and clear it.
-							_clientManager.sendEventToListener(node, updateConfigPseudoRecord);
-							Assert.assertTrue(updateConfigPseudoRecord == listenerState.highPriorityMessage);
-							listenerState.highPriorityMessage = null;
-						}
-					}
-				}
+				// This requires that we broadcast the config update to the connected clients and listeners.
+				_clientManager.mainBroadcastConfigUpdate(snapshot, newConfig);
 				// We change the config but this would render the snapshot stale so we do it last, to make that clear.
 				_currentConfig = newConfig;
 			};

@@ -161,6 +161,39 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 		_listenerClients.clear();
 	}
 
+	public void mainBroadcastConfigUpdate(StateSnapshot snapshot, ClusterConfig newConfig) {
+		// Called on main thread.
+		Assert.assertTrue(Thread.currentThread() == _mainThread);
+		// For the clients, we just enqueue this.
+		for (ClientManager.ClientNode node : _normalClients.keySet()) {
+			ClientResponse update = ClientResponse.updateConfig(snapshot.lastCommittedMutationOffset, newConfig);
+			_mainEnqueueMessageToClient(node, update);
+		}
+		// For listeners, we either need to send this directly (if they are already waiting for the next event)
+		// or set their high-priority slot to preempt the next enqueue operation (since those ones are currently
+		// waiting on an in-progress disk fetch).
+		// We use the high-priority slot because it doesn't have a message queue and they don't need every update, just the most recent.
+		EventRecord updateConfigPseudoRecord = EventRecord.synthesizeRecordForConfig(newConfig);
+		// Set this in all of them and remove the ones we are going to eagerly handle.
+		for (ClientManager.ClientNode node : _listenerClients.keySet()) {
+			ListenerState listenerState = _listenerClients.get(node);
+			listenerState.highPriorityMessage = updateConfigPseudoRecord;
+		}
+		List<ClientManager.ClientNode> waitingForNewEvent = _listenersWaitingOnLocalOffset.remove(snapshot.nextLocalEventOffset);
+		if (null != waitingForNewEvent) {
+			for (ClientManager.ClientNode node : waitingForNewEvent) {
+				ListenerState listenerState = _listenerClients.get(node);
+				// Make sure they are still connected.
+				if (null != listenerState) {
+					// Send this and clear it.
+					sendEventToListener(node, updateConfigPseudoRecord);
+					Assert.assertTrue(updateConfigPseudoRecord == listenerState.highPriorityMessage);
+					listenerState.highPriorityMessage = null;
+				}
+			}
+		}
+	}
+
 	@Override
 	public void nodeDidConnect(NetworkManager.NodeToken node) {
 		ClientNode realNode = _translateNode(node);
