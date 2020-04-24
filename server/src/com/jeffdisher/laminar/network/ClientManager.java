@@ -358,24 +358,19 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 	public void _mainEnqueueMessageToClient(UninterruptableQueue commandQueue, ClientNode client, ClientResponse ack) {
 		// Main thread helper.
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
-		commandQueue.put(new Consumer<StateSnapshot>() {
-			@Override
-			public void accept(StateSnapshot arg) {
-				Assert.assertTrue(Thread.currentThread() == _mainThread);
-				// Look up the client to make sure they are still connected (messages to disconnected clients are just dropped).
-				ClientState state = _normalClients.get(client);
-				if (null != state) {
-					// See if the client is writable.
-					if (state.writable) {
-						// Just write the message.
-						_send(client, ack);
-						state.writable = false;
-					} else {
-						// Writing not yet available so add this to the list.
-						state.outgoingMessages.add(ack);
-					}
-				}
-			}});
+		// Look up the client to make sure they are still connected (messages to disconnected clients are just dropped).
+		ClientState state = _normalClients.get(client);
+		if (null != state) {
+			// See if the client is writable.
+			if (state.writable) {
+				// Just write the message.
+				_send(client, ack);
+				state.writable = false;
+			} else {
+				// Writing not yet available so add this to the list.
+				state.outgoingMessages.add(ack);
+			}
+		}
 	}
 
 	/**
