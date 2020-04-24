@@ -16,7 +16,6 @@ import com.jeffdisher.laminar.network.IClusterManagerBackgroundCallbacks;
 import com.jeffdisher.laminar.types.ClientMessage;
 import com.jeffdisher.laminar.types.ClientMessagePayload_Temp;
 import com.jeffdisher.laminar.types.ClientMessagePayload_UpdateConfig;
-import com.jeffdisher.laminar.types.ClientResponse;
 import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.types.EventRecord;
 import com.jeffdisher.laminar.types.EventRecordType;
@@ -141,21 +140,6 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 		// Called on an IO thread.
 		Assert.assertTrue(Thread.currentThread() != _mainThread);
 		_commandQueue.put(command);
-	}
-
-	@Override
-	public void mainNormalClientWriteReady(ClientManager.ClientNode node, ClientState normalState) {
-		// Called on the main thread.
-		Assert.assertTrue(Thread.currentThread() == _mainThread);
-		// This can't already be writable.
-		Assert.assertTrue(!normalState.writable);
-		// Check to see if there are any outgoing messages.  If so, just send the first.  Otherwise, set the writable flag.
-		if (normalState.outgoingMessages.isEmpty()) {
-			normalState.writable = true;
-		} else {
-			ClientResponse toSend = normalState.outgoingMessages.remove(0);
-			_clientManager.send(node, toSend);
-		}
 	}
 
 	@Override

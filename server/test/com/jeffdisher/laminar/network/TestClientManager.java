@@ -14,7 +14,6 @@ import org.junit.Assert;
 import org.junit.Test;
 
 import com.jeffdisher.laminar.network.ClientManager.ClientNode;
-import com.jeffdisher.laminar.state.ClientState;
 import com.jeffdisher.laminar.state.StateSnapshot;
 import com.jeffdisher.laminar.types.ClientMessage;
 import com.jeffdisher.laminar.types.ClientMessagePayload_Temp;
@@ -91,16 +90,11 @@ public class TestClientManager {
 			_writeFramedMessage(client.getOutputStream(), ClientMessage.handshake(clientId).serialize());
 			
 			InputStream fromServer = client.getInputStream();
-			manager.send(connectedNode, commit);
+			manager.testingSend(connectedNode, commit);
 			// Allocate the frame for the full buffer we know we are going to read.
 			byte[] serialized = commit.serialize();
 			byte[] raw = _readFramedMessage(fromServer);
 			Assert.assertEquals(serialized.length, raw.length);
-			// Wait for the socket to become writable, again.
-			while (null == callbacks.writableClient) {
-				callbacks.runRunnableAndGetNewClientNode(manager);
-			}
-			callbacks.writableClient = null;
 			// Deserialize the buffer.
 			ClientResponse deserialized = ClientResponse.deserialize(raw);
 			Assert.assertEquals(commit.type, deserialized.type);
@@ -130,9 +124,16 @@ public class TestClientManager {
 			Assert.assertNotNull(connectedNode);
 			// Write the listen since we want to go into the listener state.
 			_writeFramedMessage(client.getOutputStream(), ClientMessage.listen(0L).serialize());
-			
 			InputStream fromServer = client.getInputStream();
-			manager.sendEventToListener(connectedNode, record);
+			
+			// Run 1 callback to receive the LISTEN.
+			callbacks.runRunnableAndGetNewClientNode(manager);
+			// Consume the config it sent in response.
+			_readFramedMessage(fromServer);
+			// Run the next callback so the listener becomes writable.
+			callbacks.runRunnableAndGetNewClientNode(manager);
+			
+			manager.mainSendRecordToListeners(record);
 			// Allocate the frame for the full buffer we know we are going to read.
 			byte[] serialized = record.serialize();
 			byte[] raw = _readFramedMessage(fromServer);
@@ -189,8 +190,6 @@ public class TestClientManager {
 	private static class LatchedCallbacks implements IClientManagerBackgroundCallbacks {
 		private final ClusterConfig _dummyConfig = ClusterConfig.configFromEntries(new ClusterConfig.ConfigEntry[] {new ClusterConfig.ConfigEntry(new InetSocketAddress(5), new InetSocketAddress(6))});
 		private Consumer<StateSnapshot> _pendingConsumer;
-		public ClientNode writableClient;
-		public ClientNode writableListener;
 		public ClientMessage recentMessage;
 		
 		public synchronized ClientNode runRunnableAndGetNewClientNode(ClientManager managerToRead) throws InterruptedException {
@@ -218,13 +217,6 @@ public class TestClientManager {
 			}
 			_pendingConsumer = command;
 			this.notifyAll();
-		}
-
-		@Override
-		public void mainNormalClientWriteReady(ClientNode node, ClientState normalState) {
-			// This test assumes there is only one.
-			Assert.assertNull(this.writableClient);
-			this.writableClient = node;
 		}
 
 		@Override

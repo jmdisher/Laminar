@@ -3,7 +3,6 @@ package com.jeffdisher.laminar.network;
 import java.util.UUID;
 import java.util.function.Consumer;
 
-import com.jeffdisher.laminar.state.ClientState;
 import com.jeffdisher.laminar.state.StateSnapshot;
 import com.jeffdisher.laminar.types.ClientMessage;
 
@@ -13,8 +12,6 @@ import com.jeffdisher.laminar.types.ClientMessage;
  */
 public interface IClientManagerBackgroundCallbacks {
 	void ioEnqueueCommandForMainThread(Consumer<StateSnapshot> command);
-
-	void mainNormalClientWriteReady(ClientManager.ClientNode node, ClientState normalState);
 
 	/**
 	 * Called to provide a message which arrived from a normal client.

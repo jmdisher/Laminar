@@ -89,32 +89,6 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 	}
 
 	/**
-	 * Sends the given ClientResponse to the given Client.  This is used by the server when responding to a message
-	 * previously sent by a writing ("normal") client.
-	 * Note that this will assert that the client's write buffer was empty.
-	 * TODO:  Remove this method once NodeState -> ClientManager refactoring is done.
-	 * 
-	 * @param client The client to which to send the message.
-	 * @param toSend The response to send.
-	 */
-	public void send(ClientNode client, ClientResponse toSend) {
-		_send(client, toSend);
-	}
-
-	/**
-	 * Sends the given EventRecord to the given Client.  This is used by the server when streaming data to a read-only
-	 * ("listener") client.
-	 * Note that this will assert that the client's write buffer was empty.
-	 * TODO:  Remove this method once NodeState -> ClientManager refactoring is done.
-	 * 
-	 * @param client The client to which to send the record.
-	 * @param toSend The record to send.
-	 */
-	public void sendEventToListener(ClientNode client, EventRecord toSend) {
-		_sendEventToListener(client, toSend);
-	}
-
-	/**
 	 * Forces the connection to the given node to be disconnected.
 	 * It is worth noting that some callbacks related to this node may still arrive if they came in asynchronously.
 	 * 
@@ -186,7 +160,7 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 				// Make sure they are still connected.
 				if (null != listenerState) {
 					// Send this and clear it.
-					sendEventToListener(node, updateConfigPseudoRecord);
+					_sendEventToListener(node, updateConfigPseudoRecord);
 					Assert.assertTrue(updateConfigPseudoRecord == listenerState.highPriorityMessage);
 					listenerState.highPriorityMessage = null;
 				}
@@ -289,6 +263,15 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 		return toReturn;
 	}
 
+	/**
+	 * This helper exists purely for testing purposes.  It allows TestClientManager to more directly control outgoing
+	 * messages.  It may be removed, in future, if TestClientManager changes to do this in the response shape it is
+	 * designed to handle.
+	 */
+	public void testingSend(ClientNode target, ClientResponse toSend) {
+		_send(target, toSend);
+	}
+
 	@Override
 	public void nodeDidConnect(NetworkManager.NodeToken node) {
 		ClientNode realNode = _translateNode(node);
@@ -353,7 +336,15 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 				if (null != normalState) {
 					Assert.assertTrue(null == listenerState);
 					// Normal client.
-					_callbacks.mainNormalClientWriteReady(realNode, normalState);
+					// This can't already be writable.
+					Assert.assertTrue(!normalState.writable);
+					// Check to see if there are any outgoing messages.  If so, just send the first.  Otherwise, set the writable flag.
+					if (normalState.outgoingMessages.isEmpty()) {
+						normalState.writable = true;
+					} else {
+						ClientResponse toSend = normalState.outgoingMessages.remove(0);
+						_send(realNode, toSend);
+					}
 				} else if (null != listenerState) {
 					// Listener.
 					// The socket is now writable so first check if there is a high-priority message waiting.
