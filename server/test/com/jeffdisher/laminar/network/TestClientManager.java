@@ -36,7 +36,7 @@ public class TestClientManager {
 	@Test
 	public void testReceiveTempMessage() throws Throwable {
 		// Create a message.
-		ClientMessage message = ClientMessage.temp(1000, new byte[] {0,1,2,3});
+		ClientMessage message = ClientMessage.temp(1L, new byte[] {0,1,2,3});
 		// Create a server.
 		int port = PORT_BASE + 1;
 		ServerSocketChannel socket = createSocket(port);
@@ -241,8 +241,9 @@ public class TestClientManager {
 		}
 
 		@Override
-		public void mainNormalClientMessageRecieved(ClientNode node, ClientState normalState, ClientMessage incoming) {
+		public long mainHandleValidClientMessage(UUID clientId, ClientMessage incoming) {
 			this.recentMessage = incoming;
+			return 1L;
 		}
 
 		@Override

@@ -386,7 +386,19 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 				} else if (null != normalState) {
 					Assert.assertTrue(null == listenerState);
 					
-					_callbacks.mainNormalClientMessageRecieved(realNode, normalState, incoming);
+					// We can do the nonce check here, before we enter the state machine for the specific message type/contents.
+					if (normalState.nextNonce == incoming.nonce) {
+						normalState.nextNonce += 1;
+						long globalMutationOffsetOfAcceptedMessage = _callbacks.mainHandleValidClientMessage(normalState.clientId, incoming);
+						Assert.assertTrue(globalMutationOffsetOfAcceptedMessage > 0L);
+						// We enqueue the ack, immediately.
+						ClientResponse ack = ClientResponse.received(incoming.nonce, arg.lastCommittedMutationOffset);
+						_mainEnqueueMessageToClient(realNode, ack);
+						// Set up the client to be notified that the message committed once the MutationRecord is durable.
+						mainStorePendingMessageCommit(realNode, globalMutationOffsetOfAcceptedMessage, incoming.nonce);
+					} else {
+						_mainEnqueueMessageToClient(realNode, ClientResponse.error(incoming.nonce, arg.lastCommittedMutationOffset));
+					}
 				} else if (null != listenerState) {
 					// Once a listener is in the listener state, they should never send us another message.
 					Assert.unimplemented("TODO: Disconnect listener on invalid state transition");
