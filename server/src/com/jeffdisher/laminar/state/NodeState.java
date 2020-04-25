@@ -175,6 +175,13 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		Assert.assertTrue(Thread.currentThread() != _mainThread);
 		_commandQueue.put(command);
 	}
+
+	@Override
+	public void mainConnectedToDownstreamPeer(ClusterConfig.ConfigEntry peer) {
+		// Called on main thread.
+		Assert.assertTrue(Thread.currentThread() == _mainThread);
+		Assert.unimplemented("Current work-in-progress");
+	}
 	// </IClusterManagerCallbacks>
 
 	// <IDiskManagerBackgroundCallbacks>
