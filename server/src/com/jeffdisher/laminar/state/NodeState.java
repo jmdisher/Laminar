@@ -2,7 +2,10 @@ package com.jeffdisher.laminar.state;
 
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedList;
 import java.util.Map;
+import java.util.Queue;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Consumer;
@@ -43,8 +46,11 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 	private ConsoleManager _consoleManager;
 
 	private RaftState _currentState;
+	private final ClusterConfig.ConfigEntry _self;
 	// We keep an image of ourself as a downstream peer state to avoid special-cases in looking at clusters so we will need to update it with latest mutation offset as soon as we assign one.
 	private final DownstreamPeerState _selfState;
+	// The union of all config entries we are currently monitoring (normally just from the current config but could be all in joint consensus).
+	private final Map<ClusterConfig.ConfigEntry, DownstreamPeerState> _unionOfDownstreamNodes;
 	private SyncProgress _currentConfig;
 	// This map is usually empty but contains any ClusterConfigs which haven't yet committed (meaning they are part of joint consensus).
 	private final Map<Long, SyncProgress> _configsPendingCommit;
@@ -56,6 +62,14 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 	private long _lastCommittedMutationOffset;
 	// Note that event offsets will eventually need to be per-topic.
 	private long _lastCommittedEventOffset;
+
+	// Tracking of in-flight mutations ready to be committed when the cluster agrees.
+	// These must be committed in-order, so they are a queue with a base offset bias.
+	// (note that the Events are synthesized from these mutations at the point of commit and _nextLocalEventOffset is updated then)
+	private Queue<InFlightTuple> _inFlightMutations;
+	private long _inFlightMutationOffsetBias;
+
+	// Information related to the state of the main execution thread.
 	private boolean _keepRunning;
 	private final UninterruptableQueue _commandQueue;
 
@@ -65,14 +79,24 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		// Note that we default to the LEADER state (typically forced into a FOLLOWER state when an existing LEADER attempts to append entries).
 		_currentState = RaftState.LEADER;
 		
+		// We rely on the initial config just being "self".
+		Assert.assertTrue(1 == initialConfig.entries.length);
+		_self = initialConfig.entries[0];
 		_selfState = new DownstreamPeerState();
 		_selfState.isConnectionUp = true;
+		_unionOfDownstreamNodes = new HashMap<>();
+		_unionOfDownstreamNodes.put(_self, _selfState);
 		_currentConfig = new SyncProgress(initialConfig, Collections.singleton(_selfState));
 		_configsPendingCommit = new HashMap<>();
 		
 		// Global offsets are 1-indexed so the first one is 1L.
 		_nextGlobalMutationOffset = 1L;
 		_nextLocalEventOffset = 1L;
+		
+		// The first mutation has offset 1L so we use that as the initial bias.
+		_inFlightMutations = new LinkedList<>();
+		_inFlightMutationOffsetBias = 1L;
+		
 		_commandQueue = new UninterruptableQueue();
 	}
 
@@ -188,7 +212,12 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 	public void mainConnectedToDownstreamPeer(ClusterConfig.ConfigEntry peer) {
 		// Called on main thread.
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
-		Assert.unimplemented("Current work-in-progress");
+		// See if we still have this peer (this will always be true in the current implementation as the ClusterManager checks this).
+		DownstreamPeerState state = _unionOfDownstreamNodes.get(peer);
+		state.isConnectionUp = true;
+		// For temporary testing purposes, we will say that this peer is maximally updated (just allows us to test this config flow without full cluster commits)
+		state.lastMutationOffsetReceived = Long.MAX_VALUE;
+		_mainCommitValidInFlightTuples();
 	}
 	// </IClusterManagerCallbacks>
 
@@ -207,7 +236,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 				_lastCommittedMutationOffset = completed.globalOffset;
 				_clientManager.mainProcessingPendingMessageCommits(completed.globalOffset);
 				
-				// Check to make sure we weren't waiting for this to commit to change config.
+				// The mutation is only committed to disk when it is committed to the joint consensus so we can advance this now.
 				SyncProgress newConfigProgress = _configsPendingCommit.remove(completed.globalOffset);
 				if (null != newConfigProgress) {
 					// We need a new snapshot since we just changed state in this command, above.
@@ -216,6 +245,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 					_clientManager.mainBroadcastConfigUpdate(newSnapshot, newConfigProgress.config);
 					// We change the config but this would render the snapshot stale so we do it last, to make that clear.
 					_currentConfig = newConfigProgress;
+					_rebuildDownstreamUnionAfterConfigChange();
 				}
 			}});
 	}
@@ -331,10 +361,24 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 			long globalOffset = _getAndUpdateNextMutationOffset();
 			MutationRecord mutation = MutationRecord.generateRecord(MutationRecordType.UPDATE_CONFIG, globalOffset, clientId, incoming.nonce, newConfig.serialize());
 			
-			// Store the config in our map relating to joint consensus, waiting until this commits and becomes active.
-			// NOTE:  Temporarily, we will ignore this new config for purposes of the union of downstream peers since we need the completed outgoing connection support for that.
-			// (this means that we fake the consensus only mattering to _selfState).
-			Set<DownstreamPeerState> nodesInConfig = Collections.singleton(_selfState);
+			// Notes about handling a new config:
+			// -we now enter (or compound) joint consensus, until this config commits on a majority of servers
+			// -we need to find any new nodes and add them to our union of downstream peers
+			// -we need to initiate an outgoing connection to any of these new nodes
+			
+			// Add the missing nodes and start the outgoing connections.
+			Set<DownstreamPeerState> nodesInConfig = new HashSet<>();
+			for (ClusterConfig.ConfigEntry entry : newConfig.entries) {
+				DownstreamPeerState peer = _unionOfDownstreamNodes.get(entry);
+				if (null == peer) {
+					// This is a new node so start the connection and add it to the map.
+					peer = new DownstreamPeerState();
+					_clusterManager.mainOpenDownstreamConnection(entry);
+					_unionOfDownstreamNodes.put(entry, peer);
+				}
+				nodesInConfig.add(peer);
+			}
+			// Add this to our pending map of commits so we know when to exit joint consensus.
 			_configsPendingCommit.put(globalOffset, new SyncProgress(newConfig, nodesInConfig));
 			
 			// Request that the MutationRecord be committed (no EventRecord).
@@ -350,11 +394,19 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 	}
 
 	private void _enqueueForCommit(MutationRecord mutation, EventRecord event) {
-		// Commit, immediately.
-		// NOTE:  Until outgoing connection support and real use of the consensus is implemented, we will verify that we are always in agreement with ourself using that mechanism.
+		// Make sure the in-flight queue is consistent.
+		Assert.assertTrue(mutation.globalOffset == (_inFlightMutations.size() + _inFlightMutationOffsetBias));
+		
+		// Make sure we aren't in a degenerate case where we can commit this, immediately (only applies to single-node clusters).
 		long consensusOffset = _checkConsesusMutationOffset();
-		Assert.assertTrue(mutation.globalOffset == consensusOffset);
-		_commitAndUpdateBias(mutation, event);
+		if (mutation.globalOffset <= consensusOffset) {
+			// Commit, immediately.
+			Assert.assertTrue(_inFlightMutations.isEmpty());
+			_commitAndUpdateBias(mutation, event);
+		} else {
+			// Store in list for later commit.
+			_inFlightMutations.add(new InFlightTuple(mutation, event));
+		}
 	}
 
 	private long _checkConsesusMutationOffset() {
@@ -378,5 +430,39 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		}
 		// TODO:  We probably want to lock-step the mutation on the event commit since we will be able to detect the broken data, that way, and replay it.
 		_diskManager.commitMutation(mutation);
+		// We are shifting the baseline by doing this.
+		_inFlightMutationOffsetBias += 1;
+	}
+
+	private void _rebuildDownstreamUnionAfterConfigChange() {
+		HashMap<ClusterConfig.ConfigEntry, DownstreamPeerState> copy = new HashMap<>(_unionOfDownstreamNodes);
+		_unionOfDownstreamNodes.clear();
+		for (ClusterConfig.ConfigEntry entry : _currentConfig.config.entries) {
+			_unionOfDownstreamNodes.put(entry, copy.get(entry));
+		}
+		for (SyncProgress pending : _configsPendingCommit.values()) {
+			for (ClusterConfig.ConfigEntry entry : pending.config.entries) {
+				_unionOfDownstreamNodes.put(entry, copy.get(entry));
+			}
+		}
+	}
+
+	private void _mainCommitValidInFlightTuples() {
+		long consensusOffset = _checkConsesusMutationOffset();
+		while ((_inFlightMutationOffsetBias <= consensusOffset) && !_inFlightMutations.isEmpty()) {
+			InFlightTuple record = _inFlightMutations.remove();
+			_commitAndUpdateBias(record.mutation, record.event);
+		}
+	}
+
+
+	private static class InFlightTuple {
+		public final MutationRecord mutation;
+		public final EventRecord event;
+		
+		public InFlightTuple(MutationRecord mutation, EventRecord event) {
+			this.mutation = mutation;
+			this.event = event;
+		}
 	}
 }

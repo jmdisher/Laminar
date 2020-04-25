@@ -58,7 +58,8 @@ public class ClusterManager implements INetworkManagerBackgroundCallbacks {
 	@Override
 	public void nodeDidConnect(NetworkManager.NodeToken node) {
 		Assert.assertTrue(Thread.currentThread() != _mainThread);
-		Assert.unimplemented("TODO: implement");
+		// We currently allow this, for outgoing tests, but it has no implementation.
+		System.err.println("TODO:  Implement incoming node connection");
 	}
 
 	@Override
@@ -94,7 +95,8 @@ public class ClusterManager implements INetworkManagerBackgroundCallbacks {
 	@Override
 	public void outboundNodeDisconnected(NetworkManager.NodeToken node, IOException cause) {
 		Assert.assertTrue(Thread.currentThread() != _mainThread);
-		Assert.unimplemented("TODO: implement");
+		// We currently allow this, for outgoing tests, but it has no implementation.
+		System.err.println("TODO:  Implement outbound disconnect");
 	}
 
 	@Override

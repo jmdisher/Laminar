@@ -450,8 +450,10 @@ public class TestLaminar {
 
 	/**
 	 * In this test, create 2 clients and a listener connected to a single node.
-	 * Both clients send a message, then 1 sends a config update, wait for received, then both send another message and
-	 * wait for commit.
+	 * Both clients send a message, then 1 sends a config update, wait for received, then both send another message.
+	 * By this point, the other node in the config isn't up yet so it can't commit so wait 100 ms and observe that
+	 * nobody has received the config update and that the listener hasn't seen the later messages.
+	 * Then, start the new node and wait for all commits.
 	 * Wait for listener to observe all messages.
 	 * Check that all clients and the listener did receive the config update.
 	 * Note that the config update doesn't go to a topic so the listener will only receive it as an out-of-band meta-
@@ -493,23 +495,48 @@ public class TestLaminar {
 			ClusterConfig originalConfig = client1.getCurrentConfig();
 			Assert.assertEquals(1, originalConfig.entries.length);
 			ClusterConfig.ConfigEntry originalEntry = originalConfig.entries[0];
-			ClusterConfig.ConfigEntry fakeEntry = new ClusterConfig.ConfigEntry(new InetSocketAddress(originalEntry.cluster.getAddress(), originalEntry.cluster.getPort() + 1000), new InetSocketAddress(originalEntry.client.getAddress(), originalEntry.client.getPort() + 1000));
-			ClusterConfig newConfig = ClusterConfig.configFromEntries(new ClusterConfig.ConfigEntry[] {originalEntry, fakeEntry});
+			ClusterConfig.ConfigEntry newEntry = new ClusterConfig.ConfigEntry(new InetSocketAddress(originalEntry.cluster.getAddress(), originalEntry.cluster.getPort() + 1000), new InetSocketAddress(originalEntry.client.getAddress(), originalEntry.client.getPort() + 1000));
+			ClusterConfig newConfig = ClusterConfig.configFromEntries(new ClusterConfig.ConfigEntry[] {originalEntry, newEntry});
 			ClientResult updateResult = client1.sendUpdateConfig(newConfig);
 			updateResult.waitForReceived();
 			
 			// Now send another from each client.
 			ClientResult result1_2 = client1.sendTemp(new byte[] {1});
 			ClientResult result2_2 = client2.sendTemp(new byte[] {2});
-			
-			// Wait for everything to commit and check that the update we got is the same as the one we send.
+			// We expect the previous messages to have committed, either way.
 			result1_1.waitForCommitted();
 			result2_1.waitForCommitted();
+			
+			// At this point, the cluster should be stalled since it is missing a node required to reach consensus in the new config.
+			// Wait for 100ms to verify that we don't see the new config and there is no listener progress.
+			Thread.sleep(100L);
+			Assert.assertEquals(originalConfig.entries.length, client1.getCurrentConfig().entries.length);
+			Assert.assertEquals(originalConfig.entries.length, client2.getCurrentConfig().entries.length);
+			Assert.assertEquals(originalConfig.entries.length, beforeListener.getCurrentConfig().entries.length);
+			Assert.assertEquals(2, beforeListener.waitForEventCount(2));
+			
+			// Start the other node in the config and let the test complete.
+			// WARNING:  This way of starting 2 nodes in-process is a huge hack and a better approach will need to be found, soon (mostly the way we are interacting with STDIN).
+			PipedInputStream inStream2 = new PipedInputStream();
+			PrintStream feeder2 = new PrintStream(new PipedOutputStream(inStream2));
+			System.setIn(inStream2);
+			Thread runner2 = new Thread() {
+				@Override
+				public void run() {
+					Laminar.main(new String[] {"--client", "3002", "--cluster", "3003", "--data", "/tmp/laminar2"});
+				}
+			};
+			runner2.start();
+			
+			// Wait for everything to commit and check that the update we got is the same as the one we send.
 			updateResult.waitForCommitted();
 			result1_2.waitForCommitted();
 			result2_2.waitForCommitted();
 			Assert.assertEquals(newConfig.entries.length, client1.getCurrentConfig().entries.length);
 			Assert.assertEquals(newConfig.entries.length, client2.getCurrentConfig().entries.length);
+			feeder2.println("stop");
+			runner2.join();
+			feeder2.close();
 		} finally {
 			client1.close();
 			client2.close();
@@ -595,6 +622,7 @@ public class TestLaminar {
 	private static class CaptureListener extends Thread {
 		private final ListenerConnection _listener;
 		private final EventRecord[] _captured;
+		private int _totalEventsConsumed;
 		
 		public CaptureListener(InetSocketAddress address, int messagesToCapture) throws IOException {
 			_listener = ListenerConnection.open(address, 0L);
@@ -603,6 +631,13 @@ public class TestLaminar {
 		
 		public ClusterConfig getCurrentConfig() {
 			return _listener.getCurrentConfig();
+		}
+		
+		public synchronized int waitForEventCount(int count) throws InterruptedException {
+			while (_totalEventsConsumed < count) {
+				this.wait();
+			}
+			return _totalEventsConsumed;
 		}
 		
 		public EventRecord[] waitForTerminate() throws InterruptedException {
@@ -616,6 +651,10 @@ public class TestLaminar {
 				for (int i = 0; i < _captured.length; ++i) {
 					_captured[i] = _listener.pollForNextEvent();
 					Assert.assertEquals(i + 1, _captured[i].localOffset);
+					synchronized (this) {
+						_totalEventsConsumed += 1;
+						this.notifyAll();
+					}
 				}
 				_listener.close();
 			} catch (IOException | InterruptedException e) {
