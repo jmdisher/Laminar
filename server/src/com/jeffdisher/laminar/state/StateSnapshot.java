@@ -12,12 +12,10 @@ public class StateSnapshot {
 	public final ClusterConfig currentConfig;
 	public final long lastCommittedMutationOffset;
 	public final long lastCommittedEventOffset;
-	public final long nextLocalEventOffset;
 
-	public StateSnapshot(ClusterConfig currentConfig, long lastCommittedMutationOffset, long lastCommittedEventOffset, long nextLocalEventOffset) {
+	public StateSnapshot(ClusterConfig currentConfig, long lastCommittedMutationOffset, long lastCommittedEventOffset) {
 		this.currentConfig = currentConfig;
 		this.lastCommittedMutationOffset = lastCommittedMutationOffset;
 		this.lastCommittedEventOffset = lastCommittedEventOffset;
-		this.nextLocalEventOffset = nextLocalEventOffset;
 	}
 }

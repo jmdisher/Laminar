@@ -150,7 +150,7 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 			ListenerState listenerState = _listenerClients.get(node);
 			listenerState.highPriorityMessage = updateConfigPseudoRecord;
 		}
-		List<NetworkManager.NodeToken> waitingForNewEvent = _listenersWaitingOnLocalOffset.remove(snapshot.nextLocalEventOffset);
+		List<NetworkManager.NodeToken> waitingForNewEvent = _listenersWaitingOnLocalOffset.remove(snapshot.lastCommittedEventOffset);
 		if (null != waitingForNewEvent) {
 			for (NetworkManager.NodeToken node : waitingForNewEvent) {
 				ListenerState listenerState = _listenerClients.get(node);
@@ -348,7 +348,7 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 						listenerState.highPriorityMessage = null;
 					} else {
 						// Normal syncing operation so either load or wait for the next event for this listener.
-						long nextLocalEventToFetch = _mainSetupListenerForNextEvent(node, listenerState, arg.nextLocalEventOffset);
+						long nextLocalEventToFetch = _mainSetupListenerForNextEvent(node, listenerState, arg.lastCommittedEventOffset);
 						if (-1 != nextLocalEventToFetch) {
 							_callbacks.mainRequestEventFetch(nextLocalEventToFetch);
 						}
@@ -380,7 +380,7 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 					
 					// We will ignore the nonce on a new connection.
 					// Note that the client maps are modified by this helper.
-					long mutationOffsetToFetch = _mainTransitionNewConnectionState(node, incoming, arg.lastCommittedMutationOffset, arg.currentConfig, arg.nextLocalEventOffset);
+					long mutationOffsetToFetch = _mainTransitionNewConnectionState(node, incoming, arg.lastCommittedMutationOffset, arg.currentConfig, arg.lastCommittedEventOffset);
 					if (-1 != mutationOffsetToFetch) {
 						_callbacks.mainRequestMutationFetch(mutationOffsetToFetch);
 					}
@@ -429,7 +429,7 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 	}
 
 
-	private long _mainTransitionNewConnectionState(NetworkManager.NodeToken client, ClientMessage incoming, long lastCommittedMutationOffset, ClusterConfig currentConfig, long nextLocalEventOffset) {
+	private long _mainTransitionNewConnectionState(NetworkManager.NodeToken client, ClientMessage incoming, long lastCommittedMutationOffset, ClusterConfig currentConfig, long lastCommittedEventOffset) {
 		long mutationOffsetToFetch = -1;
 		// Main thread helper.
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
@@ -502,7 +502,7 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 			
 			// Note that this message overloads the nonce as the last received local offset.
 			long lastReceivedLocalOffset = incoming.nonce;
-			if ((lastReceivedLocalOffset < 0L) || (lastReceivedLocalOffset >= nextLocalEventOffset)) {
+			if ((lastReceivedLocalOffset < 0L) || (lastReceivedLocalOffset > lastCommittedEventOffset)) {
 				Assert.unimplemented("This listener is invalid so disconnect it");
 			}
 			
@@ -548,7 +548,7 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 		}
 	}
 
-	private long _mainSetupListenerForNextEvent(NetworkManager.NodeToken client, ListenerState state, long nextLocalEventOffset) {
+	private long _mainSetupListenerForNextEvent(NetworkManager.NodeToken client, ListenerState state, long lastCommittedEventOffset) {
 		// Main thread helper.
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		// See if there is a pending request for this offset.
@@ -559,9 +559,9 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 			// Nobody is currently waiting so set up the record.
 			waitingList = new LinkedList<>();
 			_listenersWaitingOnLocalOffset.put(nextLocalOffset, waitingList);
-			// Unless this is the next offset (meaning we are waiting for a client to send it), then request the load.
+			// Unless this is the next offset (meaning we are waiting for a client to send and commit it), then request the load.
 			// Note that this, like all uses of "local" or "event-based" offsets, will eventually need to be per-topic.
-			if (nextLocalOffset < nextLocalEventOffset) {
+			if (nextLocalOffset <= lastCommittedEventOffset) {
 				// We will need this entry fetched.
 				nextLocalEventToFetch = nextLocalOffset;
 			}

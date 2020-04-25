@@ -88,7 +88,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 			// Poll for the next work item.
 			Consumer<StateSnapshot> next = _commandQueue.blockingGet();
 			// Create the state snapshot and pass it to the consumer.
-			StateSnapshot snapshot = new StateSnapshot(_currentConfig.config, _lastCommittedMutationOffset, _lastCommittedEventOffset, _nextLocalEventOffset);
+			StateSnapshot snapshot = new StateSnapshot(_currentConfig.config, _lastCommittedMutationOffset, _lastCommittedEventOffset);
 			next.accept(snapshot);
 		}
 	}
@@ -203,7 +203,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 				SyncProgress newConfigProgress = _configsPendingCommit.remove(completed.globalOffset);
 				if (null != newConfigProgress) {
 					// We need a new snapshot since we just changed state in this command, above.
-					StateSnapshot newSnapshot = new StateSnapshot(_currentConfig.config, _lastCommittedMutationOffset, _lastCommittedEventOffset, _nextLocalEventOffset);
+					StateSnapshot newSnapshot = new StateSnapshot(_currentConfig.config, _lastCommittedMutationOffset, _lastCommittedEventOffset);
 					// This requires that we broadcast the config update to the connected clients and listeners.
 					_clientManager.mainBroadcastConfigUpdate(newSnapshot, newConfigProgress.config);
 					// We change the config but this would render the snapshot stale so we do it last, to make that clear.
