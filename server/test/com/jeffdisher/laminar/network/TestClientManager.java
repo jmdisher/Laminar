@@ -187,7 +187,7 @@ public class TestClientManager {
 	/**
 	 * Used for simple cases where the external test only wants to verify that a call was made when expected.
 	 */
-	private static class LatchedCallbacks implements IClientManagerBackgroundCallbacks {
+	private static class LatchedCallbacks implements IClientManagerCallbacks {
 		private final ClusterConfig _dummyConfig = ClusterConfig.configFromEntries(new ClusterConfig.ConfigEntry[] {new ClusterConfig.ConfigEntry(new InetSocketAddress(5), new InetSocketAddress(6))});
 		private Consumer<StateSnapshot> _pendingConsumer;
 		public ClientMessage recentMessage;
@@ -206,7 +206,7 @@ public class TestClientManager {
 		}
 
 		@Override
-		public synchronized void ioEnqueueCommandForMainThread(Consumer<StateSnapshot> command) {
+		public synchronized void ioEnqueueClientCommandForMainThread(Consumer<StateSnapshot> command) {
 			while (null != _pendingConsumer) {
 				try {
 					this.wait();

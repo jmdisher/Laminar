@@ -7,11 +7,8 @@ import com.jeffdisher.laminar.state.StateSnapshot;
 import com.jeffdisher.laminar.types.ClientMessage;
 
 
-/**
- * Callbacks sent by the ClientManager, on its thread (implementor will need to hand these off to a different thread).
- */
-public interface IClientManagerBackgroundCallbacks {
-	void ioEnqueueCommandForMainThread(Consumer<StateSnapshot> command);
+public interface IClientManagerCallbacks {
+	void ioEnqueueClientCommandForMainThread(Consumer<StateSnapshot> command);
 
 	/**
 	 * Called to provide a message which arrived from a normal client.

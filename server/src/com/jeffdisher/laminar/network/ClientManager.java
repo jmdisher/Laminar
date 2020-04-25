@@ -37,7 +37,7 @@ import com.jeffdisher.laminar.utils.Assert;
 public class ClientManager implements INetworkManagerBackgroundCallbacks {
 	private final Thread _mainThread;
 	private final NetworkManager _networkManager;
-	private final IClientManagerBackgroundCallbacks _callbacks;
+	private final IClientManagerCallbacks _callbacks;
 
 	// Note that we track clients in 1 of 3 different states:  new, normal, listener.
 	// -new clients just connected and haven't yet sent a message so we don't know what they are doing.
@@ -57,7 +57,7 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 	private final Map<Long, List<NetworkManager.NodeToken>> _listenersWaitingOnLocalOffset;
 	private final Map<Long, List<ReconnectingClientState>> _reconnectingClientsByGlobalOffset;
 
-	public ClientManager(ServerSocketChannel serverSocket, IClientManagerBackgroundCallbacks callbacks) throws IOException {
+	public ClientManager(ServerSocketChannel serverSocket, IClientManagerCallbacks callbacks) throws IOException {
 		_mainThread = Thread.currentThread();
 		// This is really just a high-level wrapper over the common NetworkManager so create that here.
 		_networkManager = NetworkManager.bidirectional(serverSocket, this);
@@ -272,7 +272,7 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 	@Override
 	public void nodeDidConnect(NetworkManager.NodeToken node) {
 		// We handle this here but we ask to handle this on a main thread callback.
-		_callbacks.ioEnqueueCommandForMainThread(new Consumer<StateSnapshot>() {
+		_callbacks.ioEnqueueClientCommandForMainThread(new Consumer<StateSnapshot>() {
 			@Override
 			public void accept(StateSnapshot arg) {
 				Assert.assertTrue(Thread.currentThread() == _mainThread);
@@ -284,7 +284,7 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 	@Override
 	public void nodeDidDisconnect(NetworkManager.NodeToken node, IOException cause) {
 		// We handle this here but we ask to handle this on a main thread callback.
-		_callbacks.ioEnqueueCommandForMainThread(new Consumer<StateSnapshot>() {
+		_callbacks.ioEnqueueClientCommandForMainThread(new Consumer<StateSnapshot>() {
 			@Override
 			public void accept(StateSnapshot arg) {
 				Assert.assertTrue(Thread.currentThread() == _mainThread);
@@ -318,7 +318,7 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 		// Called on IO thread.
 		Assert.assertTrue(Thread.currentThread() != _mainThread);
 		// We handle this here but we ask to handle this on a main thread callback.
-		_callbacks.ioEnqueueCommandForMainThread(new Consumer<StateSnapshot>() {
+		_callbacks.ioEnqueueClientCommandForMainThread(new Consumer<StateSnapshot>() {
 			@Override
 			public void accept(StateSnapshot arg) {
 				Assert.assertTrue(Thread.currentThread() == _mainThread);
@@ -364,7 +364,7 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 	public void nodeReadReady(NetworkManager.NodeToken node) {
 		// Called on an IO thread.
 		Assert.assertTrue(Thread.currentThread() != _mainThread);
-		_callbacks.ioEnqueueCommandForMainThread(new Consumer<StateSnapshot>() {
+		_callbacks.ioEnqueueClientCommandForMainThread(new Consumer<StateSnapshot>() {
 			@Override
 			public void accept(StateSnapshot arg) {
 				Assert.assertTrue(Thread.currentThread() == _mainThread);

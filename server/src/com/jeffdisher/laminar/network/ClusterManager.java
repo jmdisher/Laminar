@@ -2,100 +2,74 @@ package com.jeffdisher.laminar.network;
 
 import java.io.IOException;
 import java.nio.channels.ServerSocketChannel;
-import java.util.WeakHashMap;
 
 import com.jeffdisher.laminar.components.INetworkManagerBackgroundCallbacks;
 import com.jeffdisher.laminar.components.NetworkManager;
+import com.jeffdisher.laminar.utils.Assert;
 
 
 /**
  * Top-level abstraction of a collection of network connections related to interactions with other servers.
- * All interactions with it are asynchronous and CALLBACKS ARE SENT IN A BACKGROUND THREAD.  This means that they must
- * only hand-off to the coordination thread, outside.
- * This component is just a thin layer on top of NetworkManager to provide/filter information to create a high-level
- * interface specific to inter-node communication within the cluster.
  */
 public class ClusterManager implements INetworkManagerBackgroundCallbacks {
+	private final Thread _mainThread;
 	private final NetworkManager _networkManager;
-	private final IClusterManagerBackgroundCallbacks _callbacks;
-	private final WeakHashMap<NetworkManager.NodeToken, ClusterNode> _nodes;
+	private final IClusterManagerCallbacks _callbacks;
 
-	public ClusterManager(ServerSocketChannel serverSocket, IClusterManagerBackgroundCallbacks callbacks) throws IOException {
+	public ClusterManager(ServerSocketChannel serverSocket, IClusterManagerCallbacks callbacks) throws IOException {
+		_mainThread = Thread.currentThread();
 		// This is really just a high-level wrapper over the common NetworkManager so create that here.
 		_networkManager = NetworkManager.bidirectional(serverSocket, this);
 		_callbacks = callbacks;
-		_nodes = new WeakHashMap<>();
 	}
 
 	public void startAndWaitForReady() {
+		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		_networkManager.startAndWaitForReady("ClusterManager");
 	}
 
 	public void stopAndWaitForTermination() {
+		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		_networkManager.stopAndWaitForTermination();
 	}
 
 	@Override
 	public void nodeDidConnect(NetworkManager.NodeToken node) {
-		ClusterNode realNode = _translateNode(node);
-		_callbacks.peerConnectedToUs(realNode);
+		Assert.assertTrue(Thread.currentThread() != _mainThread);
+		Assert.unimplemented("TODO: implement");
 	}
 
 	@Override
 	public void nodeDidDisconnect(NetworkManager.NodeToken node, IOException cause) {
-		ClusterNode realNode = _translateNode(node);
-		_callbacks.peerDisconnectedFromUs(realNode);
+		Assert.assertTrue(Thread.currentThread() != _mainThread);
+		Assert.unimplemented("TODO: implement");
 	}
 
 	@Override
 	public void nodeWriteReady(NetworkManager.NodeToken node) {
-		ClusterNode realNode = _translateNode(node);
-		_callbacks.peerWriteReady(realNode);
+		Assert.assertTrue(Thread.currentThread() != _mainThread);
+		Assert.unimplemented("TODO: implement");
 	}
 
 	@Override
 	public void nodeReadReady(NetworkManager.NodeToken node) {
-		ClusterNode realNode = _translateNode(node);
-		_callbacks.peerReadReady(realNode);
+		Assert.assertTrue(Thread.currentThread() != _mainThread);
+		Assert.unimplemented("TODO: implement");
 	}
 
 	@Override
 	public void outboundNodeConnected(NetworkManager.NodeToken node) {
-		ClusterNode realNode = _translateNode(node);
-		_callbacks.weConnectedToPeer(realNode);
-	}
+		Assert.assertTrue(Thread.currentThread() != _mainThread);
+		Assert.unimplemented("TODO: implement");	}
 
 	@Override
 	public void outboundNodeDisconnected(NetworkManager.NodeToken node, IOException cause) {
-		ClusterNode realNode = _translateNode(node);
-		_callbacks.weDisconnectedFromPeer(realNode);
+		Assert.assertTrue(Thread.currentThread() != _mainThread);
+		Assert.unimplemented("TODO: implement");
 	}
 
 	@Override
 	public void outboundNodeConnectionFailed(NetworkManager.NodeToken node, IOException cause) {
-		ClusterNode realNode = _translateNode(node);
-		_callbacks.weFailedToConnectToPeer(realNode);
-	}
-
-
-	private ClusterNode _translateNode(NetworkManager.NodeToken node) {
-		ClusterNode realNode = _nodes.get(node);
-		if (null == realNode) {
-			realNode = new ClusterNode(node);
-			_nodes.put(node, realNode);
-		}
-		return realNode;
-	}
-
-
-	/**
-	 * This is just a wrapper of the NodeToken to ensure that callers maintain the distinction between different kinds
-	 * of network connections.
-	 */
-	public static class ClusterNode {
-		private final NetworkManager.NodeToken token;
-		private ClusterNode(NetworkManager.NodeToken token) {
-			this.token = token;
-		}
-	}
+		Assert.assertTrue(Thread.currentThread() != _mainThread);
+		Assert.unimplemented("TODO: implement");	}
 }

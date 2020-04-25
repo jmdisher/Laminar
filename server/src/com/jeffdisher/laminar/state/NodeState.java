@@ -11,8 +11,8 @@ import com.jeffdisher.laminar.disk.DiskManager;
 import com.jeffdisher.laminar.disk.IDiskManagerBackgroundCallbacks;
 import com.jeffdisher.laminar.network.ClientManager;
 import com.jeffdisher.laminar.network.ClusterManager;
-import com.jeffdisher.laminar.network.IClientManagerBackgroundCallbacks;
-import com.jeffdisher.laminar.network.IClusterManagerBackgroundCallbacks;
+import com.jeffdisher.laminar.network.IClientManagerCallbacks;
+import com.jeffdisher.laminar.network.IClusterManagerCallbacks;
 import com.jeffdisher.laminar.types.ClientMessage;
 import com.jeffdisher.laminar.types.ClientMessagePayload_Temp;
 import com.jeffdisher.laminar.types.ClientMessagePayload_UpdateConfig;
@@ -31,7 +31,7 @@ import com.jeffdisher.laminar.utils.Assert;
  * Note that the thread which creates this instance is defined as "main" and MUST be the same thread which calls
  * runUntilShutdown() and MUST NOT call any background* methods (this is to verify re-entrance safety, etc).
  */
-public class NodeState implements IClientManagerBackgroundCallbacks, IClusterManagerBackgroundCallbacks, IDiskManagerBackgroundCallbacks, IConsoleManagerBackgroundCallbacks {
+public class NodeState implements IClientManagerCallbacks, IClusterManagerCallbacks, IDiskManagerBackgroundCallbacks, IConsoleManagerBackgroundCallbacks {
 	// We keep the main thread for asserting no re-entrance bugs or invalid interface uses.
 	private final Thread _mainThread;
 
@@ -134,9 +134,9 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 		_consoleManager = consoleManager;
 	}
 
-	// <IClientManagerBackgroundCallbacks>
+	// <IClientManagerCallbacks>
 	@Override
-	public void ioEnqueueCommandForMainThread(Consumer<StateSnapshot> command) {
+	public void ioEnqueueClientCommandForMainThread(Consumer<StateSnapshot> command) {
 		// Called on an IO thread.
 		Assert.assertTrue(Thread.currentThread() != _mainThread);
 		_commandQueue.put(command);
@@ -166,51 +166,16 @@ public class NodeState implements IClientManagerBackgroundCallbacks, IClusterMan
 		Assert.assertTrue(nextLocalEventToFetch > 0L);
 		_diskManager.fetchEvent(nextLocalEventToFetch);
 	}
-	// </IClientManagerBackgroundCallbacks>
+	// </IClientManagerCallbacks>
 
-	// <IClusterManagerBackgroundCallbacks>
+	// <IClusterManagerCallbacks>
 	@Override
-	public void peerConnectedToUs(ClusterManager.ClusterNode realNode) {
-		// TODO Auto-generated method stub
-		
+	public void ioEnqueueClusterCommandForMainThread(Consumer<StateSnapshot> command) {
+		// Called on an IO thread.
+		Assert.assertTrue(Thread.currentThread() != _mainThread);
+		_commandQueue.put(command);
 	}
-
-	@Override
-	public void peerDisconnectedFromUs(ClusterManager.ClusterNode realNode) {
-		// TODO Auto-generated method stub
-		
-	}
-
-	@Override
-	public void peerWriteReady(ClusterManager.ClusterNode realNode) {
-		// TODO Auto-generated method stub
-		
-	}
-
-	@Override
-	public void peerReadReady(ClusterManager.ClusterNode realNode) {
-		// TODO Auto-generated method stub
-		
-	}
-
-	@Override
-	public void weConnectedToPeer(ClusterManager.ClusterNode realNode) {
-		// TODO Auto-generated method stub
-		
-	}
-
-	@Override
-	public void weDisconnectedFromPeer(ClusterManager.ClusterNode realNode) {
-		// TODO Auto-generated method stub
-		
-	}
-
-	@Override
-	public void weFailedToConnectToPeer(ClusterManager.ClusterNode realNode) {
-		// TODO Auto-generated method stub
-		
-	}
-	// </IClusterManagerBackgroundCallbacks>
+	// </IClusterManagerCallbacks>
 
 	// <IDiskManagerBackgroundCallbacks>
 	@Override
