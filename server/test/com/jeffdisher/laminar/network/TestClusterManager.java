@@ -24,6 +24,7 @@ public class TestClusterManager {
 		ClusterManager manager = new ClusterManager(socket, callbacks);
 		manager.startAndWaitForReady();
 		manager.stopAndWaitForTermination();
+		socket.close();
 	}
 
 	/**

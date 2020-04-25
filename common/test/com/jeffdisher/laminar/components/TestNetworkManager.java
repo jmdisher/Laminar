@@ -23,6 +23,7 @@ public class TestNetworkManager {
 		NetworkManager server = NetworkManager.bidirectional(socket, callbacks);
 		server.startAndWaitForReady("test");
 		server.stopAndWaitForTermination();
+		socket.close();
 	}
 
 	@Test
@@ -55,6 +56,7 @@ public class TestNetworkManager {
 			Assert.assertArrayEquals(new byte[] {0x0,  0x1, 0x6}, response);
 		}
 		server.stopAndWaitForTermination();
+		socket.close();
 	}
 
 	@Test
@@ -104,6 +106,9 @@ public class TestNetworkManager {
 		serverLogic.stopAndWait();
 		clientLogic1.stopAndWait();
 		clientLogic2.stopAndWait();
+		serverSocket.close();
+		clientSocket1.close();
+		clientSocket2.close();
 	}
 
 	@Test
@@ -145,6 +150,7 @@ public class TestNetworkManager {
 		
 		client.stopAndWaitForTermination();
 		server.stopAndWaitForTermination();
+		socket.close();
 	}
 
 	@Test
@@ -170,11 +176,13 @@ public class TestNetworkManager {
 		InetSocketAddress address2 = new InetSocketAddress(port2);
 		
 		LatchedCallbacks callbacks1 = new LatchedCallbacks();
-		NetworkManager server1 = NetworkManager.bidirectional(createSocket(port1), callbacks1);
+		ServerSocketChannel serverSocket1 = createSocket(port1);
+		NetworkManager server1 = NetworkManager.bidirectional(serverSocket1, callbacks1);
 		server1.startAndWaitForReady("test-server-1");
 		
 		LatchedCallbacks callbacks2 = new LatchedCallbacks();
-		NetworkManager server2 = NetworkManager.bidirectional(createSocket(port2), callbacks2);
+		ServerSocketChannel serverSocket2 = createSocket(port2);
+		NetworkManager server2 = NetworkManager.bidirectional(serverSocket2, callbacks2);
 		server2.startAndWaitForReady("test-server-2");
 		
 		// Create 1 connection from each, to the other, and capture the incoming tokens.
@@ -217,6 +225,8 @@ public class TestNetworkManager {
 		
 		server1.stopAndWaitForTermination();
 		server2.stopAndWaitForTermination();
+		serverSocket1.close();
+		serverSocket2.close();
 	}
 
 

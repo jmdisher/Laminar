@@ -69,6 +69,7 @@ public class TestClientManager {
 		Assert.assertArrayEquals(((ClientMessagePayload_Temp)message.payload).contents, ((ClientMessagePayload_Temp)output.payload).contents);
 		
 		manager.stopAndWaitForTermination();
+		socket.close();
 	}
 
 	@Test
@@ -105,6 +106,7 @@ public class TestClientManager {
 		Assert.assertNull(noNode);
 		
 		manager.stopAndWaitForTermination();
+		socket.close();
 	}
 
 	@Test
@@ -149,6 +151,7 @@ public class TestClientManager {
 		Assert.assertNull(noNode);
 		
 		manager.stopAndWaitForTermination();
+		socket.close();
 	}
 
 
