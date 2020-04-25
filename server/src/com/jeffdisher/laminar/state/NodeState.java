@@ -41,9 +41,9 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 	private ConsoleManager _consoleManager;
 
 	private RaftState _currentState;
-	private ClusterConfig _currentConfig;
+	private SyncProgress _currentConfig;
 	// This map is usually empty but contains any ClusterConfigs which haven't yet committed (meaning they are part of joint consensus).
-	private final Map<Long, ClusterConfig> _configsPendingCommit;
+	private final Map<Long, SyncProgress> _configsPendingCommit;
 	// The next global mutation offset to assign to an incoming message.
 	private long _nextGlobalMutationOffset;
 	// Note that "local" event offsets will eventually need to be per-topic.
@@ -60,7 +60,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		_mainThread = Thread.currentThread();
 		// Note that we default to the LEADER state (typically forced into a FOLLOWER state when an existing LEADER attempts to append entries).
 		_currentState = RaftState.LEADER;
-		_currentConfig = initialConfig;
+		_currentConfig = new SyncProgress(initialConfig);
 		_configsPendingCommit = new HashMap<>();
 		// Global offsets are 1-indexed so the first one is 1L.
 		_nextGlobalMutationOffset = 1L;
@@ -88,7 +88,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 			// Poll for the next work item.
 			Consumer<StateSnapshot> next = _commandQueue.blockingGet();
 			// Create the state snapshot and pass it to the consumer.
-			StateSnapshot snapshot = new StateSnapshot(_currentConfig, _lastCommittedMutationOffset, _lastCommittedEventOffset, _nextLocalEventOffset);
+			StateSnapshot snapshot = new StateSnapshot(_currentConfig.config, _lastCommittedMutationOffset, _lastCommittedEventOffset, _nextLocalEventOffset);
 			next.accept(snapshot);
 		}
 	}
@@ -200,14 +200,14 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 				_clientManager.mainProcessingPendingMessageCommits(completed.globalOffset);
 				
 				// Check to make sure we weren't waiting for this to commit to change config.
-				ClusterConfig newConfig = _configsPendingCommit.remove(completed.globalOffset);
-				if (null != newConfig) {
+				SyncProgress newConfigProgress = _configsPendingCommit.remove(completed.globalOffset);
+				if (null != newConfigProgress) {
 					// We need a new snapshot since we just changed state in this command, above.
-					StateSnapshot newSnapshot = new StateSnapshot(_currentConfig, _lastCommittedMutationOffset, _lastCommittedEventOffset, _nextLocalEventOffset);
+					StateSnapshot newSnapshot = new StateSnapshot(_currentConfig.config, _lastCommittedMutationOffset, _lastCommittedEventOffset, _nextLocalEventOffset);
 					// This requires that we broadcast the config update to the connected clients and listeners.
-					_clientManager.mainBroadcastConfigUpdate(newSnapshot, newConfig);
+					_clientManager.mainBroadcastConfigUpdate(newSnapshot, newConfigProgress.config);
 					// We change the config but this would render the snapshot stale so we do it last, to make that clear.
-					_currentConfig = newConfig;
+					_currentConfig = newConfigProgress;
 				}
 			}});
 	}
@@ -286,14 +286,12 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 			byte[] contents = ((ClientMessagePayload_Temp)incoming.payload).contents;
 			System.out.println("GOT TEMP FROM " + clientId + " nonce " + incoming.nonce + " data " + contents[0]);
 			// Create the MutationRecord and EventRecord.
-			long globalOffset = _nextGlobalMutationOffset++;
+			long globalOffset = _getAndUpdateNextMutationOffset();
 			long localOffset = _nextLocalEventOffset++;
 			MutationRecord mutation = MutationRecord.generateRecord(MutationRecordType.TEMP, globalOffset, clientId, incoming.nonce, contents);
 			EventRecord event = EventRecord.generateRecord(EventRecordType.TEMP, globalOffset, localOffset, clientId, incoming.nonce, contents);
 			// Now request that both of these records be committed.
-			_diskManager.commitEvent(event);
-			// TODO:  We probably want to lock-step the mutation on the event commit since we will be able to detect the broken data, that way, and replay it.
-			_diskManager.commitMutation(mutation);
+			_enqueueForCommit(mutation, event);
 			globalMutationOffsetOfAcceptedMessage = globalOffset;
 		}
 			break;
@@ -302,14 +300,12 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 			byte[] contents = ((ClientMessagePayload_Temp)incoming.payload).contents;
 			System.out.println("GOT POISON FROM " + clientId + ": \"" + new String(contents) + "\" (nonce " + incoming.nonce + ")");
 			// Create the MutationRecord and EventRecord.
-			long globalOffset = _nextGlobalMutationOffset++;
+			long globalOffset = _getAndUpdateNextMutationOffset();
 			long localOffset = _nextLocalEventOffset++;
 			MutationRecord mutation = MutationRecord.generateRecord(MutationRecordType.TEMP, globalOffset, clientId, incoming.nonce, contents);
 			EventRecord event = EventRecord.generateRecord(EventRecordType.TEMP, globalOffset, localOffset, clientId, incoming.nonce, contents);
 			// Now request that both of these records be committed.
-			_diskManager.commitEvent(event);
-			// TODO:  We probably want to lock-step the mutation on the event commit since we will be able to detect the broken data, that way, and replay it.
-			_diskManager.commitMutation(mutation);
+			_enqueueForCommit(mutation, event);
 			
 			// Now that we did the usual work, disconnect everyone.
 			_clientManager.mainDisconnectAllClientsAndListeners();
@@ -324,14 +320,14 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 			System.out.println("GOT UPDATE_CONFIG FROM " + clientId + ": " + newConfig.entries.length + " entries (nonce " + incoming.nonce + ")");
 			
 			// Create the MutationRecord but NO EventRecord.
-			long globalOffset = _nextGlobalMutationOffset++;
+			long globalOffset = _getAndUpdateNextMutationOffset();
 			MutationRecord mutation = MutationRecord.generateRecord(MutationRecordType.UPDATE_CONFIG, globalOffset, clientId, incoming.nonce, newConfig.serialize());
 			
 			// Store the config in our map relating to joint consensus, waiting until this commits and becomes active.
-			_configsPendingCommit.put(globalOffset, newConfig);
+			_configsPendingCommit.put(globalOffset, new SyncProgress(newConfig));
 			
 			// Request that the MutationRecord be committed (no EventRecord).
-			_diskManager.commitMutation(mutation);
+			_enqueueForCommit(mutation, null);
 			globalMutationOffsetOfAcceptedMessage = globalOffset;
 		}
 			break;
@@ -340,5 +336,23 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 			break;
 		}
 		return globalMutationOffsetOfAcceptedMessage;
+	}
+
+	private void _enqueueForCommit(MutationRecord mutation, EventRecord event) {
+		// Commit, immediately.
+		_commitAndUpdateBias(mutation, event);
+	}
+
+	private long _getAndUpdateNextMutationOffset() {
+		return _nextGlobalMutationOffset++;
+	}
+
+	private void _commitAndUpdateBias(MutationRecord mutation, EventRecord event) {
+		// (note that the event is null for certain meta-messages like UPDATE_CONFIG).
+		if (null != event) {
+			_diskManager.commitEvent(event);
+		}
+		// TODO:  We probably want to lock-step the mutation on the event commit since we will be able to detect the broken data, that way, and replay it.
+		_diskManager.commitMutation(mutation);
 	}
 }
