@@ -1,7 +1,9 @@
 package com.jeffdisher.laminar.state;
 
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.Consumer;
 
@@ -41,6 +43,8 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 	private ConsoleManager _consoleManager;
 
 	private RaftState _currentState;
+	// We keep an image of ourself as a downstream peer state to avoid special-cases in looking at clusters so we will need to update it with latest mutation offset as soon as we assign one.
+	private final DownstreamPeerState _selfState;
 	private SyncProgress _currentConfig;
 	// This map is usually empty but contains any ClusterConfigs which haven't yet committed (meaning they are part of joint consensus).
 	private final Map<Long, SyncProgress> _configsPendingCommit;
@@ -60,8 +64,12 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		_mainThread = Thread.currentThread();
 		// Note that we default to the LEADER state (typically forced into a FOLLOWER state when an existing LEADER attempts to append entries).
 		_currentState = RaftState.LEADER;
-		_currentConfig = new SyncProgress(initialConfig);
+		
+		_selfState = new DownstreamPeerState();
+		_selfState.isConnectionUp = true;
+		_currentConfig = new SyncProgress(initialConfig, Collections.singleton(_selfState));
 		_configsPendingCommit = new HashMap<>();
+		
 		// Global offsets are 1-indexed so the first one is 1L.
 		_nextGlobalMutationOffset = 1L;
 		_nextLocalEventOffset = 1L;
@@ -324,7 +332,10 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 			MutationRecord mutation = MutationRecord.generateRecord(MutationRecordType.UPDATE_CONFIG, globalOffset, clientId, incoming.nonce, newConfig.serialize());
 			
 			// Store the config in our map relating to joint consensus, waiting until this commits and becomes active.
-			_configsPendingCommit.put(globalOffset, new SyncProgress(newConfig));
+			// NOTE:  Temporarily, we will ignore this new config for purposes of the union of downstream peers since we need the completed outgoing connection support for that.
+			// (this means that we fake the consensus only mattering to _selfState).
+			Set<DownstreamPeerState> nodesInConfig = Collections.singleton(_selfState);
+			_configsPendingCommit.put(globalOffset, new SyncProgress(newConfig, nodesInConfig));
 			
 			// Request that the MutationRecord be committed (no EventRecord).
 			_enqueueForCommit(mutation, null);
@@ -340,10 +351,23 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 
 	private void _enqueueForCommit(MutationRecord mutation, EventRecord event) {
 		// Commit, immediately.
+		// NOTE:  Until outgoing connection support and real use of the consensus is implemented, we will verify that we are always in agreement with ourself using that mechanism.
+		long consensusOffset = _checkConsesusMutationOffset();
+		Assert.assertTrue(mutation.globalOffset == consensusOffset);
 		_commitAndUpdateBias(mutation, event);
 	}
 
+	private long _checkConsesusMutationOffset() {
+		// We want the minimum offset of all active configs.
+		long offset = _currentConfig.checkCurrentProgress();
+		for (SyncProgress pending : _configsPendingCommit.values()) {
+			offset = Math.min(offset, pending.checkCurrentProgress());
+		}
+		return offset;
+	}
+
 	private long _getAndUpdateNextMutationOffset() {
+		_selfState.lastMutationOffsetReceived = _nextGlobalMutationOffset;
 		return _nextGlobalMutationOffset++;
 	}
 
