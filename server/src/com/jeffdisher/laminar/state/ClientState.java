@@ -19,6 +19,12 @@ public class ClientState {
 	public final UUID clientId;
 	public final NetworkManager.NodeToken token;
 	public long nextNonce;
+	/**
+	 * The list of nonces committed while the reconnect was in-process.  Ideally, we would just cache the outgoing
+	 * messages but they will contain a stale globalCommitOffset for the server (since it typically will have advanced
+	 * since then) so we just record the nonces and synthesize the commits when the reconnect is done.
+	 */
+	public List<Long> noncesCommittedDuringReconnect;
 
 	/**
 	 * Creates a new normal client state with the given clientId and nextNonce.  The nonce is typically set to 1L but

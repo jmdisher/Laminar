@@ -162,10 +162,15 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 		ClientCommitTuple tuple = _pendingMessageCommits.remove(globalOffsetOfCommit);
 		// This was requested for the specific tuple so it can't be missing.
 		Assert.assertTrue(null != tuple);
-		// Create the commit from the information in the tuple.
-		ClientResponse commit = ClientResponse.committed(tuple.clientNonce, globalOffsetOfCommit);
-		// Send the commit to the client.
-		_mainEnqueueMessageToClient(tuple.clientId, commit);
+		
+		if (_normalClientsById.containsKey(tuple.clientId) && (null != _normalClientsById.get(tuple.clientId).noncesCommittedDuringReconnect)) {
+			// Note that we can't allow already in-flight messages from before the reconnect to go to the client before the reconnect is done so enqueue nonces to commit here and we will synthesize them, later.
+			_normalClientsById.get(tuple.clientId).noncesCommittedDuringReconnect.add(tuple.clientNonce);
+		} else {
+			// Create the commit from the information in the tuple and send it to the client.
+			ClientResponse commit = ClientResponse.committed(tuple.clientNonce, globalOffsetOfCommit);
+			_mainEnqueueMessageToClient(tuple.clientId, commit);
+		}
 	}
 
 	public void mainReplayMutationForReconnects(StateSnapshot snapshot, MutationRecord record) {
@@ -184,7 +189,10 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 				// Send the received and commit messages (in the future, we probably want to skip received in reconnect but this avoids a special-case, for now).
 				// (we don't want to confuse the client on a potential double-reconnect so fake our latest commit as this one, so they at least make progress)
 				_mainEnqueueMessageToClient(state.clientId, ClientResponse.received(record.clientNonce, record.globalOffset));
-				_mainEnqueueMessageToClient(state.clientId, ClientResponse.committed(record.clientNonce, record.globalOffset));
+				// Note that we won't send the committed if we think that we already have one pending for this reconnect (it already committed while the reconnect was in progress).
+				if (record.globalOffset <= state.finalCommitToReturnInReconnect) {
+					_mainEnqueueMessageToClient(state.clientId, ClientResponse.committed(record.clientNonce, record.globalOffset));
+				}
 				// Make sure to bump ahead the expected nonce, if this is later.
 				if (record.clientNonce >= state.earliestNextNonce) {
 					state.earliestNextNonce = record.clientNonce + 1;
@@ -437,11 +445,13 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 			// _normalClients map because the network interaction state machine is exactly the same.
 			// (set a bogus nonce to fail if we receive anything before we finish and set it).
 			ClientState state = _createAndInstallNewClient(client, reconnect.clientId, -1L);
+			// This is a reconnecting client so set the buffer for old messages trying to commit back to this client.
+			state.noncesCommittedDuringReconnect = new LinkedList<>();
 			
 			// We still use a specific ReconnectionState to track the progress of the sync.
 			// We don't add them to our map of _normalClients until they finish syncing so we put them into our map of
 			// _reconnectingClients and _reconnectingClientsByGlobalOffset.
-			ReconnectingClientState reconnectState = new ReconnectingClientState(client, reconnect.clientId, incoming.nonce, reconnect.lastCommitGlobalOffset, lastReceivedMutationOffset);
+			ReconnectingClientState reconnectState = new ReconnectingClientState(client, reconnect.clientId, incoming.nonce, reconnect.lastCommitGlobalOffset, lastReceivedMutationOffset, lastCommittedMutationOffset);
 			boolean doesRequireFetch = false;
 			boolean isPerformingReconnect = false;
 			long offsetToFetch = reconnectState.lastCheckedGlobalOffset + 1;
@@ -593,5 +603,13 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 		// Make sure we still have our sentinel nonce value and replace it.
 		Assert.assertTrue(-1L == state.nextNonce);
 		state.nextNonce = earliestNextNonce;
+		
+		// Synthesize commit messages for any nonces which accumulated during reconnect.
+		Assert.assertTrue(null != state.noncesCommittedDuringReconnect);
+		for (long nonceToCommit : state.noncesCommittedDuringReconnect) {
+			ClientResponse synthesizedCommit = ClientResponse.committed(nonceToCommit, lastCommittedMutationOffset);
+			_mainEnqueueMessageToClient(state.clientId, synthesizedCommit);
+		}
+		state.noncesCommittedDuringReconnect = null;
 	}
 }

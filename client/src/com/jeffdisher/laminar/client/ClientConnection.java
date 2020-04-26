@@ -329,6 +329,10 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 						long lowestPossibleNextNonce = _inFlightMessages.isEmpty()
 								? _nextNonce
 								: _inFlightMessages.firstKey();
+						// Unset any received flags in these since we don't actually know if the other side received them (not in the fail-over case, at least) and rely on the reconnect to fix state.
+						for (ClientResult result : _inFlightMessages.values()) {
+							result.clearReceived();
+						}
 						handshakeToSend = ClientMessage.reconnect(lowestPossibleNextNonce, _clientId, _lastCommitGlobalOffset);
 					} else {
 						// New connection.
@@ -395,9 +399,22 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 			// Whether this was null (start-up) or something else (if the config change mid-run), we want to set this as our active config in case of a reconnect.
 			_currentClusterConfig = currentConfig;
 			
+			// We need to sift through the in-flight messages now that the reconnect is done:
+			// -those RECEIVED can stay in in-flight
+			// -those which have not been received need to be pushed back into the front of outgoing to be re-sent.
+			
 			// We rely on the SortedMap returning a sorted collection of values whose iterator returns them in ascending order of corresponding keys.
-			_outgoingMessages.addAll(0, _inFlightMessages.values());
-			_inFlightMessages.clear();
+			boolean stillSearching = true;
+			while (!_inFlightMessages.isEmpty() && stillSearching) {
+				long keyToCheck = _inFlightMessages.lastKey();
+				ClientResult backResult = _inFlightMessages.get(keyToCheck);
+				if (backResult.isReceived()) {
+					stillSearching = false;
+				} else {
+					_inFlightMessages.remove(keyToCheck);
+					_outgoingMessages.add(0, backResult);
+				}
+			}
 			clientBecameReady = true;
 			break;
 		case RECEIVED:
