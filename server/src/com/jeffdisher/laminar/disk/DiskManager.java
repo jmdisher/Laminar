@@ -168,10 +168,14 @@ public class DiskManager {
 				// (this is because it would not be able to evict the element until the caller was "done" with it)
 				// In the future, this layer almost definitely will have a cache but it will be an LRU physical cache which
 				// is not required to satisfy all requests.
+				// These indexing errors should be intercepted at a higher level, before we get to the disk.
+				Assert.assertTrue((int)work.fetchMutation < _committedMutationVirtualDisk.size());
 				MutationRecord record = _committedMutationVirtualDisk.get((int)work.fetchMutation);
 				_callbackTarget.mutationWasFetched(record);
 			}
 			else if (0L != work.fetchEvent) {
+				// These indexing errors should be intercepted at a higher level, before we get to the disk.
+				Assert.assertTrue((int)work.fetchEvent < _committedEventVirtualDisk.size());
 				EventRecord record = _committedEventVirtualDisk.get((int)work.fetchEvent);
 				_callbackTarget.eventWasFetched(record);
 			}
