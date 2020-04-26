@@ -85,4 +85,9 @@ public class ClientResult {
 	public boolean isReceived() {
 		return _received;
 	}
+
+	@Override
+	public String toString() {
+		return "ClientResult(message=" + this.message + ", R=" + _received + ", C=" + _committed + ")";
+	}
 }

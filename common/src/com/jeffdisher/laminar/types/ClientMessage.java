@@ -173,4 +173,9 @@ public class ClientMessage {
 		payload.serializeInto(buffer);
 		return serialized;
 	}
+
+	@Override
+	public String toString() {
+		return "ClientMessage(type=" + this.type+ ", nonce=" + this.nonce + ", payload=" + this.payload + ")";
+	}
 }
