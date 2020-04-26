@@ -191,8 +191,8 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 		List<ReconnectingClientState> reconnecting = _reconnectingClientsByGlobalOffset.remove(record.globalOffset);
 		// Currently, only clients can request this, so this list must exist.
 		Assert.assertTrue(null != reconnecting);
-		List<ReconnectingClientState> stillWaiting = new LinkedList<>();
 		List<ReconnectingClientState> moveToNext = new LinkedList<>();
+		long nextMutationOffset = record.globalOffset + 1;
 		for (ReconnectingClientState state : reconnecting) {
 			// Make sure that the UUID matches.
 			// (in the future, we might want this to aggressively check if the client is still connected to short-circuit multiple-reconnects from the same client)
@@ -205,37 +205,29 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 				if (record.clientNonce >= state.earliestNextNonce) {
 					state.earliestNextNonce = record.clientNonce + 1;
 				}
-				// Check if there is still more to see for this record (we might have run off the end of the latest commit when we started).
-				long nextMutationOffset = record.globalOffset + 1;
-				if (nextMutationOffset <= state.finalGlobalOffsetToCheck) {
-					moveToNext.add(state);
-				} else {
-					// We are done processing this reconnecting client so set it ready.
-					_mainEnqueueMessageToClient(state.token, ClientResponse.clientReady(state.earliestNextNonce, snapshot.lastCommittedMutationOffset, snapshot.currentConfig));
-					// Make sure that this nonce is still the -1 value we used initially and then update it.
-					ClientState clientState = _normalClients.get(state.token);
-					Assert.assertTrue(-1L == clientState.nextNonce);
-					clientState.nextNonce = state.earliestNextNonce;
-				}
-			} else {
-				stillWaiting.add(state);
 			}
-		}
-		// See if there was anyone in the new list.
-		if (!stillWaiting.isEmpty()) {
-			_reconnectingClientsByGlobalOffset.put(record.globalOffset, stillWaiting);
+			// Check if there is still more to see for this record (we might have run off the end of the latest commit when we started).
+			if (nextMutationOffset <= state.finalGlobalOffsetToCheck) {
+				moveToNext.add(state);
+			} else {
+				// We are done processing this reconnecting client so set it ready.
+				_mainEnqueueMessageToClient(state.token, ClientResponse.clientReady(state.earliestNextNonce, snapshot.lastCommittedMutationOffset, snapshot.currentConfig));
+				// Make sure that this nonce is still the -1 value we used initially and then update it.
+				ClientState clientState = _normalClients.get(state.token);
+				Assert.assertTrue(-1L == clientState.nextNonce);
+				clientState.nextNonce = state.earliestNextNonce;
+			}
 		}
 		// Only move this list to the next offset if we still have more and there were any.
 		if (!moveToNext.isEmpty()) {
-			long nextMutationOffset = record.globalOffset + 1;
 			List<ReconnectingClientState> nextList = _reconnectingClientsByGlobalOffset.get(nextMutationOffset);
 			if (null != nextList) {
 				nextList.addAll(moveToNext);
 			} else {
 				_reconnectingClientsByGlobalOffset.put(nextMutationOffset, moveToNext);
+				// We added somethod new for this offset so fetch it.
+				_callbacks.mainRequestMutationFetch(nextMutationOffset);
 			}
-			// Request that this be loaded.
-			_callbacks.mainRequestMutationFetch(nextMutationOffset);
 		}
 	}
 
@@ -473,19 +465,22 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 			// _reconnectingClients and _reconnectingClientsByGlobalOffset.
 			ReconnectingClientState reconnectState = new ReconnectingClientState(client, reconnect.clientId, incoming.nonce, reconnect.lastCommitGlobalOffset, lastReceivedMutationOffset);
 			boolean doesRequireFetch = false;
+			boolean isPerformingReconnect = false;
 			long offsetToFetch = reconnectState.lastCheckedGlobalOffset + 1;
 			if (reconnectState.lastCheckedGlobalOffset < reconnectState.finalGlobalOffsetToCheck) {
 				List<ReconnectingClientState> reconnectingList = _reconnectingClientsByGlobalOffset.get(offsetToFetch);
 				if (null == reconnectingList) {
 					reconnectingList = new LinkedList<>();
 					_reconnectingClientsByGlobalOffset.put(offsetToFetch, reconnectingList);
+					// If we added an element to this map, request the mutation (otherwise, it is already coming).
+					doesRequireFetch = true;
 				}
 				reconnectingList.add(reconnectState);
-				doesRequireFetch = true;
+				isPerformingReconnect = true;
 			}
 			if (doesRequireFetch) {
 				mutationOffsetToFetch = offsetToFetch;
-			} else {
+			} else if (!isPerformingReconnect) {
 				// This is a degenerate case where they didn't miss anything so just send them the client ready.
 				ClientResponse ready = ClientResponse.clientReady(reconnectState.earliestNextNonce, lastCommittedMutationOffset, currentConfig);
 				System.out.println("Note:  RECONNECT degenerate case: " + state.clientId + " with nonce " + incoming.nonce);
