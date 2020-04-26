@@ -11,6 +11,8 @@ import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.SocketChannel;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 
@@ -481,6 +483,8 @@ public class TestLaminar {
 		CaptureListener beforeListener = new CaptureListener(address, 4);
 		beforeListener.setName("Before");
 		beforeListener.start();
+		UUID configSender = null;
+		long configNonce = 0L;
 		
 		// Create 2 clients.
 		ClientConnection client1 = ClientConnection.open(address);
@@ -497,6 +501,9 @@ public class TestLaminar {
 			ClusterConfig.ConfigEntry originalEntry = originalConfig.entries[0];
 			ClusterConfig.ConfigEntry newEntry = new ClusterConfig.ConfigEntry(new InetSocketAddress(originalEntry.cluster.getAddress(), originalEntry.cluster.getPort() + 1000), new InetSocketAddress(originalEntry.client.getAddress(), originalEntry.client.getPort() + 1000));
 			ClusterConfig newConfig = ClusterConfig.configFromEntries(new ClusterConfig.ConfigEntry[] {originalEntry, newEntry});
+			configSender = client1.getClientId();
+			configNonce = client1.getNextNonce();
+			beforeListener.skipNonceCheck(configSender, configNonce);
 			ClientResult updateResult = client1.sendUpdateConfig(newConfig);
 			updateResult.waitForReceived();
 			
@@ -545,6 +552,7 @@ public class TestLaminar {
 		// Start a listener after the client is done.
 		CaptureListener afterListener = new CaptureListener(address, 4);
 		afterListener.setName("After");
+		afterListener.skipNonceCheck(configSender, configNonce);
 		afterListener.start();
 		
 		// Wait for the listeners to consume all 4 real events we sent (the commit of the config update doesn't go to a topic so they won't see that), and then verify they got the update as out-of-band.
@@ -623,12 +631,26 @@ public class TestLaminar {
 		private final ListenerConnection _listener;
 		private final EventRecord[] _captured;
 		private int _totalEventsConsumed;
+		private UUID _configSender;
+		private long _configNonce;
 		
 		public CaptureListener(InetSocketAddress address, int messagesToCapture) throws IOException {
 			_listener = ListenerConnection.open(address, 0L);
 			_captured = new EventRecord[messagesToCapture];
 		}
 		
+		/**
+		 * Used in tests which update the config, since that is a special-case in the nonce order verification since
+		 * configs still increment the client nonce but do not generate events which listeners can receive.
+		 * 
+		 * @param clientId The UUID of the client which updated the config.
+		 * @param nonce The nonce of the config update message.
+		 */
+		public void skipNonceCheck(UUID clientId, long nonce) {
+			_configSender = clientId;
+			_configNonce = nonce;
+		}
+
 		public ClusterConfig getCurrentConfig() {
 			return _listener.getCurrentConfig();
 		}
@@ -648,9 +670,20 @@ public class TestLaminar {
 		@Override
 		public void run() {
 			try {
+				Map<UUID, Long> expectedNonceByClient = new HashMap<>();
 				for (int i = 0; i < _captured.length; ++i) {
 					_captured[i] = _listener.pollForNextEvent();
 					Assert.assertEquals(i + 1, _captured[i].localOffset);
+					long expectedNonce = 1L;
+					if (expectedNonceByClient.containsKey(_captured[i].clientId)) {
+						expectedNonce = expectedNonceByClient.get(_captured[i].clientId);
+					}
+					if (_captured[i].clientId.equals(_configSender) && (expectedNonce == _configNonce)) {
+						// We don't see config changes in the listener event stream so skip over this one.
+						expectedNonce += 1L;
+					}
+					Assert.assertEquals(expectedNonce, _captured[i].clientNonce);
+					expectedNonceByClient.put(_captured[i].clientId, expectedNonce + 1L);
 					synchronized (this) {
 						_totalEventsConsumed += 1;
 						this.notifyAll();

@@ -380,7 +380,7 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 					
 					// We will ignore the nonce on a new connection.
 					// Note that the client maps are modified by this helper.
-					long mutationOffsetToFetch = _mainTransitionNewConnectionState(node, incoming, arg.lastCommittedMutationOffset, arg.currentConfig, arg.lastCommittedEventOffset);
+					long mutationOffsetToFetch = _mainTransitionNewConnectionState(node, incoming, arg.lastReceivedMutationOffset, arg.lastCommittedMutationOffset, arg.currentConfig, arg.lastCommittedEventOffset);
 					if (-1 != mutationOffsetToFetch) {
 						_callbacks.mainRequestMutationFetch(mutationOffsetToFetch);
 					}
@@ -429,7 +429,7 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 	}
 
 
-	private long _mainTransitionNewConnectionState(NetworkManager.NodeToken client, ClientMessage incoming, long lastCommittedMutationOffset, ClusterConfig currentConfig, long lastCommittedEventOffset) {
+	private long _mainTransitionNewConnectionState(NetworkManager.NodeToken client, ClientMessage incoming, long lastReceivedMutationOffset, long lastCommittedMutationOffset, ClusterConfig currentConfig, long lastCommittedEventOffset) {
 		long mutationOffsetToFetch = -1;
 		// Main thread helper.
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
@@ -471,7 +471,7 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 			// We still use a specific ReconnectionState to track the progress of the sync.
 			// We don't add them to our map of _normalClients until they finish syncing so we put them into our map of
 			// _reconnectingClients and _reconnectingClientsByGlobalOffset.
-			ReconnectingClientState reconnectState = new ReconnectingClientState(client, reconnect.clientId, incoming.nonce, reconnect.lastCommitGlobalOffset, lastCommittedMutationOffset);
+			ReconnectingClientState reconnectState = new ReconnectingClientState(client, reconnect.clientId, incoming.nonce, reconnect.lastCommitGlobalOffset, lastReceivedMutationOffset);
 			boolean doesRequireFetch = false;
 			long offsetToFetch = reconnectState.lastCheckedGlobalOffset + 1;
 			if (reconnectState.lastCheckedGlobalOffset < reconnectState.finalGlobalOffsetToCheck) {

@@ -75,7 +75,7 @@ public class TestClusterManager {
 			while (null == _command) {
 				this.wait();
 			}
-			_command.accept(new StateSnapshot(null, 0L, 0L));
+			_command.accept(new StateSnapshot(null, 0L, 0L, 0L));
 			_command = null;
 			this.notifyAll();
 		}

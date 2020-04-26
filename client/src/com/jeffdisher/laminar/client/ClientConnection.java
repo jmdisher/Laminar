@@ -165,6 +165,13 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 	}
 
 	/**
+	 * @return The nonce that this client will assign to the next message it sends.
+	 */
+	public long getNextNonce() {
+		return _nextNonce;
+	}
+
+	/**
 	 * Allows the client code to check the current state of the connection to the cluster.
 	 * This is required since the connection normally tries to reestablish itself, when a connection drops or can't be
 	 * created.

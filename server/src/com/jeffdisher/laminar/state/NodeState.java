@@ -120,7 +120,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 			// Poll for the next work item.
 			Consumer<StateSnapshot> next = _commandQueue.blockingGet();
 			// Create the state snapshot and pass it to the consumer.
-			StateSnapshot snapshot = new StateSnapshot(_currentConfig.config, _lastCommittedMutationOffset, _lastCommittedEventOffset);
+			StateSnapshot snapshot = new StateSnapshot(_currentConfig.config, _lastCommittedMutationOffset, _nextGlobalMutationOffset-1, _lastCommittedEventOffset);
 			next.accept(snapshot);
 		}
 	}
@@ -240,7 +240,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 				SyncProgress newConfigProgress = _configsPendingCommit.remove(completed.globalOffset);
 				if (null != newConfigProgress) {
 					// We need a new snapshot since we just changed state in this command, above.
-					StateSnapshot newSnapshot = new StateSnapshot(_currentConfig.config, _lastCommittedMutationOffset, _lastCommittedEventOffset);
+					StateSnapshot newSnapshot = new StateSnapshot(_currentConfig.config, _lastCommittedMutationOffset, _nextGlobalMutationOffset-1, _lastCommittedEventOffset);
 					// This requires that we broadcast the config update to the connected clients and listeners.
 					_clientManager.mainBroadcastConfigUpdate(newSnapshot, newConfigProgress.config);
 					// We change the config but this would render the snapshot stale so we do it last, to make that clear.
@@ -336,7 +336,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		case POISON: {
 			// This is just for initial testing:  send the received, log it, and send the commit.
 			byte[] contents = ((ClientMessagePayload_Temp)incoming.payload).contents;
-			System.out.println("GOT POISON FROM " + clientId + ": \"" + new String(contents) + "\" (nonce " + incoming.nonce + ")");
+			System.out.println("GOT POISON FROM " + clientId + " nonce " + incoming.nonce + " data " + contents[0]);
 			// Create the MutationRecord and EventRecord.
 			long globalOffset = _getAndUpdateNextMutationOffset();
 			long localOffset = _nextLocalEventOffset++;

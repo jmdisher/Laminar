@@ -242,7 +242,7 @@ public class TestClientManager {
 			while (null == _pendingConsumer) {
 				this.wait();
 			}
-			_pendingConsumer.accept(new StateSnapshot(_dummyConfig, 0L, 0L));
+			_pendingConsumer.accept(new StateSnapshot(_dummyConfig, 0L, 0L, 0L));
 			_pendingConsumer = null;
 			this.notifyAll();
 		}
