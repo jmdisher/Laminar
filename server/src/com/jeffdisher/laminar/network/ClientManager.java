@@ -86,19 +86,6 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 	}
 
 	/**
-	 * Forces the connection to the given node to be disconnected.
-	 * It is worth noting that some callbacks related to this node may still arrive if they came in asynchronously.
-	 * 
-	 * @param node The incoming connection to close.
-	 */
-	public void disconnectClient(NetworkManager.NodeToken node) {
-		_disconnectClient(node);
-		_newClients.remove(node);
-		_normalClients.remove(node);
-		_listenerClients.remove(node);
-	}
-
-	/**
 	 * Reads and deserializes a message waiting from the given client.
 	 * Note that this asserts that there was a message waiting.
 	 * 
@@ -119,15 +106,15 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 		// Called on main thread.
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		for (NetworkManager.NodeToken node : _newClients) {
-			_disconnectClient(node);
+			_networkManager.closeConnection(node);
 		}
 		_newClients.clear();
 		for (NetworkManager.NodeToken node : _normalClients.keySet()) {
-			_disconnectClient(node);
+			_networkManager.closeConnection(node);
 		}
 		_normalClients.clear();
 		for (NetworkManager.NodeToken node : _listenerClients.keySet()) {
-			_disconnectClient(node);
+			_networkManager.closeConnection(node);
 		}
 		_listenerClients.clear();
 	}
@@ -163,12 +150,6 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 				}
 			}
 		}
-	}
-
-	public void mainStorePendingMessageCommit(NetworkManager.NodeToken client, long globalOffsetOfCommit, long clientNonce) {
-		// Called on main thread.
-		Assert.assertTrue(Thread.currentThread() == _mainThread);
-		_pendingMessageCommits.put(globalOffsetOfCommit, new ClientCommitTuple(client, clientNonce));
 	}
 
 	public void mainProcessingPendingMessageCommits(long globalOffsetOfCommit) {
@@ -388,7 +369,7 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 						ClientResponse ack = ClientResponse.received(incoming.nonce, arg.lastCommittedMutationOffset);
 						_mainEnqueueMessageToClient(node, ack);
 						// Set up the client to be notified that the message committed once the MutationRecord is durable.
-						mainStorePendingMessageCommit(node, globalMutationOffsetOfAcceptedMessage, incoming.nonce);
+						_pendingMessageCommits.put(globalMutationOffsetOfAcceptedMessage, new ClientCommitTuple(node, incoming.nonce));
 					} else {
 						_mainEnqueueMessageToClient(node, ClientResponse.error(incoming.nonce, arg.lastCommittedMutationOffset));
 					}
@@ -434,10 +415,7 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 			// correct and any other options are supported.
 			UUID clientId = ((ClientMessagePayload_Handshake)incoming.payload).clientId;
 			// Create the new state and change the connection state in the maps.
-			ClientState state = new ClientState(clientId, 1L);
-			boolean didRemove = _newClients.remove(client);
-			Assert.assertTrue(didRemove);
-			_normalClients.put(client, state);
+			ClientState state = _createAndInstallNewClient(client, clientId, 1L);
 			
 			// The HANDSHAKE is special so we return CLIENT_READY instead of a RECEIVED and COMMIT (which is otherwise all we send).
 			ClientResponse ready = ClientResponse.clientReady(state.nextNonce, lastCommittedMutationOffset, currentConfig);
@@ -455,10 +433,7 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 			// Note that, even though we haven't sent them the CLIENT_READY message yet, we still add this to our
 			// _normalClients map because the network interaction state machine is exactly the same.
 			// (set a bogus nonce to fail if we receive anything before we finish and set it).
-			ClientState state = new ClientState(reconnect.clientId, -1L);
-			boolean didRemove = _newClients.remove(client);
-			Assert.assertTrue(didRemove);
-			_normalClients.put(client, state);
+			ClientState state = _createAndInstallNewClient(client, reconnect.clientId, -1L);
 			
 			// We still use a specific ReconnectionState to track the progress of the sync.
 			// We don't add them to our map of _normalClients until they finish syncing so we put them into our map of
@@ -596,7 +571,11 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 		Assert.assertTrue(didSend);
 	}
 
-	private void _disconnectClient(NetworkManager.NodeToken node) {
-		_networkManager.closeConnection(node);
+	private ClientState _createAndInstallNewClient(NetworkManager.NodeToken client, UUID clientId, long nextNonce) {
+		ClientState state = new ClientState(clientId, nextNonce);
+		boolean didRemove = _newClients.remove(client);
+		Assert.assertTrue(didRemove);
+		_normalClients.put(client, state);
+		return state;
 	}
 }
