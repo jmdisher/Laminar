@@ -194,12 +194,8 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 			if (nextMutationOffset <= state.finalGlobalOffsetToCheck) {
 				moveToNext.add(state);
 			} else {
-				// We are done processing this reconnecting client so set it ready.
-				_mainEnqueueMessageToClient(state.clientId, ClientResponse.clientReady(state.earliestNextNonce, snapshot.lastCommittedMutationOffset, snapshot.currentConfig));
-				// Make sure that this nonce is still the -1 value we used initially and then update it.
-				ClientState clientState = _normalClientsById.get(state.clientId);
-				Assert.assertTrue(-1L == clientState.nextNonce);
-				clientState.nextNonce = state.earliestNextNonce;
+				// Reconnect has concluded so make this client normal.
+				_mainConcludeReconnectPhase(_normalClientsById.get(state.clientId), state.earliestNextNonce, snapshot.lastCommittedMutationOffset, snapshot.currentConfig);
 			}
 		}
 		// Only move this list to the next offset if we still have more and there were any.
@@ -464,12 +460,8 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 				mutationOffsetToFetch = offsetToFetch;
 			} else if (!isPerformingReconnect) {
 				// This is a degenerate case where they didn't miss anything so just send them the client ready.
-				ClientResponse ready = ClientResponse.clientReady(reconnectState.earliestNextNonce, lastCommittedMutationOffset, currentConfig);
 				System.out.println("Note:  RECONNECT degenerate case: " + state.clientId + " with nonce " + incoming.nonce);
-				_mainEnqueueMessageToClient(state.clientId, ready);
-				// Since we aren't processing anything, just over-write our reserved value, immediately (assert just for balance).
-				Assert.assertTrue(-1L == state.nextNonce);
-				state.nextNonce = reconnectState.earliestNextNonce;
+				_mainConcludeReconnectPhase(state, reconnectState.earliestNextNonce, lastCommittedMutationOffset, currentConfig);
 			}
 			break;
 		}
@@ -591,5 +583,15 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 		_normalClientsByToken.put(client, state);
 		_normalClientsById.put(clientId, state);
 		return state;
+	}
+
+	private void _mainConcludeReconnectPhase(ClientState state, long earliestNextNonce, long lastCommittedMutationOffset, ClusterConfig currentConfig) {
+		// Send them the client ready.
+		ClientResponse ready = ClientResponse.clientReady(earliestNextNonce, lastCommittedMutationOffset, currentConfig);
+		_mainEnqueueMessageToClient(state.clientId, ready);
+		
+		// Make sure we still have our sentinel nonce value and replace it.
+		Assert.assertTrue(-1L == state.nextNonce);
+		state.nextNonce = earliestNextNonce;
 	}
 }
