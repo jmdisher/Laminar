@@ -496,6 +496,7 @@ public class TestLaminar {
 			
 			// Send config update (wait for received to ensure one client got the initial config).
 			result1_1.waitForReceived();
+			result2_1.waitForReceived();
 			ClusterConfig originalConfig = client1.getCurrentConfig();
 			Assert.assertEquals(1, originalConfig.entries.length);
 			ClusterConfig.ConfigEntry originalEntry = originalConfig.entries[0];
