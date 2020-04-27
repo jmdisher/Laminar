@@ -202,11 +202,11 @@ public class TestLaminar {
 		try (ClientConnection client = ClientConnection.open(address)) {
 			// Even though we aren't yet connected, the client can technically still attempt to send messages.
 			client.sendTemp(message);
-			// HACK:  Wait for the connection to fail.
-			Thread.sleep(500);
+
+			// Block until the connection observes failure.
 			boolean didThrow = false;
 			try {
-				client.checkConnection();
+				client.waitForConnectionOrFailure();
 			} catch (IOException e) {
 				didThrow = true;
 			}
@@ -220,11 +220,11 @@ public class TestLaminar {
 		CountDownLatch latch = new CountDownLatch(1);
 		ListenerThread listener = new ListenerThread(address, null, latch);
 		listener.start();
-		// HACK:  Wait for the connection to fail.
-		Thread.sleep(500);
+		
+		// Block until the connection observes failure.
 		boolean didThrow = false;
 		try {
-			listener.listener.checkConnection();
+			listener.listener.waitForConnectionOrFailure();
 		} catch (IOException e) {
 			didThrow = true;
 		}
@@ -256,16 +256,12 @@ public class TestLaminar {
 		// It should always be harmless to wait for connection over and over so just do that here.
 		try (ClientConnection client = ClientConnection.open(new InetSocketAddress(InetAddress.getLocalHost(), 2002))) {
 			client.waitForConnection();
-			Assert.assertTrue(client.checkConnection());
 			ClientResult result = client.sendTemp("Hello World!".getBytes());
-			client.waitForConnection();
-			Assert.assertTrue(client.checkConnection());
+			client.waitForConnectionOrFailure();
 			result.waitForReceived();
 			client.waitForConnection();
-			Assert.assertTrue(client.checkConnection());
 			result.waitForCommitted();
-			client.waitForConnection();
-			Assert.assertTrue(client.checkConnection());
+			client.waitForConnectionOrFailure();
 		}
 		feeder.println("stop");
 		runner.join();

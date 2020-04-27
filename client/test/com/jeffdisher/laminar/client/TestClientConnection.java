@@ -120,7 +120,6 @@ public class TestClientConnection {
 			
 			// Now, wait for that to reach the client.
 			connection.waitForConnection();
-			Assert.assertTrue(connection.checkConnection());
 		}
 		socket.close();
 	}

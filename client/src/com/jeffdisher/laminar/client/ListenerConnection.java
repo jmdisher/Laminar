@@ -135,16 +135,18 @@ public class ListenerConnection implements Closeable, INetworkManagerBackgroundC
 	 * In some cases of listener misconfiguration, a total cluster failure, or a serious network problem, this may
 	 * result in listeners running silent when they actually should be seeing new events.  This method exists to allow a
 	 * view into that state.
+	 * This method will block until the connection is up or until there is a connection error.
 	 * 
-	 * @return True if the listener believes that a network connection exists.  False if a reconnection is in progress.
 	 * @throws IOException If the connection or reconnection has been failing, this is the last error observed.
+	 * @throws InterruptedException The user interrupted this thread before it had an answer.
 	 */
-	public synchronized boolean checkConnection() throws IOException {
-		boolean isNetworkUp = (null != _connection);
-		if (!isNetworkUp && (null != _mostRecentConnectionFailure)) {
+	public synchronized void waitForConnectionOrFailure() throws IOException, InterruptedException {
+		while ((null == _connection) && (null == _mostRecentConnectionFailure)) {
+			this.wait();
+		}
+		if (null != _mostRecentConnectionFailure) {
 			throw _mostRecentConnectionFailure;
 		}
-		return isNetworkUp;
 	}
 
 	/**

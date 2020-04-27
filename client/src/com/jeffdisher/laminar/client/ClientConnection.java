@@ -123,6 +123,13 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 		_backgroundThread.start();
 	}
 
+	/**
+	 * Blocks until the connection to the cluster is successfully established.
+	 * This differs from waitForConnectionOrFailure() by ignoring errors which it would through, only returning in case
+	 * of a connection or throwing in case of an interruption of the thread by user code.
+	 * 
+	 * @throws InterruptedException The user interrupted this thread before it had an answer.
+	 */
 	public synchronized void waitForConnection() throws InterruptedException {
 		// Wait until we get a CLIENT_READY message on this connection.
 		while (!_isClientReady) {
@@ -177,19 +184,20 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 	 * created.
 	 * In some cases of client misconfiguration, a total cluster failure, or a serious network problem, this may result
 	 * in clients freezing for non-obvious reasons.  This method exists to allow a view into that state.
-	 * This is similar to waitForConnection() but it blocks while this method would just return false (or throw).  The
-	 * main distinction is in use-case:  waitForConnection() is useful for bootstrapping client logic while this is more
-	 * about an informational health check if something is wrong at the network level.
+	 * This method will block until the connection is up or until there is a connection error.
+	 * The key difference between this and waitForConnection(), above, is that this will throw an error if a failure was
+	 * observed and the connection isn't up while that method will ignore failures and block until the connection is up.
 	 * 
-	 * @return True if the client believes that a network connection exists.  False if a reconnection is in progress.
 	 * @throws IOException If the connection or reconnection has been failing, this is the last error observed.
+	 * @throws InterruptedException The user interrupted this thread before it had an answer.
 	 */
-	public synchronized boolean checkConnection() throws IOException {
-		boolean isNetworkUp = _isClientReady;
-		if (!isNetworkUp && (null != _mostRecentConnectionFailure)) {
+	public synchronized void waitForConnectionOrFailure() throws IOException, InterruptedException {
+		while (!_isClientReady && (null == _mostRecentConnectionFailure)) {
+			this.wait();
+		}
+		if (!_isClientReady) {
 			throw _mostRecentConnectionFailure;
 		}
-		return isNetworkUp;
 	}
 
 	/**
