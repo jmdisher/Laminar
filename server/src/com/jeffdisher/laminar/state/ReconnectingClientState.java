@@ -25,7 +25,18 @@ public class ReconnectingClientState {
 	 * done.
 	 */
 	public long earliestNextNonce;
-	public long lastCheckedGlobalOffset;
+	/**
+	 * Initially set as the last commit the client knew that the server had committed, prior to its disconnect.
+	 * This means that the client knows no reconnect data can be from this mutation or earlier, so the server will start
+	 * looking for mutations which match this clientId with the mutation after this.
+	 */
+	public final long lastCheckedGlobalOffset;
+	/**
+	 * Initialized to the lastCheckedGlobalOffset (since we know that the client received this value) but then updated
+	 * as COMMITTED messages are sent to the client, as the reconnect progresses.  This is updated to the offset of a
+	 * mutation's offset if its COMMITTED is to be sent, but the value is left as is for RECEIVED-only responses.
+	 */
+	public long mostRecentlySentServerCommitOffset;
 	/**
 	 * This represents the end-point the server will use to determine when the reconnect is done.  This is initialized
 	 * to the most recent mutation it has received.
@@ -46,6 +57,7 @@ public class ReconnectingClientState {
 		this.clientId = clientId;
 		this.earliestNextNonce = earliestNextNonce;
 		this.lastCheckedGlobalOffset = lastCheckedGlobalOffset;
+		this.mostRecentlySentServerCommitOffset = lastCheckedGlobalOffset;
 		this.finalGlobalOffsetToCheck = finalGlobalOffsetToCheck;
 		this.finalCommitToReturnInReconnect = finalCommitToReturnInReconnect;
 	}

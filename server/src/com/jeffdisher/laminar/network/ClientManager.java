@@ -186,12 +186,21 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 			// Make sure that the UUID matches.
 			// (in the future, we might want this to aggressively check if the client is still connected to short-circuit multiple-reconnects from the same client)
 			if (record.clientId.equals(state.clientId)) {
-				// Send the received and commit messages (in the future, we probably want to skip received in reconnect but this avoids a special-case, for now).
-				// (we don't want to confuse the client on a potential double-reconnect so fake our latest commit as this one, so they at least make progress)
-				_mainEnqueueMessageToClient(state.clientId, ClientResponse.received(record.clientNonce, record.globalOffset));
+				// We need to synthesize a RECEIVED message and potentially a COMMITTED message for this mutation so the client knows not to re-send it and what they should wait for.
+				// We want to make sure that we provide a lastCommitGlobalOffset which allows the client to make progress in case of a reconnect _during_ an in-progress reconnect.
+				// If we kept sending their original lastCheckedGlobalOffset, then the second reconnect would have already remove in-flight messages they weill be told about.
+				// If we always sent the offset of the specific record, then we would tell it we have committed messages which may not have committed.
+				// Thus, we use mostRecentlySentServerCommitOffset and update it for every COMMITTED message we send.
+				
 				// Note that we won't send the committed if we think that we already have one pending for this reconnect (it already committed while the reconnect was in progress).
-				if (record.globalOffset <= state.finalCommitToReturnInReconnect) {
-					_mainEnqueueMessageToClient(state.clientId, ClientResponse.committed(record.clientNonce, record.globalOffset));
+				boolean willSendCommitted = (record.globalOffset <= state.finalCommitToReturnInReconnect);
+				long lastCommitGlobalOffset = willSendCommitted
+						? record.globalOffset
+						: state.mostRecentlySentServerCommitOffset;
+				_mainEnqueueMessageToClient(state.clientId, ClientResponse.received(record.clientNonce, lastCommitGlobalOffset));
+				if (willSendCommitted) {
+					_mainEnqueueMessageToClient(state.clientId, ClientResponse.committed(record.clientNonce, lastCommitGlobalOffset));
+					state.mostRecentlySentServerCommitOffset = lastCommitGlobalOffset;
 				}
 				// Make sure to bump ahead the expected nonce, if this is later.
 				if (record.clientNonce >= state.earliestNextNonce) {
@@ -455,7 +464,7 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 			boolean doesRequireFetch = false;
 			boolean isPerformingReconnect = false;
 			long offsetToFetch = reconnectState.lastCheckedGlobalOffset + 1;
-			if (reconnectState.lastCheckedGlobalOffset < reconnectState.finalGlobalOffsetToCheck) {
+			if (offsetToFetch <= reconnectState.finalGlobalOffsetToCheck) {
 				List<ReconnectingClientState> reconnectingList = _reconnectingClientsByGlobalOffset.get(offsetToFetch);
 				if (null == reconnectingList) {
 					reconnectingList = new LinkedList<>();
