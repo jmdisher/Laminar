@@ -79,7 +79,7 @@ public class TestLaminar {
 	}
 
 	@Test
-	public void testNormalRun() {
+	public void testNormalRun() throws Throwable {
 		// We just want this to start everything and then shut down.
 		System.setIn(new ByteArrayInputStream("stop\n".getBytes()));
 		Laminar.main(new String[] {"--client", "2000", "--cluster", "2001", "--data", "/tmp/laminar"});
@@ -134,7 +134,7 @@ public class TestLaminar {
 		
 		// Start a listener before the client begins.
 		CountDownLatch beforeLatch = new CountDownLatch(1);
-		ListenerThread beforeListener = new ListenerThread(address, message, beforeLatch);
+		ListenerThread beforeListener = new ListenerThread("testSimpleClientAndListeners-before", address, message, beforeLatch);
 		beforeListener.start();
 		
 		try (ClientConnection client = ClientConnection.open(address)) {
@@ -145,7 +145,7 @@ public class TestLaminar {
 		
 		// Start a listener after the client begins.
 		CountDownLatch afterLatch = new CountDownLatch(1);
-		ListenerThread afterListener = new ListenerThread(address, message, afterLatch);
+		ListenerThread afterListener = new ListenerThread("testSimpleClientAndListeners-after", address, message, afterLatch);
 		afterListener.start();
 		
 		// Verify that both listeners received the event.
@@ -218,7 +218,7 @@ public class TestLaminar {
 	public void testListenerFailedConnection() throws Throwable {
 		InetSocketAddress address = new InetSocketAddress(InetAddress.getLocalHost(), 2002);
 		CountDownLatch latch = new CountDownLatch(1);
-		ListenerThread listener = new ListenerThread(address, null, latch);
+		ListenerThread listener = new ListenerThread("testListenerFailedConnection", address, null, latch);
 		listener.start();
 		
 		// Block until the connection observes failure.
@@ -516,8 +516,9 @@ public class TestLaminar {
 			Thread.sleep(100L);
 			Assert.assertEquals(originalConfig.entries.length, client1.getCurrentConfig().entries.length);
 			Assert.assertEquals(originalConfig.entries.length, client2.getCurrentConfig().entries.length);
-			Assert.assertEquals(originalConfig.entries.length, beforeListener.getCurrentConfig().entries.length);
+			// Wait for the listener to receive the events before checking for the config (since it might not have received anything, yet).
 			Assert.assertEquals(2, beforeListener.waitForEventCount(2));
+			Assert.assertEquals(originalConfig.entries.length, beforeListener.getCurrentConfig().entries.length);
 			
 			// Start the other node in the config and let the test complete.
 			// WARNING:  This way of starting 2 nodes in-process is a huge hack and a better approach will need to be found, soon (mostly the way we are interacting with STDIN).
@@ -634,8 +635,9 @@ public class TestLaminar {
 			Thread.sleep(100L);
 			Assert.assertEquals(originalConfig.entries.length, client1.getCurrentConfig().entries.length);
 			Assert.assertEquals(originalConfig.entries.length, client2.getCurrentConfig().entries.length);
-			Assert.assertEquals(originalConfig.entries.length, beforeListener.getCurrentConfig().entries.length);
+			// Wait for the listener to receive the events before checking for the config (since it might not have received anything, yet).
 			Assert.assertEquals(2, beforeListener.waitForEventCount(2));
+			Assert.assertEquals(originalConfig.entries.length, beforeListener.getCurrentConfig().entries.length);
 			
 			// Start the other node in the config and let the test complete.
 			// WARNING:  This way of starting 2 nodes in-process is a huge hack and a better approach will need to be found, soon (mostly the way we are interacting with STDIN).
@@ -712,7 +714,8 @@ public class TestLaminar {
 		private final CountDownLatch _latch;
 		public final ListenerConnection listener;
 		
-		public ListenerThread(InetSocketAddress address, byte[] message, CountDownLatch latch) throws IOException {
+		public ListenerThread(String name, InetSocketAddress address, byte[] message, CountDownLatch latch) throws IOException {
+			super(name);
 			_message = message;
 			_latch = latch;
 			// We want to expose the connection so tests can request it shut down.

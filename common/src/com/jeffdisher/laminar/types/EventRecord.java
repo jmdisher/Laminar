@@ -109,4 +109,9 @@ public class EventRecord {
 		;
 		return buffer;
 	}
+
+	@Override
+	public String toString() {
+		return "Event(type=" + this.type + ", global=" + this.globalOffset + ", client=" + this.clientId + ")";
+	}
 }
