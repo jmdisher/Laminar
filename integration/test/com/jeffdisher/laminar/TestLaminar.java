@@ -1,12 +1,8 @@
 package com.jeffdisher.laminar;
 
-import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.File;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.PipedInputStream;
-import java.io.PipedOutputStream;
-import java.io.PrintStream;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
@@ -16,9 +12,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 
-import org.junit.After;
 import org.junit.Assert;
-import org.junit.Before;
 import org.junit.Test;
 
 import com.jeffdisher.laminar.client.ClientConnection;
@@ -37,42 +31,13 @@ import com.jeffdisher.laminar.types.EventRecord;
  * This will be replaced with some kind of integration test, later on.
  */
 public class TestLaminar {
-	private InputStream realIn;
-	private PrintStream realOut;
-	private PrintStream realErr;
-
-	private ByteArrayOutputStream out;
-	private ByteArrayOutputStream err;
-
-	@Before
-	public void beforeEach() {
-		this.realIn = System.in;
-		this.realOut= System.out;
-		this.realErr = System.err;
-		System.setIn(new ByteArrayInputStream(new byte[0]));
-		this.out = new ByteArrayOutputStream(1024);
-		System.setOut(new PrintStream(this.out));
-		this.err = new ByteArrayOutputStream(1024);
-		System.setErr(new PrintStream(this.err));
-	}
-
-	@After
-	public void afterEach() {
-		System.setIn(this.realIn);
-		System.setOut(this.realOut);
-		System.setErr(this.realErr);
-	}
-
 	@Test
-	public void testMissingArgs() {
-		boolean didFail = false;
-		try {
-			Laminar.main(new String[] {"missing"});
-		} catch (RuntimeException e) {
-			didFail = true;
-		}
-		Assert.assertTrue(didFail);
-		byte[] errBytes = this.err.toByteArray();
+	public void testMissingArgs() throws Throwable {
+		ByteArrayOutputStream err = new ByteArrayOutputStream(1024);
+		ServerWrapper wrapper = ServerWrapper.startedServerWrapperRaw(new String[] {"missing"}, err);
+		int exit = wrapper.stop();
+		Assert.assertEquals(1, exit);
+		byte[] errBytes = err.toByteArray();
 		String errorString = new String(errBytes);
 		Assert.assertEquals("Fatal start-up error: Missing options!  Usage:  Laminar --client <client_port> --cluster <cluster_port> --data <data_directory_path>\n"
 				, errorString);
@@ -81,55 +46,30 @@ public class TestLaminar {
 	@Test
 	public void testNormalRun() throws Throwable {
 		// We just want this to start everything and then shut down.
-		System.setIn(new ByteArrayInputStream("stop\n".getBytes()));
-		Laminar.main(new String[] {"--client", "2000", "--cluster", "2001", "--data", "/tmp/laminar"});
+		ServerWrapper wrapper = ServerWrapper.startedServerWrapper("testNormalRun", 2001, 2000, new File("/tmp/laminar"));
+		int exit = wrapper.stop();
+		Assert.assertEquals(0, exit);
 	}
 
 	@Test
 	public void testSimpleClient() throws Throwable {
 		// Here, we start up, connect a client, send one message, wait for it to commit, then shut everything down.
-		PipedOutputStream outStream = new PipedOutputStream();
-		PipedInputStream inStream = new PipedInputStream(outStream);
-		PrintStream feeder = new PrintStream(outStream);
-		System.setIn(inStream);
-		
-		// We need to run the Laminar process in a thread it will control and then sleep for startup.
-		// (this way of using sleep for timing is a hack but this will eventually be made into a more reliable integration test, probably outside of JUnit).
-		Thread runner = new Thread() {
-			@Override
-			public void run() {
-				Laminar.main(new String[] {"--client", "2002", "--cluster", "2003", "--data", "/tmp/laminar"});
-			}
-		};
-		runner.start();
+		ServerWrapper wrapper = ServerWrapper.startedServerWrapper("testSimpleClient", 2003, 2002, new File("/tmp/laminar"));
 		
 		try (ClientConnection client = ClientConnection.open(new InetSocketAddress(InetAddress.getLocalHost(), 2002))) {
 			ClientResult result = client.sendTemp("Hello World!".getBytes());
 			result.waitForReceived();
 			result.waitForCommitted();
 		}
-		feeder.println("stop");
-		runner.join();
+		Assert.assertEquals(0, wrapper.stop());
 	}
 
 	@Test
 	public void testSimpleClientAndListeners() throws Throwable {
 		byte[] message = "Hello World!".getBytes();
 		// Here, we start up, connect a client, send one message, wait for it to commit, observe listener behaviour, then shut everything down.
-		PipedOutputStream outStream = new PipedOutputStream();
-		PipedInputStream inStream = new PipedInputStream(outStream);
-		PrintStream feeder = new PrintStream(outStream);
-		System.setIn(inStream);
 		
-		// We need to run the Laminar process in a thread it will control and then sleep for startup.
-		// (this way of using sleep for timing is a hack but this will eventually be made into a more reliable integration test, probably outside of JUnit).
-		Thread runner = new Thread() {
-			@Override
-			public void run() {
-				Laminar.main(new String[] {"--client", "2002", "--cluster", "2003", "--data", "/tmp/laminar"});
-			}
-		};
-		runner.start();
+		ServerWrapper wrapper = ServerWrapper.startedServerWrapper("testSimpleClientAndListeners", 2003, 2002, new File("/tmp/laminar"));
 		InetSocketAddress address = new InetSocketAddress(InetAddress.getLocalHost(), 2002);
 		
 		// Start a listener before the client begins.
@@ -155,28 +95,15 @@ public class TestLaminar {
 		// Shut down.
 		beforeListener.join();
 		afterListener.join();
-		feeder.println("stop");
-		runner.join();
+		Assert.assertEquals(0, wrapper.stop());
 	}
 
 	@Test
 	public void testClientForceDisconnect() throws Throwable {
 		byte[] message = "Hello World!".getBytes();
 		// Here, we start up, connect a client, send one message, wait for it to commit, observe listener behaviour, then shut everything down.
-		PipedOutputStream outStream = new PipedOutputStream();
-		PipedInputStream inStream = new PipedInputStream(outStream);
-		PrintStream feeder = new PrintStream(outStream);
-		System.setIn(inStream);
 		
-		// We need to run the Laminar process in a thread it will control and then sleep for startup.
-		// (this way of using sleep for timing is a hack but this will eventually be made into a more reliable integration test, probably outside of JUnit).
-		Thread runner = new Thread() {
-			@Override
-			public void run() {
-				Laminar.main(new String[] {"--client", "2002", "--cluster", "2003", "--data", "/tmp/laminar"});
-			}
-		};
-		runner.start();
+		ServerWrapper wrapper = ServerWrapper.startedServerWrapper("testClientForceDisconnect", 2003, 2002, new File("/tmp/laminar"));
 		InetSocketAddress address = new InetSocketAddress(InetAddress.getLocalHost(), 2002);
 		
 		try (ClientConnection client = ClientConnection.open(address)) {
@@ -190,8 +117,7 @@ public class TestLaminar {
 		}
 		
 		// Shut down.
-		feeder.println("stop");
-		runner.join();
+		Assert.assertEquals(0, wrapper.stop());
 	}
 
 	@Test
@@ -238,52 +164,25 @@ public class TestLaminar {
 	@Test
 	public void testSimpleClientWaitForConnection() throws Throwable {
 		// Here, we start up, connect a client, send one message, wait for it to commit, then shut everything down.
-		PipedOutputStream outStream = new PipedOutputStream();
-		PipedInputStream inStream = new PipedInputStream(outStream);
-		PrintStream feeder = new PrintStream(outStream);
-		System.setIn(inStream);
-		
-		// We need to run the Laminar process in a thread it will control and then sleep for startup.
-		// (this way of using sleep for timing is a hack but this will eventually be made into a more reliable integration test, probably outside of JUnit).
-		Thread runner = new Thread() {
-			@Override
-			public void run() {
-				Laminar.main(new String[] {"--client", "2002", "--cluster", "2003", "--data", "/tmp/laminar"});
-			}
-		};
-		runner.start();
+		ServerWrapper wrapper = ServerWrapper.startedServerWrapper("testSimpleClientWaitForConnection", 2003, 2002, new File("/tmp/laminar"));
 		
 		// It should always be harmless to wait for connection over and over so just do that here.
 		try (ClientConnection client = ClientConnection.open(new InetSocketAddress(InetAddress.getLocalHost(), 2002))) {
 			client.waitForConnection();
 			ClientResult result = client.sendTemp("Hello World!".getBytes());
-			client.waitForConnectionOrFailure();
+			client.waitForConnection();
 			result.waitForReceived();
 			client.waitForConnection();
 			result.waitForCommitted();
-			client.waitForConnectionOrFailure();
+			client.waitForConnection();
 		}
-		feeder.println("stop");
-		runner.join();
+		Assert.assertEquals(0, wrapper.stop());
 	}
 
 	@Test
 	public void testGlobalMutationCommitOffset() throws Throwable {
 		// Start up a fake client to verify that the RECEIVED and COMMITTED responses have the expected commit offsets.
-		PipedOutputStream outStream = new PipedOutputStream();
-		PipedInputStream inStream = new PipedInputStream(outStream);
-		PrintStream feeder = new PrintStream(outStream);
-		System.setIn(inStream);
-		
-		// We need to run the Laminar process in a thread it will control and then sleep for startup.
-		// (this way of using sleep for timing is a hack but this will eventually be made into a more reliable integration test, probably outside of JUnit).
-		Thread runner = new Thread() {
-			@Override
-			public void run() {
-				Laminar.main(new String[] {"--client", "2002", "--cluster", "2003", "--data", "/tmp/laminar"});
-			}
-		};
-		runner.start();
+		ServerWrapper wrapper = ServerWrapper.startedServerWrapper("testGlobalMutationCommitOffset", 2003, 2002, new File("/tmp/laminar"));
 		
 		// HACK - wait for startup.
 		Thread.sleep(500);
@@ -308,27 +207,13 @@ public class TestLaminar {
 		Assert.assertEquals(1L, committed.lastCommitGlobalOffset);
 		
 		outbound.close();
-		feeder.println("stop");
-		runner.join();
+		Assert.assertEquals(0, wrapper.stop());
 	}
 
 	@Test
 	public void testSimulatedClientReconnect() throws Throwable {
 		// Here, we start up, connect a client, send one message, wait for it to commit, then shut everything down.
-		PipedOutputStream outStream = new PipedOutputStream();
-		PipedInputStream inStream = new PipedInputStream(outStream);
-		PrintStream feeder = new PrintStream(outStream);
-		System.setIn(inStream);
-		
-		// We need to run the Laminar process in a thread it will control and then sleep for startup.
-		// (this way of using sleep for timing is a hack but this will eventually be made into a more reliable integration test, probably outside of JUnit).
-		Thread runner = new Thread() {
-			@Override
-			public void run() {
-				Laminar.main(new String[] {"--client", "2002", "--cluster", "2003", "--data", "/tmp/laminar"});
-			}
-		};
-		runner.start();
+		ServerWrapper wrapper = ServerWrapper.startedServerWrapper("testSimulatedClientReconnect", 2003, 2002, new File("/tmp/laminar"));
 		
 		// HACK - wait for startup.
 		Thread.sleep(500);
@@ -378,27 +263,13 @@ public class TestLaminar {
 		// Since this is a commit and we sent 4 messages, we must see a final commit of 4.
 		Assert.assertEquals(4L, commit4.lastCommitGlobalOffset);
 		
-		feeder.println("stop");
-		runner.join();
+		Assert.assertEquals(0, wrapper.stop());
 	}
 
 	@Test
 	public void testSimplePoisonCase() throws Throwable {
 		// Here, we start up, connect a client, send one message, wait for it to commit, observe listener behaviour, then shut everything down.
-		PipedOutputStream outStream = new PipedOutputStream();
-		PipedInputStream inStream = new PipedInputStream(outStream);
-		PrintStream feeder = new PrintStream(outStream);
-		System.setIn(inStream);
-		
-		// We need to run the Laminar process in a thread it will control and then sleep for startup.
-		// (this way of using sleep for timing is a hack but this will eventually be made into a more reliable integration test, probably outside of JUnit).
-		Thread runner = new Thread() {
-			@Override
-			public void run() {
-				Laminar.main(new String[] {"--client", "2002", "--cluster", "2003", "--data", "/tmp/laminar"});
-			}
-		};
-		runner.start();
+		ServerWrapper wrapper = ServerWrapper.startedServerWrapper("testSimplePoisonCase", 2003, 2002, new File("/tmp/laminar"));
 		InetSocketAddress address = new InetSocketAddress(InetAddress.getLocalHost(), 2002);
 		
 		// Start a listener before the client begins.
@@ -442,8 +313,7 @@ public class TestLaminar {
 		Assert.assertNotNull(afterListener.getCurrentConfig());
 		
 		// Shut down.
-		feeder.println("stop");
-		runner.join();
+		Assert.assertEquals(0, wrapper.stop());
 	}
 
 	/**
@@ -459,20 +329,7 @@ public class TestLaminar {
 	 */
 	@Test
 	public void testConfigUpdate() throws Throwable {
-		PipedOutputStream outStream = new PipedOutputStream();
-		PipedInputStream inStream = new PipedInputStream(outStream);
-		PrintStream feeder = new PrintStream(outStream);
-		System.setIn(inStream);
-		
-		// We need to run the Laminar process in a thread it will control and then sleep for startup.
-		// (this way of using sleep for timing is a hack but this will eventually be made into a more reliable integration test, probably outside of JUnit).
-		Thread runner = new Thread() {
-			@Override
-			public void run() {
-				Laminar.main(new String[] {"--client", "2002", "--cluster", "2003", "--data", "/tmp/laminar"});
-			}
-		};
-		runner.start();
+		ServerWrapper wrapper = ServerWrapper.startedServerWrapper("testConfigUpdate-LEADER", 2003, 2002, new File("/tmp/laminar"));
 		InetSocketAddress address = new InetSocketAddress(InetAddress.getLocalHost(), 2002);
 		
 		// Start a listener before the client begins.
@@ -521,17 +378,7 @@ public class TestLaminar {
 			Assert.assertEquals(originalConfig.entries.length, beforeListener.getCurrentConfig().entries.length);
 			
 			// Start the other node in the config and let the test complete.
-			// WARNING:  This way of starting 2 nodes in-process is a huge hack and a better approach will need to be found, soon (mostly the way we are interacting with STDIN).
-			PipedInputStream inStream2 = new PipedInputStream();
-			PrintStream feeder2 = new PrintStream(new PipedOutputStream(inStream2));
-			System.setIn(inStream2);
-			Thread runner2 = new Thread() {
-				@Override
-				public void run() {
-					Laminar.main(new String[] {"--client", "3002", "--cluster", "3003", "--data", "/tmp/laminar2"});
-				}
-			};
-			runner2.start();
+			ServerWrapper wrapper2 = ServerWrapper.startedServerWrapper("testConfigUpdate-FOLLOWER", 3003, 3002, new File("/tmp/laminar2"));
 			
 			// Wait for everything to commit and check that the update we got is the same as the one we send.
 			updateResult.waitForCommitted();
@@ -539,9 +386,7 @@ public class TestLaminar {
 			result2_2.waitForCommitted();
 			Assert.assertEquals(newConfig.entries.length, client1.getCurrentConfig().entries.length);
 			Assert.assertEquals(newConfig.entries.length, client2.getCurrentConfig().entries.length);
-			feeder2.println("stop");
-			runner2.join();
-			feeder2.close();
+			Assert.assertEquals(0, wrapper2.stop());
 		} finally {
 			client1.close();
 			client2.close();
@@ -560,26 +405,12 @@ public class TestLaminar {
 		Assert.assertEquals(2, afterListener.getCurrentConfig().entries.length);
 		
 		// Shut down.
-		feeder.println("stop");
-		runner.join();
+		Assert.assertEquals(0, wrapper.stop());
 	}
 
 	@Test
 	public void testReconnectWhileWaitingForClusterCommit() throws Throwable {
-		PipedOutputStream outStream = new PipedOutputStream();
-		PipedInputStream inStream = new PipedInputStream(outStream);
-		PrintStream feeder = new PrintStream(outStream);
-		System.setIn(inStream);
-		
-		// We need to run the Laminar process in a thread it will control and then sleep for startup.
-		// (this way of using sleep for timing is a hack but this will eventually be made into a more reliable integration test, probably outside of JUnit).
-		Thread runner = new Thread() {
-			@Override
-			public void run() {
-				Laminar.main(new String[] {"--client", "2002", "--cluster", "2003", "--data", "/tmp/laminar"});
-			}
-		};
-		runner.start();
+		ServerWrapper wrapper = ServerWrapper.startedServerWrapper("testReconnectWhileWaitingForClusterCommit-LEADER", 2003, 2002, new File("/tmp/laminar"));
 		InetSocketAddress address = new InetSocketAddress(InetAddress.getLocalHost(), 2002);
 		
 		// Start a listener before the client begins.
@@ -641,16 +472,7 @@ public class TestLaminar {
 			
 			// Start the other node in the config and let the test complete.
 			// WARNING:  This way of starting 2 nodes in-process is a huge hack and a better approach will need to be found, soon (mostly the way we are interacting with STDIN).
-			PipedInputStream inStream2 = new PipedInputStream();
-			PrintStream feeder2 = new PrintStream(new PipedOutputStream(inStream2));
-			System.setIn(inStream2);
-			Thread runner2 = new Thread() {
-				@Override
-				public void run() {
-					Laminar.main(new String[] {"--client", "3002", "--cluster", "3003", "--data", "/tmp/laminar2"});
-				}
-			};
-			runner2.start();
+			ServerWrapper wrapper2 = ServerWrapper.startedServerWrapper("testReconnectWhileWaitingForClusterCommit-FOLLOWER", 3003, 3002, new File("/tmp/laminar2"));
 			
 			// Wait for everything to commit and check that the update we got is the same as the one we send.
 			updateResult.waitForCommitted();
@@ -658,9 +480,7 @@ public class TestLaminar {
 			result2_2.waitForCommitted();
 			Assert.assertEquals(newConfig.entries.length, client1.getCurrentConfig().entries.length);
 			Assert.assertEquals(newConfig.entries.length, client2.getCurrentConfig().entries.length);
-			feeder2.println("stop");
-			runner2.join();
-			feeder2.close();
+			Assert.assertEquals(0, wrapper2.stop());
 		} finally {
 			client1.close();
 			client2.close();
@@ -679,8 +499,7 @@ public class TestLaminar {
 		Assert.assertEquals(2, afterListener.getCurrentConfig().entries.length);
 		
 		// Shut down.
-		feeder.println("stop");
-		runner.join();
+		Assert.assertEquals(0, wrapper.stop());
 	}
 
 

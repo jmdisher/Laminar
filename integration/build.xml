@@ -6,6 +6,8 @@
 	<property name="global.jars.common" value="${basedir}/../jars/common.jar"/>
 	<property name="global.jars.client" value="${basedir}/../jars/client.jar"/>
 	<property name="global.jars.server" value="${basedir}/../jars/server.jar"/>
+	<property name="global.products.Laminar" value="${basedir}/../jars/Laminar.jar"/>
+	<property name="global.products.LaminarClientLib" value="${basedir}/../jars/Laminar-clientlib.jar"/>
 
 	<property name="local.src" value="${basedir}/src"/>
 	<property name="local.test" value="${basedir}/test"/>
@@ -43,7 +45,18 @@
 	</target>
 
 	<target name="build_src">
-		<echo message="Integration target has no source - only tests" />
+		<echo message="Integration target has no source - just packages Laminar for integration testing" />
+		<jar destfile="${global.products.Laminar}">
+			<zipfileset src="${global.jars.common}"/>
+			<zipfileset src="${global.jars.server}"/>
+			<manifest>
+				<attribute name="Main-Class" value="com.jeffdisher.laminar.Laminar"/>
+			</manifest>
+		</jar>
+		<jar destfile="${global.products.LaminarClientLib}">
+			<zipfileset src="${global.jars.common}"/>
+			<zipfileset src="${global.jars.client}"/>
+		</jar>
 	</target>
 
 	<target name="build_test">
@@ -76,11 +89,10 @@
 			<classpath>
 				<pathelement location="${global.lib}/junit-4.12.jar"/>
 				<pathelement location="${global.lib}/hamcrest-all-1.3.jar"/>
-				<pathelement location="${global.jars.common}"/>
-				<pathelement location="${global.jars.client}"/>
-				<pathelement location="${global.jars.server}"/>
+				<pathelement location="${global.products.LaminarClientLib}"/>
 				<pathelement location="${local.build.test}" />
 			</classpath>
+			<env key="WRAPPER_SERVER_JAR" value="${global.products.Laminar}" />
 			<formatter type="plain" usefile="false" />
 			<batchtest todir="${build.testreports}">
 				<fileset dir="${local.test}" includes="**/${test}.java" />

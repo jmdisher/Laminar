@@ -60,10 +60,7 @@
 		</javac>
 		<jar destfile="${global.jars.server}">
 			<fileset dir="${local.build.src}"/>
-			<manifest>
-				<attribute name="Main-Class" value="com.jeffdisher.laminar.Laminar"/>
-			</manifest>
-
+			<!-- We don't include the main in this intermediary jar - only the final package produced in integration -->
 		</jar>
 	</target>
 

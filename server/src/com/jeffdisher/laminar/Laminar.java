@@ -161,7 +161,7 @@ public class Laminar {
 
 	private static void failStart(String message) {
 		System.err.println("Fatal start-up error: " + message);
-		throw new RuntimeException(message);
+		System.exit(1);
 	}
 
 	private static String parseOption(String[] args, String option) {
