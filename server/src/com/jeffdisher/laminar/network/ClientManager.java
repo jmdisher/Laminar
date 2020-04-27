@@ -173,7 +173,7 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 		}
 	}
 
-	public void mainReplayMutationForReconnects(StateSnapshot snapshot, MutationRecord record) {
+	public void mainReplayMutationForReconnects(StateSnapshot snapshot, MutationRecord record, boolean isCommitted) {
 		// Called on main thread.
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		// See which syncing clients requested this (we will remove and rebuild the list since it is usually 1 element).
@@ -193,7 +193,7 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 				// Thus, we use mostRecentlySentServerCommitOffset and update it for every COMMITTED message we send.
 				
 				// Note that we won't send the committed if we think that we already have one pending for this reconnect (it already committed while the reconnect was in progress).
-				boolean willSendCommitted = (record.globalOffset <= state.finalCommitToReturnInReconnect);
+				boolean willSendCommitted = (isCommitted && (record.globalOffset <= state.finalCommitToReturnInReconnect));
 				long lastCommitGlobalOffset = willSendCommitted
 						? record.globalOffset
 						: state.mostRecentlySentServerCommitOffset;

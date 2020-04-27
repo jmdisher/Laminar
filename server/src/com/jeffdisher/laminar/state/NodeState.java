@@ -5,7 +5,6 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.Map;
-import java.util.Queue;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Consumer;
@@ -66,7 +65,8 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 	// Tracking of in-flight mutations ready to be committed when the cluster agrees.
 	// These must be committed in-order, so they are a queue with a base offset bias.
 	// (note that the Events are synthesized from these mutations at the point of commit and _nextLocalEventOffset is updated then)
-	private Queue<InFlightTuple> _inFlightMutations;
+	// Note that we use a LinkedList since we want this to be addressable but also implement Queue.
+	private LinkedList<InFlightTuple> _inFlightMutations;
 	private long _inFlightMutationOffsetBias;
 
 	// Information related to the state of the main execution thread.
@@ -187,8 +187,29 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 	public void mainRequestMutationFetch(long mutationOffsetToFetch) {
 		// Called on main thread.
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
+		// The mutations are 1-indexed so this must be a positive number.
 		Assert.assertTrue(mutationOffsetToFetch > 0L);
-		_diskManager.fetchMutation(mutationOffsetToFetch);
+		// It is invalid to request a mutation from the future.
+		Assert.assertTrue(mutationOffsetToFetch < _nextGlobalMutationOffset);
+		
+		if (mutationOffsetToFetch < _inFlightMutationOffsetBias) {
+			// If the mutation is on disk, fetch it from there.
+			_diskManager.fetchMutation(mutationOffsetToFetch);
+		} else {
+			// This must be in our in-flight tuples waiting to commit.
+			int index = (int)(mutationOffsetToFetch - _inFlightMutationOffsetBias);
+			InFlightTuple tuple = _inFlightMutations.get(index);
+			MutationRecord preCommitMutation = tuple.mutation;
+			// This must be the mutation we wanted.
+			Assert.assertTrue(mutationOffsetToFetch == preCommitMutation.globalOffset);
+			// While it would be possible to specialize this path, we will keep the code smaller but handling this response asynchronously to hit the common path.
+			_commandQueue.put(new Consumer<StateSnapshot>() {
+				@Override
+				public void accept(StateSnapshot arg) {
+					Assert.assertTrue(Thread.currentThread() == _mainThread);
+					_clientManager.mainReplayMutationForReconnects(arg, preCommitMutation, false);
+				}});
+		}
 	}
 
 	@Override
@@ -276,7 +297,8 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 			@Override
 			public void accept(StateSnapshot arg) {
 				Assert.assertTrue(Thread.currentThread() == _mainThread);
-				_clientManager.mainReplayMutationForReconnects(arg, record);
+				// Mutations from disk are always committed.
+				_clientManager.mainReplayMutationForReconnects(arg, record, true);
 			}});
 	}
 
