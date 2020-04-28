@@ -99,5 +99,11 @@ public class TestClusterManager {
 			Assert.assertFalse(this.isConnected);
 			this.isConnected = true;
 		}
+		
+		@Override
+		public void mainDisconnectedFromDownstreamPeer(ClusterConfig.ConfigEntry peer) {
+			Assert.assertTrue(this.isConnected);
+			this.isConnected = false;
+		}
 	}
 }

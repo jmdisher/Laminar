@@ -10,4 +10,6 @@ public interface IClusterManagerCallbacks {
 	void ioEnqueueClusterCommandForMainThread(Consumer<StateSnapshot> command);
 
 	void mainConnectedToDownstreamPeer(ClusterConfig.ConfigEntry peer);
+
+	void mainDisconnectedFromDownstreamPeer(ClusterConfig.ConfigEntry peer);
 }

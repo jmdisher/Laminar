@@ -88,6 +88,7 @@ public class ClusterManager implements INetworkManagerBackgroundCallbacks {
 					public void accept(StateSnapshot arg0) {
 						// Verify that this is still in the map.
 						ClusterConfig.ConfigEntry entry = _downstreamConfigByNode.get(node);
+						Assert.assertTrue(null != entry);
 						_callbacks.mainConnectedToDownstreamPeer(entry);
 					}});
 	}
@@ -95,8 +96,13 @@ public class ClusterManager implements INetworkManagerBackgroundCallbacks {
 	@Override
 	public void outboundNodeDisconnected(NetworkManager.NodeToken node, IOException cause) {
 		Assert.assertTrue(Thread.currentThread() != _mainThread);
-		// We currently allow this, for outgoing tests, but it has no implementation.
-		System.err.println("TODO:  Implement outbound disconnect");
+		_callbacks.ioEnqueueClusterCommandForMainThread(new Consumer<StateSnapshot>() {
+			@Override
+			public void accept(StateSnapshot arg0) {
+				// We handle this largely the same way as a connection failure but we also notify the callbacks.
+				ClusterConfig.ConfigEntry entry = _mainRemoveOutboundConnection(node);
+				_callbacks.mainDisconnectedFromDownstreamPeer(entry);
+			}});
 	}
 
 	@Override
@@ -105,18 +111,26 @@ public class ClusterManager implements INetworkManagerBackgroundCallbacks {
 		_callbacks.ioEnqueueClusterCommandForMainThread(new Consumer<StateSnapshot>() {
 			@Override
 			public void accept(StateSnapshot arg0) {
-				// We will unregister this and re-register it with our maps, creating a new connection.
-				ClusterConfig.ConfigEntry entry = _downstreamConfigByNode.remove(node);
-				Assert.assertTrue(null != entry);
-				NetworkManager.NodeToken token;
-				try {
-					token = _networkManager.createOutgoingConnection(entry.cluster);
-				} catch (IOException e) {
-					// We previously succeeded in this step so it should still succeed.
-					throw Assert.unexpected(e);
-				}
-				_downstreamNodesByConfig.put(entry, token);
-				_downstreamConfigByNode.put(token, entry);
+				_mainRemoveOutboundConnection(node);
 			}});
+	}
+
+
+	private ClusterConfig.ConfigEntry _mainRemoveOutboundConnection(NetworkManager.NodeToken node) throws AssertionError {
+		// We will unregister this and re-register it with our maps, creating a new connection.
+		ClusterConfig.ConfigEntry entry = _downstreamConfigByNode.remove(node);
+		Assert.assertTrue(null != entry);
+		NetworkManager.NodeToken token;
+		try {
+			token = _networkManager.createOutgoingConnection(entry.cluster);
+		} catch (IOException e) {
+			// We previously succeeded in this step so it should still succeed.
+			throw Assert.unexpected(e);
+		}
+		NetworkManager.NodeToken check = _downstreamNodesByConfig.put(entry, token);
+		Assert.assertTrue(node == check);
+		ClusterConfig.ConfigEntry checkEntry = _downstreamConfigByNode.put(token, entry);
+		Assert.assertTrue(null == checkEntry);
+		return entry;
 	}
 }

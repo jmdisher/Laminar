@@ -240,6 +240,17 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		state.lastMutationOffsetReceived = Long.MAX_VALUE;
 		_mainCommitValidInFlightTuples();
 	}
+
+	@Override
+	public void mainDisconnectedFromDownstreamPeer(ClusterConfig.ConfigEntry peer) {
+		// Called on main thread.
+		Assert.assertTrue(Thread.currentThread() == _mainThread);
+		// See if we still have this peer (this will always be true in the current implementation as the ClusterManager checks this).
+		DownstreamPeerState state = _unionOfDownstreamNodes.get(peer);
+		state.isConnectionUp = false;
+		// For temporary testing purposes, we will say that this peer has no data (just allows us to test this config flow without full cluster commits)
+		state.lastMutationOffsetReceived = 0L;
+	}
 	// </IClusterManagerCallbacks>
 
 	// <IDiskManagerBackgroundCallbacks>
