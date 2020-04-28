@@ -3,7 +3,9 @@ package com.jeffdisher.laminar.network;
 import java.io.IOException;
 import java.nio.channels.ServerSocketChannel;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Consumer;
 
 import com.jeffdisher.laminar.components.INetworkManagerBackgroundCallbacks;
@@ -20,9 +22,13 @@ public class ClusterManager implements INetworkManagerBackgroundCallbacks {
 	private final Thread _mainThread;
 	private final NetworkManager _networkManager;
 	private final IClusterManagerCallbacks _callbacks;
+
 	// In NodeState, we identify downstream nodes via ClusterConfig.ConfigEntry.
 	private final Map<ClusterConfig.ConfigEntry, NetworkManager.NodeToken> _downstreamNodesByConfig;
 	private final Map<NetworkManager.NodeToken, ClusterConfig.ConfigEntry> _downstreamConfigByNode;
+
+	// Much like ClientManager, we store new upstream peers until we get the handshake from them to know their state.
+	private final Set<NetworkManager.NodeToken> _newUpstreamNodes;
 
 	public ClusterManager(ServerSocketChannel serverSocket, IClusterManagerCallbacks callbacks) throws IOException {
 		_mainThread = Thread.currentThread();
@@ -31,6 +37,7 @@ public class ClusterManager implements INetworkManagerBackgroundCallbacks {
 		_callbacks = callbacks;
 		_downstreamNodesByConfig = new HashMap<>();
 		_downstreamConfigByNode = new HashMap<>();
+		_newUpstreamNodes = new HashSet<>();
 	}
 
 	public void startAndWaitForReady() {
@@ -58,8 +65,9 @@ public class ClusterManager implements INetworkManagerBackgroundCallbacks {
 	@Override
 	public void nodeDidConnect(NetworkManager.NodeToken node) {
 		Assert.assertTrue(Thread.currentThread() != _mainThread);
-		// We currently allow this, for outgoing tests, but it has no implementation.
-		System.err.println("TODO:  Implement incoming node connection");
+		// Until we get the cluster handshake from a node, we don't know what to do with it.
+		boolean didAdd = _newUpstreamNodes.add(node);
+		Assert.assertTrue(didAdd);
 	}
 
 	@Override
