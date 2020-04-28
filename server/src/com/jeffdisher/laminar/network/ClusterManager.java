@@ -11,7 +11,7 @@ import java.util.function.Consumer;
 import com.jeffdisher.laminar.components.INetworkManagerBackgroundCallbacks;
 import com.jeffdisher.laminar.components.NetworkManager;
 import com.jeffdisher.laminar.state.StateSnapshot;
-import com.jeffdisher.laminar.types.ClusterConfig;
+import com.jeffdisher.laminar.types.ConfigEntry;
 import com.jeffdisher.laminar.utils.Assert;
 
 
@@ -24,8 +24,8 @@ public class ClusterManager implements INetworkManagerBackgroundCallbacks {
 	private final IClusterManagerCallbacks _callbacks;
 
 	// In NodeState, we identify downstream nodes via ClusterConfig.ConfigEntry.
-	private final Map<ClusterConfig.ConfigEntry, NetworkManager.NodeToken> _downstreamNodesByConfig;
-	private final Map<NetworkManager.NodeToken, ClusterConfig.ConfigEntry> _downstreamConfigByNode;
+	private final Map<ConfigEntry, NetworkManager.NodeToken> _downstreamNodesByConfig;
+	private final Map<NetworkManager.NodeToken, ConfigEntry> _downstreamConfigByNode;
 
 	// Much like ClientManager, we store new upstream peers until we get the handshake from them to know their state.
 	private final Set<NetworkManager.NodeToken> _newUpstreamNodes;
@@ -50,7 +50,7 @@ public class ClusterManager implements INetworkManagerBackgroundCallbacks {
 		_networkManager.stopAndWaitForTermination();
 	}
 
-	public void mainOpenDownstreamConnection(ClusterConfig.ConfigEntry entry) {
+	public void mainOpenDownstreamConnection(ConfigEntry entry) {
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		NetworkManager.NodeToken token;
 		try {
@@ -95,7 +95,7 @@ public class ClusterManager implements INetworkManagerBackgroundCallbacks {
 					@Override
 					public void accept(StateSnapshot arg0) {
 						// Verify that this is still in the map.
-						ClusterConfig.ConfigEntry entry = _downstreamConfigByNode.get(node);
+						ConfigEntry entry = _downstreamConfigByNode.get(node);
 						Assert.assertTrue(null != entry);
 						_callbacks.mainConnectedToDownstreamPeer(entry);
 					}});
@@ -108,7 +108,7 @@ public class ClusterManager implements INetworkManagerBackgroundCallbacks {
 			@Override
 			public void accept(StateSnapshot arg0) {
 				// We handle this largely the same way as a connection failure but we also notify the callbacks.
-				ClusterConfig.ConfigEntry entry = _mainRemoveOutboundConnection(node);
+				ConfigEntry entry = _mainRemoveOutboundConnection(node);
 				_callbacks.mainDisconnectedFromDownstreamPeer(entry);
 			}});
 	}
@@ -124,9 +124,9 @@ public class ClusterManager implements INetworkManagerBackgroundCallbacks {
 	}
 
 
-	private ClusterConfig.ConfigEntry _mainRemoveOutboundConnection(NetworkManager.NodeToken node) throws AssertionError {
+	private ConfigEntry _mainRemoveOutboundConnection(NetworkManager.NodeToken node) throws AssertionError {
 		// We will unregister this and re-register it with our maps, creating a new connection.
-		ClusterConfig.ConfigEntry entry = _downstreamConfigByNode.remove(node);
+		ConfigEntry entry = _downstreamConfigByNode.remove(node);
 		Assert.assertTrue(null != entry);
 		NetworkManager.NodeToken token;
 		try {
@@ -137,7 +137,7 @@ public class ClusterManager implements INetworkManagerBackgroundCallbacks {
 		}
 		NetworkManager.NodeToken check = _downstreamNodesByConfig.put(entry, token);
 		Assert.assertTrue(node == check);
-		ClusterConfig.ConfigEntry checkEntry = _downstreamConfigByNode.put(token, entry);
+		ConfigEntry checkEntry = _downstreamConfigByNode.put(token, entry);
 		Assert.assertTrue(null == checkEntry);
 		return entry;
 	}

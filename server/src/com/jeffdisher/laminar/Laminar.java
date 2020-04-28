@@ -13,6 +13,7 @@ import com.jeffdisher.laminar.network.ClientManager;
 import com.jeffdisher.laminar.network.ClusterManager;
 import com.jeffdisher.laminar.state.NodeState;
 import com.jeffdisher.laminar.types.ClusterConfig;
+import com.jeffdisher.laminar.types.ConfigEntry;
 import com.jeffdisher.laminar.utils.Assert;
 
 
@@ -86,7 +87,7 @@ public class Laminar {
 		// By this point, all requirements of the system should be satisfied so create the subsystems.
 		// First, the core NodeState and the background thread callback handlers for the managers.
 		// Note that we need to create an "initial config" which we will use until we get a cluster update from a client or another node starts sending updates.
-		ClusterConfig initialConfig = ClusterConfig.configFromEntries(new ClusterConfig.ConfigEntry[] {new ClusterConfig.ConfigEntry(clusterSocketAddress, clientSocketAddress)});
+		ClusterConfig initialConfig = ClusterConfig.configFromEntries(new ConfigEntry[] {new ConfigEntry(clusterSocketAddress, clientSocketAddress)});
 		NodeState thisNodeState = new NodeState(initialConfig);
 		// We also want to install an uncaught exception handler to make sure background thread failures are fatal.
 		Thread.setDefaultUncaughtExceptionHandler(new Thread.UncaughtExceptionHandler() {

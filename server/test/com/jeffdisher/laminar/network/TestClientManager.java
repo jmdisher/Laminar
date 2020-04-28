@@ -19,6 +19,7 @@ import com.jeffdisher.laminar.types.ClientMessage;
 import com.jeffdisher.laminar.types.ClientMessagePayload_Temp;
 import com.jeffdisher.laminar.types.ClientResponse;
 import com.jeffdisher.laminar.types.ClusterConfig;
+import com.jeffdisher.laminar.types.ConfigEntry;
 import com.jeffdisher.laminar.types.EventRecord;
 import com.jeffdisher.laminar.types.EventRecordType;
 
@@ -191,7 +192,7 @@ public class TestClientManager {
 	 * Used for simple cases where the external test only wants to verify that a call was made when expected.
 	 */
 	private static class LatchedCallbacks implements IClientManagerCallbacks {
-		private final ClusterConfig _dummyConfig = ClusterConfig.configFromEntries(new ClusterConfig.ConfigEntry[] {new ClusterConfig.ConfigEntry(new InetSocketAddress(5), new InetSocketAddress(6))});
+		private final ClusterConfig _dummyConfig = ClusterConfig.configFromEntries(new ConfigEntry[] {new ConfigEntry(new InetSocketAddress(5), new InetSocketAddress(6))});
 		private Consumer<StateSnapshot> _pendingConsumer;
 		public ClientMessage recentMessage;
 		

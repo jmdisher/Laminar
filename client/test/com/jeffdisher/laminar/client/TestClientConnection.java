@@ -20,6 +20,7 @@ import com.jeffdisher.laminar.types.ClientMessagePayload_Temp;
 import com.jeffdisher.laminar.types.ClientMessageType;
 import com.jeffdisher.laminar.types.ClientResponse;
 import com.jeffdisher.laminar.types.ClusterConfig;
+import com.jeffdisher.laminar.types.ConfigEntry;
 
 
 public class TestClientConnection {
@@ -241,7 +242,7 @@ public class TestClientConnection {
 	}
 
 	private static ClusterConfig _synthesizeClientOnlyConfig(InetSocketAddress address) {
-		return ClusterConfig.configFromEntries(new ClusterConfig.ConfigEntry[] {new ClusterConfig.ConfigEntry(new InetSocketAddress(address.getAddress(), 0), address)});
+		return ClusterConfig.configFromEntries(new ConfigEntry[] {new ConfigEntry(new InetSocketAddress(address.getAddress(), 0), address)});
 	}
 
 

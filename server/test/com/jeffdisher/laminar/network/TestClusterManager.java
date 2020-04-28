@@ -9,8 +9,7 @@ import org.junit.Assert;
 import org.junit.Test;
 
 import com.jeffdisher.laminar.state.StateSnapshot;
-import com.jeffdisher.laminar.types.ClusterConfig;
-import com.jeffdisher.laminar.types.ClusterConfig.ConfigEntry;
+import com.jeffdisher.laminar.types.ConfigEntry;
 
 
 public class TestClusterManager {
@@ -35,7 +34,7 @@ public class TestClusterManager {
 	public void testOutgoingConnections() throws Throwable {
 		int managerPort = PORT_BASE + 2;
 		int testPort = PORT_BASE + 3;
-		ClusterConfig.ConfigEntry testEntry = new ClusterConfig.ConfigEntry(new InetSocketAddress(testPort), new InetSocketAddress(9999));
+		ConfigEntry testEntry = new ConfigEntry(new InetSocketAddress(testPort), new InetSocketAddress(9999));
 		ServerSocketChannel socket = createSocket(managerPort);
 		TestClusterCallbacks callbacks = new TestClusterCallbacks();
 		ClusterManager manager = new ClusterManager(socket, callbacks);
@@ -101,7 +100,7 @@ public class TestClusterManager {
 		}
 		
 		@Override
-		public void mainDisconnectedFromDownstreamPeer(ClusterConfig.ConfigEntry peer) {
+		public void mainDisconnectedFromDownstreamPeer(ConfigEntry peer) {
 			Assert.assertTrue(this.isConnected);
 			this.isConnected = false;
 		}

@@ -11,6 +11,7 @@ import org.junit.Test;
 import com.jeffdisher.laminar.client.ClientConnection;
 import com.jeffdisher.laminar.client.ClientResult;
 import com.jeffdisher.laminar.types.ClusterConfig;
+import com.jeffdisher.laminar.types.ConfigEntry;
 
 
 /**
@@ -56,9 +57,9 @@ public class TestCluster {
 			result2_1.waitForReceived();
 			ClusterConfig originalConfig = client1.getCurrentConfig();
 			Assert.assertEquals(1, originalConfig.entries.length);
-			ClusterConfig.ConfigEntry originalEntry = originalConfig.entries[0];
-			ClusterConfig.ConfigEntry newEntry = new ClusterConfig.ConfigEntry(new InetSocketAddress(originalEntry.cluster.getAddress(), originalEntry.cluster.getPort() + 1000), new InetSocketAddress(originalEntry.client.getAddress(), originalEntry.client.getPort() + 1000));
-			ClusterConfig newConfig = ClusterConfig.configFromEntries(new ClusterConfig.ConfigEntry[] {originalEntry, newEntry});
+			ConfigEntry originalEntry = originalConfig.entries[0];
+			ConfigEntry newEntry = new ConfigEntry(new InetSocketAddress(originalEntry.cluster.getAddress(), originalEntry.cluster.getPort() + 1000), new InetSocketAddress(originalEntry.client.getAddress(), originalEntry.client.getPort() + 1000));
+			ClusterConfig newConfig = ClusterConfig.configFromEntries(new ConfigEntry[] {originalEntry, newEntry});
 			configSender = client1.getClientId();
 			configNonce = client1.getNextNonce();
 			beforeListener.skipNonceCheck(configSender, configNonce);
@@ -137,9 +138,9 @@ public class TestCluster {
 			result2_1.waitForReceived();
 			ClusterConfig originalConfig = client1.getCurrentConfig();
 			Assert.assertEquals(1, originalConfig.entries.length);
-			ClusterConfig.ConfigEntry originalEntry = originalConfig.entries[0];
-			ClusterConfig.ConfigEntry newEntry = new ClusterConfig.ConfigEntry(new InetSocketAddress(originalEntry.cluster.getAddress(), originalEntry.cluster.getPort() + 1000), new InetSocketAddress(originalEntry.client.getAddress(), originalEntry.client.getPort() + 1000));
-			ClusterConfig newConfig = ClusterConfig.configFromEntries(new ClusterConfig.ConfigEntry[] {originalEntry, newEntry});
+			ConfigEntry originalEntry = originalConfig.entries[0];
+			ConfigEntry newEntry = new ConfigEntry(new InetSocketAddress(originalEntry.cluster.getAddress(), originalEntry.cluster.getPort() + 1000), new InetSocketAddress(originalEntry.client.getAddress(), originalEntry.client.getPort() + 1000));
+			ClusterConfig newConfig = ClusterConfig.configFromEntries(new ConfigEntry[] {originalEntry, newEntry});
 			configSender = client1.getClientId();
 			configNonce = client1.getNextNonce();
 			beforeListener.skipNonceCheck(configSender, configNonce);

@@ -21,6 +21,7 @@ import com.jeffdisher.laminar.types.ClientMessage;
 import com.jeffdisher.laminar.types.ClientMessagePayload_Temp;
 import com.jeffdisher.laminar.types.ClientMessagePayload_UpdateConfig;
 import com.jeffdisher.laminar.types.ClusterConfig;
+import com.jeffdisher.laminar.types.ConfigEntry;
 import com.jeffdisher.laminar.types.EventRecord;
 import com.jeffdisher.laminar.types.EventRecordType;
 import com.jeffdisher.laminar.types.MutationRecord;
@@ -45,11 +46,11 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 	private ConsoleManager _consoleManager;
 
 	private RaftState _currentState;
-	private final ClusterConfig.ConfigEntry _self;
+	private final ConfigEntry _self;
 	// We keep an image of ourself as a downstream peer state to avoid special-cases in looking at clusters so we will need to update it with latest mutation offset as soon as we assign one.
 	private final DownstreamPeerState _selfState;
 	// The union of all config entries we are currently monitoring (normally just from the current config but could be all in joint consensus).
-	private final Map<ClusterConfig.ConfigEntry, DownstreamPeerState> _unionOfDownstreamNodes;
+	private final Map<ConfigEntry, DownstreamPeerState> _unionOfDownstreamNodes;
 	private SyncProgress _currentConfig;
 	// This map is usually empty but contains any ClusterConfigs which haven't yet committed (meaning they are part of joint consensus).
 	private final Map<Long, SyncProgress> _configsPendingCommit;
@@ -230,7 +231,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 	}
 
 	@Override
-	public void mainConnectedToDownstreamPeer(ClusterConfig.ConfigEntry peer) {
+	public void mainConnectedToDownstreamPeer(ConfigEntry peer) {
 		// Called on main thread.
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		// See if we still have this peer (this will always be true in the current implementation as the ClusterManager checks this).
@@ -242,7 +243,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 	}
 
 	@Override
-	public void mainDisconnectedFromDownstreamPeer(ClusterConfig.ConfigEntry peer) {
+	public void mainDisconnectedFromDownstreamPeer(ConfigEntry peer) {
 		// Called on main thread.
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		// See if we still have this peer (this will always be true in the current implementation as the ClusterManager checks this).
@@ -401,7 +402,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 			
 			// Add the missing nodes and start the outgoing connections.
 			Set<DownstreamPeerState> nodesInConfig = new HashSet<>();
-			for (ClusterConfig.ConfigEntry entry : newConfig.entries) {
+			for (ConfigEntry entry : newConfig.entries) {
 				DownstreamPeerState peer = _unionOfDownstreamNodes.get(entry);
 				if (null == peer) {
 					// This is a new node so start the connection and add it to the map.
@@ -468,13 +469,13 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 	}
 
 	private void _rebuildDownstreamUnionAfterConfigChange() {
-		HashMap<ClusterConfig.ConfigEntry, DownstreamPeerState> copy = new HashMap<>(_unionOfDownstreamNodes);
+		HashMap<ConfigEntry, DownstreamPeerState> copy = new HashMap<>(_unionOfDownstreamNodes);
 		_unionOfDownstreamNodes.clear();
-		for (ClusterConfig.ConfigEntry entry : _currentConfig.config.entries) {
+		for (ConfigEntry entry : _currentConfig.config.entries) {
 			_unionOfDownstreamNodes.put(entry, copy.get(entry));
 		}
 		for (SyncProgress pending : _configsPendingCommit.values()) {
-			for (ClusterConfig.ConfigEntry entry : pending.config.entries) {
+			for (ConfigEntry entry : pending.config.entries) {
 				_unionOfDownstreamNodes.put(entry, copy.get(entry));
 			}
 		}

@@ -22,9 +22,6 @@ import com.jeffdisher.laminar.utils.Assert;
  */
 public final class ClusterConfig {
 	public static final int MAX_CLUSTER_MEMBERS = 31;
-	public static final int IPV4_BYTE_SIZE = 4;
-	public static final int IPV6_BYTE_SIZE = 16;
-	public static final int MAX_PORT = (64 * 1024) - 1;
 
 	/**
 	 * Creates a new config from a list of entries.  Note that the InetSocketAddress instances in the entries will be
@@ -97,9 +94,7 @@ public final class ClusterConfig {
 		}
 		ConfigEntry[] entries = new ConfigEntry[entryCount];
 		for (int i = 0; i < entries.length; ++i) {
-			InetSocketAddress cluster = _readPair(buffer);
-			InetSocketAddress client = _readPair(buffer);
-			entries[i] = new ConfigEntry(cluster, client);
+			entries[i] = ConfigEntry.deserializeFrom(buffer);
 		}
 		return new ClusterConfig(entries);
 	}
@@ -148,41 +143,12 @@ public final class ClusterConfig {
 		throw new IllegalArgumentException("ClusterConfig invalid");
 	}
 
-	private static InetSocketAddress _readPair(ByteBuffer buffer) {
-		byte ipLength = buffer.get();
-		if ((IPV4_BYTE_SIZE != ipLength) && (IPV6_BYTE_SIZE != ipLength)) {
-			throw _parseError();
-		}
-		byte[] ip = new byte[ipLength];
-		buffer.get(ip);
-		int port = Short.toUnsignedInt(buffer.getShort());
-		try {
-			return new InetSocketAddress(InetAddress.getByAddress(ip), port);
-		} catch (UnknownHostException e) {
-			// Only happens if the IP is the incorrect length and we already checked this.
-			throw Assert.unexpected(e);
-		}
-	}
-
-	private void _writePair(ByteBuffer buffer, InetSocketAddress pair) {
-		byte[] ip = pair.getAddress().getAddress();
-		// These are the sizes defined within the InetAddress documentation
-		Assert.assertTrue((IPV4_BYTE_SIZE == ip.length) || (IPV6_BYTE_SIZE == ip.length));
-		short port = (short)pair.getPort();
-		byte ipLength = (byte)ip.length;
-		buffer.put(ipLength);
-		buffer.put(ip);
-		buffer.putShort(port);
-	}
 
 	private int _serializedSize() {
 		// We have 1 byte for the number of entries but each entry can be a different size.
 		int bufferSize = Byte.BYTES;
 		for (ConfigEntry entry : this.entries) {
-			// The port is always a u16 but the IP can be 4 or 16 bytes, and each one has a byte to describe which.
-			int clusterIpSize = entry.cluster.getAddress().getAddress().length;
-			int clientIpSize = entry.client.getAddress().getAddress().length;
-			bufferSize += Byte.BYTES + clusterIpSize + Byte.BYTES + clientIpSize + (2 * Short.BYTES);
+			bufferSize += entry.serializedSize();
 		}
 		return bufferSize;
 	}
@@ -191,43 +157,7 @@ public final class ClusterConfig {
 		byte entryCount = (byte)this.entries.length;
 		buffer.put(entryCount);
 		for (ConfigEntry entry : this.entries) {
-			_writePair(buffer, entry.cluster);
-			_writePair(buffer, entry.client);
-		}
-	}
-
-
-	/**
-	 * A single entry in the ClusterConfig, representing a single node.
-	 * Note that the cluster-facing and client-facing sockets are defined independently.
-	 */
-	public static final class ConfigEntry {
-		public final InetSocketAddress cluster;
-		public final InetSocketAddress client;
-		
-		public ConfigEntry(InetSocketAddress cluster, InetSocketAddress client) {
-			this.cluster = cluster;
-			this.client = client;
-		}
-		
-		@Override
-		public boolean equals(Object obj) {
-			boolean isEqual = false;
-			if ((null != obj) && (ConfigEntry.class == obj.getClass())) {
-				ConfigEntry other = (ConfigEntry) obj;
-				isEqual = this.cluster.equals(other.cluster) && this.client.equals(other.client);
-			}
-			return isEqual;
-		}
-		
-		@Override
-		public int hashCode() {
-			return this.cluster.hashCode() ^ this.client.hashCode();
-		}
-		
-		@Override
-		public String toString() {
-			return "(Cluster: " + this.cluster.toString() + ", Client: " + this.client + ")";
+			entry.serializeInto(buffer);
 		}
 	}
 }

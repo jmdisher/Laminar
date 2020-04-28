@@ -3,13 +3,13 @@ package com.jeffdisher.laminar.network;
 import java.util.function.Consumer;
 
 import com.jeffdisher.laminar.state.StateSnapshot;
-import com.jeffdisher.laminar.types.ClusterConfig;
+import com.jeffdisher.laminar.types.ConfigEntry;
 
 
 public interface IClusterManagerCallbacks {
 	void ioEnqueueClusterCommandForMainThread(Consumer<StateSnapshot> command);
 
-	void mainConnectedToDownstreamPeer(ClusterConfig.ConfigEntry peer);
+	void mainConnectedToDownstreamPeer(ConfigEntry peer);
 
-	void mainDisconnectedFromDownstreamPeer(ClusterConfig.ConfigEntry peer);
+	void mainDisconnectedFromDownstreamPeer(ConfigEntry peer);
 }
