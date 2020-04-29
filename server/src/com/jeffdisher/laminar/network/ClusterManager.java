@@ -1,6 +1,7 @@
 package com.jeffdisher.laminar.network;
 
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.nio.channels.ServerSocketChannel;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -10,6 +11,10 @@ import java.util.function.Consumer;
 
 import com.jeffdisher.laminar.components.INetworkManagerBackgroundCallbacks;
 import com.jeffdisher.laminar.components.NetworkManager;
+import com.jeffdisher.laminar.network.p2p.DownstreamMessage;
+import com.jeffdisher.laminar.network.p2p.DownstreamPayload_Identity;
+import com.jeffdisher.laminar.network.p2p.UpstreamPayload_PeerState;
+import com.jeffdisher.laminar.network.p2p.UpstreamResponse;
 import com.jeffdisher.laminar.state.StateSnapshot;
 import com.jeffdisher.laminar.types.ConfigEntry;
 import com.jeffdisher.laminar.utils.Assert;
@@ -30,6 +35,9 @@ public class ClusterManager implements INetworkManagerBackgroundCallbacks {
 
 	// Much like ClientManager, we store new upstream peers until we get the handshake from them to know their state.
 	private final Set<NetworkManager.NodeToken> _newUpstreamNodes;
+	// Once we have the handshake, we move them into ready nodes.
+	// (currently, we only know their ConfigEntry so we will just store that).
+	private final Map<NetworkManager.NodeToken, ConfigEntry> _readyUpstreamNodes;
 
 	public ClusterManager(ConfigEntry self, ServerSocketChannel serverSocket, IClusterManagerCallbacks callbacks) throws IOException {
 		_mainThread = Thread.currentThread();
@@ -40,6 +48,7 @@ public class ClusterManager implements INetworkManagerBackgroundCallbacks {
 		_downstreamNodesByConfig = new HashMap<>();
 		_downstreamConfigByNode = new HashMap<>();
 		_newUpstreamNodes = new HashSet<>();
+		_readyUpstreamNodes = new HashMap<>();
 	}
 
 	public void startAndWaitForReady() {
@@ -79,19 +88,88 @@ public class ClusterManager implements INetworkManagerBackgroundCallbacks {
 	@Override
 	public void nodeDidDisconnect(NetworkManager.NodeToken node, IOException cause) {
 		Assert.assertTrue(Thread.currentThread() != _mainThread);
-		Assert.unimplemented("TODO: implement");
+		_callbacks.ioEnqueueClusterCommandForMainThread(new Consumer<StateSnapshot>() {
+			@Override
+			public void accept(StateSnapshot arg0) {
+				// Check what kind of node this is, do the appropriate book-keeping, and send any required callback.
+				if (_newUpstreamNodes.contains(node)) {
+					// We were waiting for a handshake so just drop this.
+					_newUpstreamNodes.remove(node);
+				} else if (_readyUpstreamNodes.containsKey(node)) {
+					ConfigEntry peerConfig = _readyUpstreamNodes.remove(node);
+					_callbacks.mainUpstreamPeerDisconnected(peerConfig);
+				} else if (_downstreamConfigByNode.containsKey(node)) {
+					ConfigEntry peerConfig = _downstreamConfigByNode.remove(node);
+					NetworkManager.NodeToken check = _downstreamNodesByConfig.remove(peerConfig);
+					Assert.assertTrue(check == node);
+					_callbacks.mainDisconnectedFromDownstreamPeer(peerConfig);
+				} else {
+					// No idea who this is.
+					throw Assert.unreachable("Unknown node disconnected");
+				}
+				// Until we get the cluster handshake from a node, we don't know what to do with it.
+				boolean didAdd = _newUpstreamNodes.add(node);
+				Assert.assertTrue(didAdd);
+			}});
 	}
 
 	@Override
 	public void nodeWriteReady(NetworkManager.NodeToken node) {
 		Assert.assertTrue(Thread.currentThread() != _mainThread);
-		Assert.unimplemented("TODO: implement");
+		// Currently, this is ignored since the only writes we send are during the initial handshake.
+		// We will just print out what we know about this node.
+		_callbacks.ioEnqueueClusterCommandForMainThread(new Consumer<StateSnapshot>() {
+			@Override
+			public void accept(StateSnapshot arg0) {
+				boolean isUpstream = _readyUpstreamNodes.containsKey(node);
+				boolean isDownstream = _downstreamConfigByNode.containsKey(node);
+				// They can't be write-ready as new and they must be one of these.
+				Assert.assertTrue(isUpstream != isDownstream);
+				System.out.println("TODO:  Handle nodeWriteReady: " + (isUpstream ? "UPSTREAM" : "DOWNSTREAM"));
+			}});
 	}
 
 	@Override
 	public void nodeReadReady(NetworkManager.NodeToken node) {
 		Assert.assertTrue(Thread.currentThread() != _mainThread);
-		Assert.unimplemented("TODO: implement");
+		// The handshake will be readable on both sides:
+		// -upstream node will send SERVER_IDENTITY
+		// -downstream node will respond with PEER_STATE
+		_callbacks.ioEnqueueClusterCommandForMainThread(new Consumer<StateSnapshot>() {
+			@Override
+			public void accept(StateSnapshot arg0) {
+				// Check the relationship with this node.
+				if (_downstreamConfigByNode.containsKey(node)) {
+					// We are the upstream node so they must be sending the PEER_STATE.
+					byte[] payload = _networkManager.readWaitingMessage(node);
+					UpstreamResponse response = UpstreamResponse.deserializeFrom(ByteBuffer.wrap(payload));
+					Assert.assertTrue(UpstreamResponse.Type.PEER_STATE == response.type);
+					// This now counts as us being "connected".
+					_callbacks.mainConnectedToDownstreamPeer(_downstreamConfigByNode.get(node), ((UpstreamPayload_PeerState)response.payload).lastReceivedMutationOffset);
+				} else {
+					// We currently don't allow a "ready" upstream node to send us anything, nor are we handling disconnects at this point, yet.
+					Assert.assertTrue(_newUpstreamNodes.contains(node));
+					
+					// Read the SERVER_IDENTITY.
+					byte[] payload = _networkManager.readWaitingMessage(node);
+					DownstreamMessage message = DownstreamMessage.deserializeFrom(ByteBuffer.wrap(payload));
+					Assert.assertTrue(DownstreamMessage.Type.IDENTITY == message.type);
+					ConfigEntry entry = ((DownstreamPayload_Identity)message.payload).self;
+					
+					// Send back our PEER_STATE.
+					long lastReceivedMutationOffset = 0L;
+					UpstreamResponse response = UpstreamResponse.peerState(lastReceivedMutationOffset);
+					ByteBuffer buffer = ByteBuffer.allocate(response.serializedSize());
+					response.serializeInto(buffer);
+					boolean didSend = _networkManager.trySendMessage(node, buffer.array());
+					Assert.assertTrue(didSend);
+					
+					// Migrate this to the ready nodes and notify the callbacks.
+					_newUpstreamNodes.remove(node);
+					_readyUpstreamNodes.put(node, entry);
+					_callbacks.mainUpstreamPeerConnected(entry);
+				}
+			}});
 	}
 
 	@Override
@@ -103,7 +181,15 @@ public class ClusterManager implements INetworkManagerBackgroundCallbacks {
 				// Verify that this is still in the map.
 				ConfigEntry entry = _downstreamConfigByNode.get(node);
 				Assert.assertTrue(null != entry);
-				_callbacks.mainConnectedToDownstreamPeer(entry, 0L);
+				
+				// We are the upstream node so send the SERVER_IDENTITY.
+				DownstreamMessage identity = DownstreamMessage.identity(_self);
+				int size = identity.serializedSize();
+				ByteBuffer buffer = ByteBuffer.allocate(size);
+				identity.serializeInto(buffer);
+				byte[] payload = buffer.array();
+				boolean didSend = _networkManager.trySendMessage(node, payload);
+				Assert.assertTrue(didSend);
 			}});
 	}
 
