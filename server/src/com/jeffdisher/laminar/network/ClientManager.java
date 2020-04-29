@@ -98,6 +98,7 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 	 * @return The message.
 	 */
 	public ClientMessage receive(NetworkManager.NodeToken client) {
+		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		byte[] serialized = _networkManager.readWaitingMessage(client);
 		// We only read when data is available.
 		Assert.assertTrue(null != serialized);
@@ -158,6 +159,12 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 		}
 	}
 
+	/**
+	 * Called when the mutation commit offset changes.
+	 * Any commit messages waiting on globalOffsetOfCommit must now be sent.
+	 * 
+	 * @param globalOffsetOfCommit The global mutation offset which is now committed.
+	 */
 	public void mainProcessingPendingMessageCommits(long globalOffsetOfCommit) {
 		// Called on main thread.
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
@@ -250,15 +257,6 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 			toReturn = _newClients.iterator().next();
 		}
 		return toReturn;
-	}
-
-	/**
-	 * This helper exists purely for testing purposes.  It allows TestClientManager to more directly control outgoing
-	 * messages.  It may be removed, in future, if TestClientManager changes to do this in the response shape it is
-	 * designed to handle.
-	 */
-	public void testingSend(NetworkManager.NodeToken target, ClientResponse toSend) {
-		_send(target, toSend);
 	}
 
 	/**

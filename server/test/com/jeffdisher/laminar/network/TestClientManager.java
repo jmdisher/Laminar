@@ -30,8 +30,8 @@ public class TestClientManager {
 
 	/**
 	 * In this test, we start a ClientManager and emulate a client connecting to it and sending a temp message.
-	 * Note that there isn't any other logic in the ClientManager, itself, so we just make sure it sees the correct
-	 * message.
+	 * This involves managing the normal HANDSHAKE and CLIENT_READY message flow prior to sending the message.
+	 * Finally, we just verify that the ClientManager did observe the expected message.
 	 */
 	@Test
 	public void testReceiveTempMessage() throws Throwable {
@@ -50,14 +50,26 @@ public class TestClientManager {
 			connectedNode = callbacks.runRunnableAndGetNewClientNode(manager);
 			Assert.assertNotNull(connectedNode);
 			OutputStream toServer = client.getOutputStream();
+			InputStream fromServer = client.getInputStream();
+			
 			// Write our handshake to end up in the "normal client" state.
 			_writeFramedMessage(toServer, ClientMessage.handshake(UUID.randomUUID()).serialize());
+			
 			// Run the callbacks once to allow the ClientManager to do the state transition.
 			ClientMessage readMessage = callbacks.runAndGetNextMessage();
 			Assert.assertNull(readMessage);
 			// (we need to run it a second time because of the way the CLIENT_READY is queued)
 			readMessage = callbacks.runAndGetNextMessage();
 			Assert.assertNull(readMessage);
+			
+			// Read the CLIENT_READY.
+			byte[] raw = _readFramedMessage(fromServer);
+			ClientResponse ready = ClientResponse.deserialize(raw);
+			Assert.assertEquals(ClientResponseType.CLIENT_READY, ready.type);
+			Assert.assertEquals(0L, ready.lastCommitGlobalOffset);
+			Assert.assertEquals(1L, ready.nonce);
+			Assert.assertNotNull(ClusterConfig.deserialize(ready.extraData));
+			
 			// Write the message.
 			_writeFramedMessage(toServer, message.serialize());
 		}
@@ -74,10 +86,14 @@ public class TestClientManager {
 		socket.close();
 	}
 
+	/**
+	 * Does the usual handshake but then sends a message and verifies that the client sees the RECEIVED and, once the
+	 * manager is told the commit happened, the COMMITTED.
+	 */
 	@Test
 	public void testSendCommitResponse() throws Throwable {
-		// Create a commit response.
-		ClientResponse commit = ClientResponse.committed(1L, 1L);
+		// Create a message.
+		ClientMessage message = ClientMessage.temp(1L, new byte[] {0,1,2,3});
 		// Create a server.
 		int port = PORT_BASE + 2;
 		ServerSocketChannel socket = createSocket(port);
@@ -89,20 +105,47 @@ public class TestClientManager {
 		try (Socket client = new Socket("localhost", port)) {
 			NetworkManager.NodeToken connectedNode = callbacks.runRunnableAndGetNewClientNode(manager);
 			Assert.assertNotNull(connectedNode);
-			UUID clientId = UUID.randomUUID();
-			_writeFramedMessage(client.getOutputStream(), ClientMessage.handshake(clientId).serialize());
-			
+			OutputStream toServer = client.getOutputStream();
 			InputStream fromServer = client.getInputStream();
-			manager.testingSend(connectedNode, commit);
-			// Allocate the frame for the full buffer we know we are going to read.
-			byte[] serialized = commit.serialize();
+			
+			// Write our handshake to end up in the "normal client" state.
+			_writeFramedMessage(toServer, ClientMessage.handshake(UUID.randomUUID()).serialize());
+			
+			// Run the callbacks once to allow the ClientManager to do the state transition.
+			ClientMessage readMessage = callbacks.runAndGetNextMessage();
+			Assert.assertNull(readMessage);
+			// (we need to run it a second time because of the way the CLIENT_READY is queued)
+			readMessage = callbacks.runAndGetNextMessage();
+			Assert.assertNull(readMessage);
+			
+			// Read the CLIENT_READY.
 			byte[] raw = _readFramedMessage(fromServer);
-			Assert.assertEquals(serialized.length, raw.length);
-			// Deserialize the buffer.
-			ClientResponse deserialized = ClientResponse.deserialize(raw);
-			Assert.assertEquals(commit.type, deserialized.type);
-			Assert.assertEquals(commit.nonce, deserialized.nonce);
-			Assert.assertEquals(commit.lastCommitGlobalOffset, deserialized.lastCommitGlobalOffset);
+			ClientResponse ready = ClientResponse.deserialize(raw);
+			Assert.assertEquals(ClientResponseType.CLIENT_READY, ready.type);
+			Assert.assertEquals(0L, ready.lastCommitGlobalOffset);
+			Assert.assertEquals(1L, ready.nonce);
+			Assert.assertNotNull(ClusterConfig.deserialize(ready.extraData));
+			
+			// Write the message and read the RECEIVED.
+			_writeFramedMessage(toServer, message.serialize());
+			ClientMessage output = callbacks.runAndGetNextMessage();
+			Assert.assertNotNull(output);
+			raw = _readFramedMessage(fromServer);
+			ClientResponse received = ClientResponse.deserialize(raw);
+			Assert.assertEquals(ClientResponseType.RECEIVED, received.type);
+			Assert.assertEquals(0L, received.lastCommitGlobalOffset);
+			Assert.assertEquals(1L, received.nonce);
+			// (process writable)
+			readMessage = callbacks.runAndGetNextMessage();
+			Assert.assertNull(readMessage);
+			
+			// Tell the manager we committed it and verify that we see the commit.
+			manager.mainProcessingPendingMessageCommits(1L);
+			raw = _readFramedMessage(fromServer);
+			ClientResponse committed = ClientResponse.deserialize(raw);
+			Assert.assertEquals(ClientResponseType.COMMITTED, committed.type);
+			Assert.assertEquals(1L, committed.lastCommitGlobalOffset);
+			Assert.assertEquals(1L, committed.nonce);
 		}
 		NetworkManager.NodeToken noNode = callbacks.runRunnableAndGetNewClientNode(manager);
 		Assert.assertNull(noNode);
