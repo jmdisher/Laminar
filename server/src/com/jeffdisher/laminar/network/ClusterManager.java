@@ -67,9 +67,13 @@ public class ClusterManager implements INetworkManagerBackgroundCallbacks {
 	@Override
 	public void nodeDidConnect(NetworkManager.NodeToken node) {
 		Assert.assertTrue(Thread.currentThread() != _mainThread);
-		// Until we get the cluster handshake from a node, we don't know what to do with it.
-		boolean didAdd = _newUpstreamNodes.add(node);
-		Assert.assertTrue(didAdd);
+		_callbacks.ioEnqueueClusterCommandForMainThread(new Consumer<StateSnapshot>() {
+			@Override
+			public void accept(StateSnapshot arg0) {
+				// Until we get the cluster handshake from a node, we don't know what to do with it.
+				boolean didAdd = _newUpstreamNodes.add(node);
+				Assert.assertTrue(didAdd);
+			}});
 	}
 
 	@Override
@@ -94,13 +98,13 @@ public class ClusterManager implements INetworkManagerBackgroundCallbacks {
 	public void outboundNodeConnected(NetworkManager.NodeToken node) {
 		Assert.assertTrue(Thread.currentThread() != _mainThread);
 		_callbacks.ioEnqueueClusterCommandForMainThread(new Consumer<StateSnapshot>() {
-					@Override
-					public void accept(StateSnapshot arg0) {
-						// Verify that this is still in the map.
-						ConfigEntry entry = _downstreamConfigByNode.get(node);
-						Assert.assertTrue(null != entry);
-						_callbacks.mainConnectedToDownstreamPeer(entry);
-					}});
+			@Override
+			public void accept(StateSnapshot arg0) {
+				// Verify that this is still in the map.
+				ConfigEntry entry = _downstreamConfigByNode.get(node);
+				Assert.assertTrue(null != entry);
+				_callbacks.mainConnectedToDownstreamPeer(entry);
+			}});
 	}
 
 	@Override
