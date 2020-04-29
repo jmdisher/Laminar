@@ -10,6 +10,8 @@ import java.util.List;
 import java.util.SortedMap;
 import java.util.TreeMap;
 import java.util.UUID;
+import java.util.function.Consumer;
+import java.util.function.Function;
 
 import com.jeffdisher.laminar.components.INetworkManagerBackgroundCallbacks;
 import com.jeffdisher.laminar.components.NetworkManager;
@@ -18,6 +20,7 @@ import com.jeffdisher.laminar.types.ClientResponse;
 import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.types.ConfigEntry;
 import com.jeffdisher.laminar.utils.Assert;
+import com.jeffdisher.laminar.utils.UninterruptableQueue;
 
 
 /**
@@ -67,6 +70,17 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 	}
 
 
+	/**
+	 * The command queue contains all the mutative operations within the ClientConnection instance.  External threads
+	 * can add commands to the queue but only the internal thread removes and executes them.
+	 * Unless explicitly marked as final, all internal state is considered off-limits for any external thread.  This
+	 * means that querying state must also be done on the internal thread, for a consistent answer, resulting in a
+	 * somewhat strange pattern where a "container" of a query result is passed into the command and the external caller
+	 * waits for it to be populated.
+	 * _isClientReady, _mostRecentConnectionFailure, and _currentClusterConfig are the only special cases as they exist
+	 * solely to communicate back to the external threads (they are modified and notified under lock).
+	 */
+	private final UninterruptableQueue<Void> _commandQueue;
 	private InetSocketAddress _serverAddress;
 	private final NetworkManager _network;
 	private final UUID _clientId;
@@ -76,16 +90,11 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 
 	private volatile boolean _keepRunning;
 	private Thread _internalThread;
-	private int _pendingMessages;
 	private boolean _canWrite;
 	private final List<ClientResult> _outgoingMessages;
 	// _inFlightMessages must be sorted since we traverse the keys in-order at the start and end of reconnect.
 	// NOTE:  _inFlightMessages can ONLY be accessed by _internalThread.
 	private final SortedMap<Long, ClientResult> _inFlightMessages;
-	// This is part of the connection state machine - once a connection is established, we need to ask the internal
-	// thread to send a handshake.  This also means that a single write is allowed, although _canWrite wasn't set for
-	// general use.
-	private boolean _handshakeRequired;
 	// We keep track of whether or not we have received the CLIENT_READY message so callers can ask if the network is
 	// "up" and to ensure we don't write while still waiting for state sync.
 	private boolean _isClientReady;
@@ -97,12 +106,12 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 	// Due to reconnection requirements, it is possible to fail a connection but not want to bring down the system.
 	// Therefore, we will continue reconnection attempts, until told to close.  Unless we have an active connection, we
 	// store a reference to the most recent failure we observed during connection, for external informational purposes.
-	private IOException _currentConnectionFailure;
 	private IOException _mostRecentConnectionFailure;
 	// (track whether or not we ever disconnect in order to determine if the next connect is a new connect or reconnect)
 	private boolean _hasDisconnectedEver;
 
 	private ClientConnection(InetSocketAddress server) throws IOException {
+		_commandQueue = new UninterruptableQueue<Void>();
 		// Make sure we erase the hostname from this, if we were given one (fixes some checks, later on, since the internal system never uses hostnames).
 		// This is largely gratuitous but makes some very precise testing possible.
 		_serverAddress = new InetSocketAddress(InetAddress.getByAddress(server.getAddress().getAddress()), server.getPort());
@@ -140,31 +149,19 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 		}
 	}
 
-	public synchronized ClientResult sendTemp(byte[] payload) {
+	public ClientResult sendTemp(byte[] payload) {
 		Assert.assertTrue(Thread.currentThread() != _internalThread);
-		ClientMessage message = ClientMessage.temp(_nextNonce++, payload);
-		ClientResult result = new ClientResult(message);
-		_outgoingMessages.add(result);
-		this.notifyAll();
-		return result;
+		return _externalWaitForMessageSetup((nonce) -> ClientMessage.temp(nonce, payload));
 	}
 
-	public synchronized ClientResult sendPoison(byte[] payload) {
+	public ClientResult sendPoison(byte[] payload) {
 		Assert.assertTrue(Thread.currentThread() != _internalThread);
-		ClientMessage message = ClientMessage.poison(_nextNonce++, payload);
-		ClientResult result = new ClientResult(message);
-		_outgoingMessages.add(result);
-		this.notifyAll();
-		return result;
+		return _externalWaitForMessageSetup((nonce) -> ClientMessage.poison(nonce, payload));
 	}
 
-	public synchronized ClientResult sendUpdateConfig(ClusterConfig config) {
+	public ClientResult sendUpdateConfig(ClusterConfig config) {
 		Assert.assertTrue(Thread.currentThread() != _internalThread);
-		ClientMessage message = ClientMessage.updateConfig(_nextNonce++, config);
-		ClientResult result = new ClientResult(message);
-		_outgoingMessages.add(result);
-		this.notifyAll();
-		return result;
+		return _externalWaitForMessageSetup((nonce) -> ClientMessage.updateConfig(nonce, config));
 	}
 
 	/**
@@ -183,7 +180,30 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 	 */
 	public long getNextNonce() {
 		Assert.assertTrue(Thread.currentThread() != _internalThread);
-		return _nextNonce;
+		// We want to get a consistent view of the nonce, which means asking a command to do the query for us.
+		long[] container = new long[1];
+		_commandQueue.put(new Consumer<Void>() {
+			@Override
+			public void accept(Void t) {
+				synchronized(container) {
+					container[0] = _nextNonce;
+					container.notify();
+				}
+			}});
+		boolean interrupt = false;
+		synchronized(container) {
+			while (0 == container[0]) {
+				try {
+					container.wait();
+				} catch (InterruptedException e) {
+					interrupt = true;
+				}
+			}
+		}
+		if (interrupt) {
+			Thread.currentThread().interrupt();
+		}
+		return container[0];
 	}
 
 	/**
@@ -214,6 +234,8 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 	 */
 	public ClusterConfig getCurrentConfig() {
 		Assert.assertTrue(Thread.currentThread() != _internalThread);
+		// We can return this without the hand-off since it is really just an asynchronous out-parameter:  putting it in
+		// order relative to other operations wouldn't make it more consistent with the server.
 		return _currentClusterConfig;
 	}
 
@@ -231,60 +253,93 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 	}
 
 	@Override
-	public synchronized void nodeWriteReady(NetworkManager.NodeToken node) {
+	public void nodeWriteReady(NetworkManager.NodeToken node) {
 		Assert.assertTrue(Thread.currentThread() != _internalThread);
-		Assert.assertTrue(_connection == node);
-		_canWrite = true;
-		this.notifyAll();
+		_commandQueue.put(new Consumer<Void>() {
+			@Override
+			public void accept(Void t) {
+				Assert.assertTrue(_connection == node);
+				_canWrite = true;
+				_internalTryWrite();
+			}});
 	}
 
 	@Override
-	public synchronized void nodeReadReady(NetworkManager.NodeToken node) {
+	public void nodeReadReady(NetworkManager.NodeToken node) {
 		Assert.assertTrue(Thread.currentThread() != _internalThread);
-		Assert.assertTrue(_connection == node);
-		_pendingMessages += 1;
-		if (1 == _pendingMessages) {
-			this.notifyAll();
-		}
+		_commandQueue.put(new Consumer<Void>() {
+			@Override
+			public void accept(Void t) {
+				Assert.assertTrue(_connection == node);
+				_iternalHandleReadableMessage();
+			}});
 	}
 
 	@Override
-	public synchronized void outboundNodeConnected(NetworkManager.NodeToken node) {
+	public void outboundNodeConnected(NetworkManager.NodeToken node) {
 		Assert.assertTrue(Thread.currentThread() != _internalThread);
-		Assert.assertTrue(null == _connection);
-		_connection = node;
-		// Clear any now-stale connection error.
-		_mostRecentConnectionFailure = null;
-		// We immediately send our handshake and wait for CLIENT_READY (so we don't set the _canWrite since claim it).
-		_handshakeRequired = true;
-		this.notifyAll();
+		_commandQueue.put(new Consumer<Void>() {
+			@Override
+			public void accept(Void t) {
+				Assert.assertTrue(null == _connection);
+				_connection = node;
+				// Clear any now-stale connection error.
+				_mostRecentConnectionFailure = null;
+				// We immediately send our handshake and wait for CLIENT_READY (so we don't set the _canWrite since we claim it).
+				// If we have ever been disconnected, this is a reconnect, otherwise the _outgoing messages are just the client jumping the gun.
+				ClientMessage handshakeToSend = null;
+				if (_hasDisconnectedEver) {
+					// Reconnect.
+					// We need to send the lowest nonce we don't yet know committed (if any past this did commit, the server will update its state for us when it synthesizes the commits).
+					// Note that, if there are no in-flight messages, this is a degenerate reconnect where the server will send us nothing.
+					long lowestPossibleNextNonce = _inFlightMessages.isEmpty()
+							? _nextNonce
+							: _inFlightMessages.firstKey();
+					// Unset any received flags in these since we don't actually know if the other side received them (not in the fail-over case, at least) and rely on the reconnect to fix state.
+					for (ClientResult result : _inFlightMessages.values()) {
+						result.clearReceived();
+					}
+					handshakeToSend = ClientMessage.reconnect(lowestPossibleNextNonce, _clientId, _lastCommitGlobalOffset);
+				} else {
+					// New connection.
+					handshakeToSend = ClientMessage.handshake(_clientId);
+				}
+				_lockedInternalSerializeAndSendMessage(handshakeToSend);
+			}});
 	}
 
 	@Override
-	public synchronized void outboundNodeDisconnected(NetworkManager.NodeToken node, IOException cause) {
+	public void outboundNodeDisconnected(NetworkManager.NodeToken node, IOException cause) {
 		Assert.assertTrue(Thread.currentThread() != _internalThread);
-		Assert.assertTrue(_connection == node);
-		_handleDisconnect(cause);
-		this.notifyAll();
+		_commandQueue.put(new Consumer<Void>() {
+			@Override
+			public void accept(Void t) {
+				Assert.assertTrue(_connection == node);
+				_internalHandleDisconnect(cause);
+			}});
 	}
 
 	@Override
-	public synchronized void outboundNodeConnectionFailed(NetworkManager.NodeToken token, IOException cause) {
+	public void outboundNodeConnectionFailed(NetworkManager.NodeToken token, IOException cause) {
 		Assert.assertTrue(Thread.currentThread() != _internalThread);
-		Assert.assertTrue(null == _connection);
-		// Store the cause and interrupt the internal thread so it will attempt a reconnect.
-		_currentConnectionFailure = cause;
-		this.notifyAll();
+		_commandQueue.put(new Consumer<Void>() {
+			@Override
+			public void accept(Void t) {
+				// We just issue the reconnect.
+				_internalIssueConnect(cause);
+			}});
 	}
 	// </INetworkManagerBackgroundCallbacks>
 
 	@Override
 	public void close() throws IOException {
 		Assert.assertTrue(Thread.currentThread() != _internalThread);
-		synchronized (this) {
-			_keepRunning = false;
-			this.notifyAll();
-		}
+		// When this command is executed, the internal thread loop will exit and the thread will exit.
+		_commandQueue.put(new Consumer<Void>() {
+			@Override
+			public void accept(Void t) {
+				_keepRunning = false;
+			}});
 		try {
 			_internalThread.join();
 		} catch (InterruptedException e) {
@@ -296,90 +351,14 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 
 
 	private void _internalThreadMain() {
+		Assert.assertTrue(Thread.currentThread() == _internalThread);
 		while (_keepRunning) {
-			synchronized (this) {
-				// Wait for something to do.
-				// Note that we don't consider that we have anything to write until we have something in the outgoing list and the writable flag is set and the client is ready.
-				while (_keepRunning && (0 == _pendingMessages) && (_outgoingMessages.isEmpty() || !_canWrite || !_isClientReady) && (null == _currentConnectionFailure) && !_handshakeRequired) {
-					try {
-						this.wait();
-					} catch (InterruptedException e) {
-						// We don't rely on interruption.
-						Assert.unexpected(e);
-					}
-				}
-				
-				// Interpret why we were unblocked.
-				boolean canRead = false;
-				ClientMessage handshakeToSend = null;
-				ClientResult messageToWrite = null;
-				if (_pendingMessages > 0) {
-					_pendingMessages -= 1;
-					canRead = true;
-				}
-				if (!_outgoingMessages.isEmpty() && _canWrite && _isClientReady) {
-					// Currently, we only send a single message at a time but this will be made more aggressive in the future.
-					messageToWrite = _outgoingMessages.remove(0);
-					_canWrite = false;
-				}
-				if (null != _currentConnectionFailure) {
-					// This happens when a connect or reconnect failure was observed.  Due to reconnection requirements,
-					// we just want to try again until this succeeds or we are told to close.
-					// We consume the connection failure and move it to _mostRecentConnectionFailure so it is available
-					// for the client code's information.
-					
-					// There can be no current connection if there is a connection failure.
-					Assert.assertTrue(null == _connection);
-					try {
-						_network.createOutgoingConnection(_serverAddress);
-					} catch (IOException e) {
-						// We are just restarting something we already did so a failure here would mean something big changed.
-						throw Assert.unexpected(e);
-					}
-					_mostRecentConnectionFailure = _currentConnectionFailure;
-					_currentConnectionFailure = null;
-				}
-				if (_handshakeRequired) {
-					// If we have ever been disconnected, this is a reconnect, otherwise the _outgoing messages are just the client jumping the gun.
-					if (_hasDisconnectedEver) {
-						// Reconnect.
-						// We need to send the lowest nonce we don't yet know committed (if any past this did commit, the server will update its state for us when it synthesizes the commits).
-						// Note that, if there are no in-flight messages, this is a degenerate reconnect where the server will send us nothing.
-						long lowestPossibleNextNonce = _inFlightMessages.isEmpty()
-								? _nextNonce
-								: _inFlightMessages.firstKey();
-						// Unset any received flags in these since we don't actually know if the other side received them (not in the fail-over case, at least) and rely on the reconnect to fix state.
-						for (ClientResult result : _inFlightMessages.values()) {
-							result.clearReceived();
-						}
-						handshakeToSend = ClientMessage.reconnect(lowestPossibleNextNonce, _clientId, _lastCommitGlobalOffset);
-					} else {
-						// New connection.
-						handshakeToSend = ClientMessage.handshake(_clientId);
-					}
-					_handshakeRequired = false;
-				}
-				
-				// Now apply whatever changes we can make in response to waking.
-				if (canRead) {
-					// Note that this method may receive a CLIENT_READY message in which case we may need to notify the user thread that the connection is up.
-					boolean clientBecameReady = _lockedInternalReadAndDispatchMessage();
-					if (clientBecameReady) {
-						_isClientReady = true;
-						this.notifyAll();
-					}
-				}
-				if (null != messageToWrite) {
-					_lockedInternalSendMessageInWrapper(messageToWrite);
-				}
-				if (null != handshakeToSend) {
-					_lockedInternalSerializeAndSendMessage(handshakeToSend);
-				}
-			}
+			Consumer<Void> command = _commandQueue.blockingGet();
+			command.accept(null);
 		}
 	}
 
-	private boolean _lockedInternalReadAndDispatchMessage() {
+	private boolean _internalReadAndDispatchMessage() {
 		Assert.assertTrue(Thread.currentThread() == _internalThread);
 		byte[] message = _network.readWaitingMessage(_connection);
 		// We were told this was here so it can't fail.
@@ -458,7 +437,7 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 			_serverAddress = newLeader.client;
 			_network.closeConnection(_connection);
 			_internalThread.setName("Laminar client (" + _serverAddress + ")");
-			_handleDisconnect(new IOException("Redirect received"));
+			_internalHandleDisconnect(new IOException("Redirect received"));
 			break;
 		default:
 			Assert.unreachable("Default response case reached");
@@ -467,7 +446,7 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 		return clientBecameReady;
 	}
 
-	private void _lockedInternalSendMessageInWrapper(ClientResult wrapper) {
+	private void _internalSendMessageInWrapper(ClientResult wrapper) {
 		Assert.assertTrue(Thread.currentThread() == _internalThread);
 		// Unwrap the message.
 		ClientMessage messageToWrite = wrapper.message;
@@ -485,14 +464,91 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 		Assert.assertTrue(didSend);
 	}
 
-	private void _handleDisconnect(IOException cause) {
+	private void _internalHandleDisconnect(IOException cause) {
+		Assert.assertTrue(Thread.currentThread() == _internalThread);
 		_connection = null;
 		// We will also need to reconnect and wait for CLIENT_READY so the client isn't ready.
 		_isClientReady = false;
 		// We record that a disconnect happened so our next connection attempt is a reconnect.
 		_hasDisconnectedEver = true;
-		_currentConnectionFailure = cause;
-		// We also need to dump any pending messages we were told about since we set _connection to null.
-		_pendingMessages = 0;
+		// We will immediately request a reconnect.
+		_internalIssueConnect(cause);
+	}
+
+	private ClientResult _externalWaitForMessageSetup(Function<Long, ClientMessage> packager) {
+		Assert.assertTrue(Thread.currentThread() != _internalThread);
+		ClientResult[] container = new ClientResult[1];
+		_commandQueue.put(new Consumer<Void>() {
+			@Override
+			public void accept(Void arg0) {
+				ClientMessage message = packager.apply(_nextNonce++);
+				ClientResult result = new ClientResult(message);
+				_outgoingMessages.add(result);
+				synchronized(container) {
+					container[0] = result;
+					container.notify();
+				}
+				_internalTryWrite();
+			}});
+		boolean interrupt = false;
+		synchronized(container) {
+			while (null == container[0]) {
+				try {
+					container.wait();
+				} catch (InterruptedException e) {
+					// We don't want to interrupt this operation but store the flag.
+					interrupt = true;
+				}
+			}
+		}
+		if (interrupt) {
+			Thread.currentThread().interrupt();
+		}
+		return container[0];
+	}
+
+	private void _internalIssueConnect(IOException cause) throws AssertionError {
+		Assert.assertTrue(Thread.currentThread() == _internalThread);
+		// There can be no current connection if there is a connection failure.
+		Assert.assertTrue(null == _connection);
+		// This happens when a connect or reconnect failure was observed.  Due to reconnection requirements,
+		// we just want to try again until this succeeds or we are told to close.
+		// We consume the connection failure and move it to _mostRecentConnectionFailure so it is available
+		// for the client code's information.
+		try {
+			_network.createOutgoingConnection(_serverAddress);
+		} catch (IOException e) {
+			// We are just restarting something we already did so a failure here would mean something big changed.
+			throw Assert.unexpected(e);
+		}
+		// Notify anyone who might be waiting to check connection state.
+		synchronized(this) {
+			_mostRecentConnectionFailure = cause;
+			this.notifyAll();
+		}
+	}
+
+	private void _iternalHandleReadableMessage() {
+		Assert.assertTrue(Thread.currentThread() == _internalThread);
+		// Note that this method may receive a CLIENT_READY message in which case we may need to notify the user thread that the connection is up.
+		boolean clientBecameReady = _internalReadAndDispatchMessage();
+		if (clientBecameReady) {
+			// Notify anyone who might be waiting to check connection state.
+			synchronized (this) {
+				_isClientReady = true;
+				this.notifyAll();
+			}
+			_internalTryWrite();
+		}
+	}
+
+	private void _internalTryWrite() {
+		Assert.assertTrue(Thread.currentThread() == _internalThread);
+		if (!_outgoingMessages.isEmpty() && _canWrite && _isClientReady) {
+			// Currently, we only send a single message at a time but this will be made more aggressive in the future.
+			ClientResult messageToWrite = _outgoingMessages.remove(0);
+			_internalSendMessageInWrapper(messageToWrite);
+			_canWrite = false;
+		}
 	}
 }
