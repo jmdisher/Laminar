@@ -1,8 +1,5 @@
 package com.jeffdisher.laminar.network;
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.Socket;
@@ -20,6 +17,7 @@ import com.jeffdisher.laminar.network.p2p.UpstreamResponse;
 import com.jeffdisher.laminar.state.StateSnapshot;
 import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.types.ConfigEntry;
+import com.jeffdisher.laminar.utils.TestingHelpers;
 
 
 public class TestClusterManager {
@@ -29,7 +27,7 @@ public class TestClusterManager {
 	public void testStartStop() throws Throwable {
 		int port = PORT_BASE + 1;
 		ConfigEntry self = _buildSelf();
-		ServerSocketChannel socket = createSocket(port);
+		ServerSocketChannel socket = TestingHelpers.createServerSocket(port);
 		TestClusterCallbacks callbacks = new TestClusterCallbacks();
 		ClusterManager manager = new ClusterManager(self, socket, callbacks);
 		manager.startAndWaitForReady();
@@ -49,7 +47,7 @@ public class TestClusterManager {
 		int testPort = PORT_BASE + 3;
 		ConfigEntry testEntry = new ConfigEntry(new InetSocketAddress(testPort), new InetSocketAddress(9999));
 		ConfigEntry self = _buildSelf();
-		ServerSocketChannel socket = createSocket(managerPort);
+		ServerSocketChannel socket = TestingHelpers.createServerSocket(managerPort);
 		TestClusterCallbacks callbacks = new TestClusterCallbacks();
 		ClusterManager manager = new ClusterManager(self, socket, callbacks);
 		manager.startAndWaitForReady();
@@ -61,7 +59,7 @@ public class TestClusterManager {
 		Assert.assertNull(callbacks.downstreamPeer);
 		
 		// Now, bind the port, process one command for the second failure, verify it isn't connected, and then another for the connection, and verify it was connected.
-		ServerSocketChannel testSocket = createSocket(testPort);
+		ServerSocketChannel testSocket = TestingHelpers.createServerSocket(testPort);
 		callbacks.runOneCommand();
 		Assert.assertNull(callbacks.downstreamPeer);
 		callbacks.runOneCommand();
@@ -69,7 +67,7 @@ public class TestClusterManager {
 		// Not connected until we receive this message and send our response.
 		Assert.assertNull(callbacks.downstreamPeer);
 		Socket fakePeerSocket = testSocket.accept().socket();
-		ByteBuffer serverIdentity = ByteBuffer.wrap(_readFramedMessage(fakePeerSocket));
+		ByteBuffer serverIdentity = ByteBuffer.wrap(TestingHelpers.readMessageInFrame(fakePeerSocket.getInputStream()));
 		DownstreamMessage message = DownstreamMessage.deserializeFrom(serverIdentity);
 		Assert.assertEquals(DownstreamMessage.Type.IDENTITY, message.type);
 		Assert.assertEquals(self, ((DownstreamPayload_Identity)message.payload).self);
@@ -78,7 +76,7 @@ public class TestClusterManager {
 		ByteBuffer peerState = ByteBuffer.allocate(response.serializedSize());
 		response.serializeInto(peerState);
 		peerState.flip();
-		_writeFramedMessage(fakePeerSocket, peerState.array());
+		TestingHelpers.writeMessageInFrame(fakePeerSocket.getOutputStream(), peerState.array());
 		
 		// Now, it should be connected after we run the write-ready and ready-ready commands.
 		callbacks.runOneCommand();
@@ -99,8 +97,8 @@ public class TestClusterManager {
 	public void testHandshakeFlow() throws Throwable {
 		int port1 = PORT_BASE + 4;
 		int port2 = PORT_BASE + 5;
-		ServerSocketChannel socket1 = createSocket(port1);
-		ServerSocketChannel socket2 = createSocket(port2);
+		ServerSocketChannel socket1 = TestingHelpers.createServerSocket(port1);
+		ServerSocketChannel socket2 = TestingHelpers.createServerSocket(port2);
 		ConfigEntry entry1 = new ConfigEntry(new InetSocketAddress(port1), new InetSocketAddress(9999));
 		ConfigEntry entry2 = new ConfigEntry(new InetSocketAddress(port2), new InetSocketAddress(9999));
 		TestClusterCallbacks callbacks1 = new TestClusterCallbacks();
@@ -140,44 +138,11 @@ public class TestClusterManager {
 	}
 
 
-	private ServerSocketChannel createSocket(int port) throws IOException {
-		ServerSocketChannel socket = ServerSocketChannel.open();
-		InetSocketAddress clientAddress = new InetSocketAddress(port);
-		socket.bind(clientAddress);
-		return socket;
-	}
-
 	private static ConfigEntry _buildSelf() throws UnknownHostException {
 		InetAddress localhost = InetAddress.getLocalHost();
 		InetSocketAddress cluster = ClusterConfig.cleanSocketAddress(new InetSocketAddress(localhost, 1000));
 		InetSocketAddress client = ClusterConfig.cleanSocketAddress(new InetSocketAddress(localhost, 1001));
 		return new ConfigEntry(cluster, client);
-	}
-
-	private byte[] _readFramedMessage(Socket fakePeerSocket) throws IOException {
-		InputStream source = fakePeerSocket.getInputStream();
-		byte[] frameSize = new byte[Short.BYTES];
-		int read = 0;
-		while (read < frameSize.length) {
-			read += source.read(frameSize, read, frameSize.length - read);
-		}
-		int sizeToRead = Short.toUnsignedInt(ByteBuffer.wrap(frameSize).getShort());
-		byte[] frame = new byte[sizeToRead];
-		read = 0;
-		while (read < frame.length) {
-			read += source.read(frame, read, frame.length - read);
-		}
-		return frame;
-	}
-
-	private void _writeFramedMessage(Socket fakePeerSocket, byte[] raw) throws IOException {
-		OutputStream sink = fakePeerSocket.getOutputStream();
-		byte[] frame = new byte[Short.BYTES + raw.length];
-		ByteBuffer.wrap(frame)
-			.putShort((short)raw.length)
-			.put(raw)
-			;
-		sink.write(frame);
 	}
 
 

@@ -11,6 +11,8 @@ import java.util.concurrent.CountDownLatch;
 import org.junit.Assert;
 import org.junit.Test;
 
+import com.jeffdisher.laminar.utils.TestingHelpers;
+
 
 public class TestNetworkManager {
 	private static final int PORT_BASE = 3200;
@@ -18,7 +20,7 @@ public class TestNetworkManager {
 	@Test
 	public void testStartStop() throws Throwable {
 		// Create a server.
-		ServerSocketChannel socket = createSocket(PORT_BASE + 1);
+		ServerSocketChannel socket = TestingHelpers.createServerSocket(PORT_BASE + 1);
 		LatchedCallbacks callbacks = new LatchedCallbacks();
 		NetworkManager server = NetworkManager.bidirectional(socket, callbacks);
 		server.startAndWaitForReady("test");
@@ -30,7 +32,7 @@ public class TestNetworkManager {
 	public void testSingleClient() throws Throwable {
 		// Create a server.
 		int port = PORT_BASE + 2;
-		ServerSocketChannel socket = createSocket(port);
+		ServerSocketChannel socket = TestingHelpers.createServerSocket(port);
 		LatchedCallbacks callbacks = new LatchedCallbacks();
 		NetworkManager server = NetworkManager.bidirectional(socket, callbacks);
 		server.startAndWaitForReady("test");
@@ -67,9 +69,9 @@ public class TestNetworkManager {
 		int clientPort1 = PORT_BASE + 4;
 		int clientPort2 = PORT_BASE + 5;
 		int maxPayload = 32 * 1024;
-		ServerSocketChannel serverSocket = createSocket(serverPort);
-		ServerSocketChannel clientSocket1 = createSocket(clientPort1);
-		ServerSocketChannel clientSocket2 = createSocket(clientPort2);
+		ServerSocketChannel serverSocket = TestingHelpers.createServerSocket(serverPort);
+		ServerSocketChannel clientSocket1 = TestingHelpers.createServerSocket(clientPort1);
+		ServerSocketChannel clientSocket2 = TestingHelpers.createServerSocket(clientPort2);
 		CountDownLatch latch = new CountDownLatch(2);
 		CountDownLatch ignored1 = new CountDownLatch(1);
 		CountDownLatch ignored2 = new CountDownLatch(1);
@@ -115,7 +117,7 @@ public class TestNetworkManager {
 	public void testSingleClientWithNetworkManager() throws Throwable {
 		// Create a server.
 		int port = PORT_BASE + 6;
-		ServerSocketChannel socket = createSocket(port);
+		ServerSocketChannel socket = TestingHelpers.createServerSocket(port);
 		LatchedCallbacks callbacks = new LatchedCallbacks();
 		NetworkManager server = NetworkManager.bidirectional(socket, callbacks);
 		server.startAndWaitForReady("test");
@@ -176,12 +178,12 @@ public class TestNetworkManager {
 		InetSocketAddress address2 = new InetSocketAddress(port2);
 		
 		LatchedCallbacks callbacks1 = new LatchedCallbacks();
-		ServerSocketChannel serverSocket1 = createSocket(port1);
+		ServerSocketChannel serverSocket1 = TestingHelpers.createServerSocket(port1);
 		NetworkManager server1 = NetworkManager.bidirectional(serverSocket1, callbacks1);
 		server1.startAndWaitForReady("test-server-1");
 		
 		LatchedCallbacks callbacks2 = new LatchedCallbacks();
-		ServerSocketChannel serverSocket2 = createSocket(port2);
+		ServerSocketChannel serverSocket2 = TestingHelpers.createServerSocket(port2);
 		NetworkManager server2 = NetworkManager.bidirectional(serverSocket2, callbacks2);
 		server2.startAndWaitForReady("test-server-2");
 		
@@ -227,14 +229,6 @@ public class TestNetworkManager {
 		server2.stopAndWaitForTermination();
 		serverSocket1.close();
 		serverSocket2.close();
-	}
-
-
-	private ServerSocketChannel createSocket(int port) throws IOException {
-		ServerSocketChannel socket = ServerSocketChannel.open();
-		InetSocketAddress clientAddress = new InetSocketAddress(port);
-		socket.bind(clientAddress);
-		return socket;
 	}
 
 

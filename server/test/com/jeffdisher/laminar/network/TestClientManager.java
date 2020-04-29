@@ -1,6 +1,5 @@
 package com.jeffdisher.laminar.network;
 
-import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
@@ -23,6 +22,7 @@ import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.types.ConfigEntry;
 import com.jeffdisher.laminar.types.EventRecord;
 import com.jeffdisher.laminar.types.EventRecordType;
+import com.jeffdisher.laminar.utils.TestingHelpers;
 
 
 public class TestClientManager {
@@ -39,7 +39,7 @@ public class TestClientManager {
 		ClientMessage message = ClientMessage.temp(1L, new byte[] {0,1,2,3});
 		// Create a server.
 		int port = PORT_BASE + 1;
-		ServerSocketChannel socket = createSocket(port);
+		ServerSocketChannel socket = TestingHelpers.createServerSocket(port);
 		LatchedCallbacks callbacks = new LatchedCallbacks();
 		ClientManager manager = new ClientManager(socket, callbacks);
 		manager.startAndWaitForReady();
@@ -53,7 +53,7 @@ public class TestClientManager {
 			InputStream fromServer = client.getInputStream();
 			
 			// Write our handshake to end up in the "normal client" state.
-			_writeFramedMessage(toServer, ClientMessage.handshake(UUID.randomUUID()).serialize());
+			TestingHelpers.writeMessageInFrame(toServer, ClientMessage.handshake(UUID.randomUUID()).serialize());
 			
 			// Run the callbacks once to allow the ClientManager to do the state transition.
 			ClientMessage readMessage = callbacks.runAndGetNextMessage();
@@ -63,7 +63,7 @@ public class TestClientManager {
 			Assert.assertNull(readMessage);
 			
 			// Read the CLIENT_READY.
-			byte[] raw = _readFramedMessage(fromServer);
+			byte[] raw = TestingHelpers.readMessageInFrame(fromServer);
 			ClientResponse ready = ClientResponse.deserialize(raw);
 			Assert.assertEquals(ClientResponseType.CLIENT_READY, ready.type);
 			Assert.assertEquals(0L, ready.lastCommitGlobalOffset);
@@ -71,7 +71,7 @@ public class TestClientManager {
 			Assert.assertNotNull(ClusterConfig.deserialize(ready.extraData));
 			
 			// Write the message.
-			_writeFramedMessage(toServer, message.serialize());
+			TestingHelpers.writeMessageInFrame(toServer, message.serialize());
 		}
 		// We should see the message appear in callbacks.
 		ClientMessage output = callbacks.runAndGetNextMessage();
@@ -96,7 +96,7 @@ public class TestClientManager {
 		ClientMessage message = ClientMessage.temp(1L, new byte[] {0,1,2,3});
 		// Create a server.
 		int port = PORT_BASE + 2;
-		ServerSocketChannel socket = createSocket(port);
+		ServerSocketChannel socket = TestingHelpers.createServerSocket(port);
 		LatchedCallbacks callbacks = new LatchedCallbacks();
 		ClientManager manager = new ClientManager(socket, callbacks);
 		manager.startAndWaitForReady();
@@ -109,7 +109,7 @@ public class TestClientManager {
 			InputStream fromServer = client.getInputStream();
 			
 			// Write our handshake to end up in the "normal client" state.
-			_writeFramedMessage(toServer, ClientMessage.handshake(UUID.randomUUID()).serialize());
+			TestingHelpers.writeMessageInFrame(toServer, ClientMessage.handshake(UUID.randomUUID()).serialize());
 			
 			// Run the callbacks once to allow the ClientManager to do the state transition.
 			ClientMessage readMessage = callbacks.runAndGetNextMessage();
@@ -119,7 +119,7 @@ public class TestClientManager {
 			Assert.assertNull(readMessage);
 			
 			// Read the CLIENT_READY.
-			byte[] raw = _readFramedMessage(fromServer);
+			byte[] raw = TestingHelpers.readMessageInFrame(fromServer);
 			ClientResponse ready = ClientResponse.deserialize(raw);
 			Assert.assertEquals(ClientResponseType.CLIENT_READY, ready.type);
 			Assert.assertEquals(0L, ready.lastCommitGlobalOffset);
@@ -127,10 +127,10 @@ public class TestClientManager {
 			Assert.assertNotNull(ClusterConfig.deserialize(ready.extraData));
 			
 			// Write the message and read the RECEIVED.
-			_writeFramedMessage(toServer, message.serialize());
+			TestingHelpers.writeMessageInFrame(toServer, message.serialize());
 			ClientMessage output = callbacks.runAndGetNextMessage();
 			Assert.assertNotNull(output);
-			raw = _readFramedMessage(fromServer);
+			raw = TestingHelpers.readMessageInFrame(fromServer);
 			ClientResponse received = ClientResponse.deserialize(raw);
 			Assert.assertEquals(ClientResponseType.RECEIVED, received.type);
 			Assert.assertEquals(0L, received.lastCommitGlobalOffset);
@@ -141,7 +141,7 @@ public class TestClientManager {
 			
 			// Tell the manager we committed it and verify that we see the commit.
 			manager.mainProcessingPendingMessageCommits(1L);
-			raw = _readFramedMessage(fromServer);
+			raw = TestingHelpers.readMessageInFrame(fromServer);
 			ClientResponse committed = ClientResponse.deserialize(raw);
 			Assert.assertEquals(ClientResponseType.COMMITTED, committed.type);
 			Assert.assertEquals(1L, committed.lastCommitGlobalOffset);
@@ -160,7 +160,7 @@ public class TestClientManager {
 		EventRecord record = EventRecord.generateRecord(EventRecordType.TEMP, 1L, 1L, UUID.randomUUID(), 1L, new byte[] { 1, 2, 3});
 		// Create a server.
 		int port = PORT_BASE + 3;
-		ServerSocketChannel socket = createSocket(port);
+		ServerSocketChannel socket = TestingHelpers.createServerSocket(port);
 		LatchedCallbacks callbacks = new LatchedCallbacks();
 		ClientManager manager = new ClientManager(socket, callbacks);
 		manager.startAndWaitForReady();
@@ -170,20 +170,20 @@ public class TestClientManager {
 			NetworkManager.NodeToken connectedNode = callbacks.runRunnableAndGetNewClientNode(manager);
 			Assert.assertNotNull(connectedNode);
 			// Write the listen since we want to go into the listener state.
-			_writeFramedMessage(client.getOutputStream(), ClientMessage.listen(0L).serialize());
+			TestingHelpers.writeMessageInFrame(client.getOutputStream(), ClientMessage.listen(0L).serialize());
 			InputStream fromServer = client.getInputStream();
 			
 			// Run 1 callback to receive the LISTEN.
 			callbacks.runRunnableAndGetNewClientNode(manager);
 			// Consume the config it sent in response.
-			_readFramedMessage(fromServer);
+			TestingHelpers.readMessageInFrame(fromServer);
 			// Run the next callback so the listener becomes writable.
 			callbacks.runRunnableAndGetNewClientNode(manager);
 			
 			manager.mainSendRecordToListeners(record);
 			// Allocate the frame for the full buffer we know we are going to read.
 			byte[] serialized = record.serialize();
-			byte[] raw = _readFramedMessage(fromServer);
+			byte[] raw = TestingHelpers.readMessageInFrame(fromServer);
 			Assert.assertEquals(serialized.length, raw.length);
 			// Deserialize the buffer.
 			EventRecord deserialized = EventRecord.deserialize(raw);
@@ -207,7 +207,7 @@ public class TestClientManager {
 	public void testClientRedirectExisting() throws Throwable {
 		// Create a server.
 		int port = PORT_BASE + 4;
-		ServerSocketChannel socket = createSocket(port);
+		ServerSocketChannel socket = TestingHelpers.createServerSocket(port);
 		LatchedCallbacks callbacks = new LatchedCallbacks();
 		ClientManager manager = new ClientManager(socket, callbacks);
 		manager.startAndWaitForReady();
@@ -218,13 +218,13 @@ public class TestClientManager {
 			UUID clientId = UUID.randomUUID();
 			// -nodeDidConnect
 			callbacks.runAndGetNextMessage();
-			_writeFramedMessage(client.getOutputStream(), ClientMessage.handshake(clientId).serialize());
+			TestingHelpers.writeMessageInFrame(client.getOutputStream(), ClientMessage.handshake(clientId).serialize());
 			// -nodeReadReady
 			callbacks.runAndGetNextMessage();
 			// -nodeWriteReady
 			callbacks.runAndGetNextMessage();
 			InputStream fromServer = client.getInputStream();
-			byte[] raw = _readFramedMessage(fromServer);
+			byte[] raw = TestingHelpers.readMessageInFrame(fromServer);
 			ClientResponse ready = ClientResponse.deserialize(raw);
 			Assert.assertEquals(ClientResponseType.CLIENT_READY, ready.type);
 			
@@ -233,7 +233,7 @@ public class TestClientManager {
 			manager.mainEnterFollowerState(entry, 0L);
 			// -nodeWriteReady
 			callbacks.runAndGetNextMessage();
-			raw = _readFramedMessage(fromServer);
+			raw = TestingHelpers.readMessageInFrame(fromServer);
 			ClientResponse redirect = ClientResponse.deserialize(raw);
 			Assert.assertEquals(ClientResponseType.REDIRECT, redirect.type);
 			Assert.assertEquals(-1L, redirect.nonce);
@@ -254,7 +254,7 @@ public class TestClientManager {
 	public void testClientRedirectNew() throws Throwable {
 		// Create a server.
 		int port = PORT_BASE + 5;
-		ServerSocketChannel socket = createSocket(port);
+		ServerSocketChannel socket = TestingHelpers.createServerSocket(port);
 		LatchedCallbacks callbacks = new LatchedCallbacks();
 		ClientManager manager = new ClientManager(socket, callbacks);
 		manager.startAndWaitForReady();
@@ -269,13 +269,13 @@ public class TestClientManager {
 			UUID clientId = UUID.randomUUID();
 			// -nodeDidConnect
 			callbacks.runAndGetNextMessage();
-			_writeFramedMessage(client.getOutputStream(), ClientMessage.handshake(clientId).serialize());
+			TestingHelpers.writeMessageInFrame(client.getOutputStream(), ClientMessage.handshake(clientId).serialize());
 			// -nodeReadReady
 			callbacks.runAndGetNextMessage();
 			// -nodeWriteReady
 			callbacks.runAndGetNextMessage();
 			InputStream fromServer = client.getInputStream();
-			byte[] raw = _readFramedMessage(fromServer);
+			byte[] raw = TestingHelpers.readMessageInFrame(fromServer);
 			ClientResponse redirect = ClientResponse.deserialize(raw);
 			Assert.assertEquals(ClientResponseType.REDIRECT, redirect.type);
 			Assert.assertEquals(-1L, redirect.nonce);
@@ -287,38 +287,6 @@ public class TestClientManager {
 		
 		manager.stopAndWaitForTermination();
 		socket.close();
-	}
-
-
-	private ServerSocketChannel createSocket(int port) throws IOException {
-		ServerSocketChannel socket = ServerSocketChannel.open();
-		InetSocketAddress clientAddress = new InetSocketAddress(port);
-		socket.bind(clientAddress);
-		return socket;
-	}
-
-	private byte[] _readFramedMessage(InputStream source) throws IOException {
-		byte[] frameSize = new byte[Short.BYTES];
-		int read = 0;
-		while (read < frameSize.length) {
-			read += source.read(frameSize, read, frameSize.length - read);
-		}
-		int sizeToRead = Short.toUnsignedInt(ByteBuffer.wrap(frameSize).getShort());
-		byte[] frame = new byte[sizeToRead];
-		read = 0;
-		while (read < frame.length) {
-			read += source.read(frame, read, frame.length - read);
-		}
-		return frame;
-	}
-
-	private void _writeFramedMessage(OutputStream sink, byte[] raw) throws IOException {
-		byte[] frame = new byte[Short.BYTES + raw.length];
-		ByteBuffer.wrap(frame)
-			.putShort((short)raw.length)
-			.put(raw)
-			;
-		sink.write(frame);
 	}
 
 
