@@ -9,7 +9,11 @@ import com.jeffdisher.laminar.types.ConfigEntry;
 public interface IClusterManagerCallbacks {
 	void ioEnqueueClusterCommandForMainThread(Consumer<StateSnapshot> command);
 
-	void mainConnectedToDownstreamPeer(ConfigEntry peer);
+	void mainConnectedToDownstreamPeer(ConfigEntry peer, long lastReceivedMutationOffset);
 
 	void mainDisconnectedFromDownstreamPeer(ConfigEntry peer);
+
+	void mainUpstreamPeerConnected(ConfigEntry peer);
+
+	void mainUpstreamPeerDisconnected(ConfigEntry peer);
 }

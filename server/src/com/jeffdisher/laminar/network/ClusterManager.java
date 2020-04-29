@@ -103,7 +103,7 @@ public class ClusterManager implements INetworkManagerBackgroundCallbacks {
 				// Verify that this is still in the map.
 				ConfigEntry entry = _downstreamConfigByNode.get(node);
 				Assert.assertTrue(null != entry);
-				_callbacks.mainConnectedToDownstreamPeer(entry);
+				_callbacks.mainConnectedToDownstreamPeer(entry, 0L);
 			}});
 	}
 

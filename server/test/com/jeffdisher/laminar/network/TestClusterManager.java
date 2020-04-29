@@ -49,14 +49,14 @@ public class TestClusterManager {
 		manager.mainOpenDownstreamConnection(testEntry);
 		
 		callbacks.runOneCommand();
-		Assert.assertFalse(callbacks.isConnected);
+		Assert.assertNull(callbacks.downstreamPeer);
 		
 		// Now, bind the port, process one command for the second failure, verify it isn't connected, and then another for the connection, and verify it was connected.
 		ServerSocketChannel testSocket = createSocket(testPort);
 		callbacks.runOneCommand();
-		Assert.assertFalse(callbacks.isConnected);
+		Assert.assertNull(callbacks.downstreamPeer);
 		callbacks.runOneCommand();
-		Assert.assertTrue(callbacks.isConnected);
+		Assert.assertNotNull(callbacks.downstreamPeer);
 		
 		manager.stopAndWaitForTermination();
 		testSocket.close();
@@ -80,7 +80,8 @@ public class TestClusterManager {
 
 	private static class TestClusterCallbacks implements IClusterManagerCallbacks {
 		private Consumer<StateSnapshot> _command;
-		public boolean isConnected;
+		public ConfigEntry downstreamPeer;
+		public ConfigEntry upstreamPeer;
 		
 		public synchronized void runOneCommand() throws InterruptedException {
 			while (null == _command) {
@@ -106,15 +107,27 @@ public class TestClusterManager {
 		}
 		
 		@Override
-		public void mainConnectedToDownstreamPeer(ConfigEntry peer) {
-			Assert.assertFalse(this.isConnected);
-			this.isConnected = true;
+		public void mainConnectedToDownstreamPeer(ConfigEntry peer, long lastReceivedMutationOffset) {
+			Assert.assertNull(this.downstreamPeer);
+			this.downstreamPeer = peer;
 		}
 		
 		@Override
 		public void mainDisconnectedFromDownstreamPeer(ConfigEntry peer) {
-			Assert.assertTrue(this.isConnected);
-			this.isConnected = false;
+			Assert.assertEquals(this.downstreamPeer, peer);
+			this.downstreamPeer = null;
+		}
+		
+		@Override
+		public void mainUpstreamPeerConnected(ConfigEntry peer) {
+			Assert.assertNull(this.upstreamPeer);
+			this.upstreamPeer = peer;
+		}
+		
+		@Override
+		public void mainUpstreamPeerDisconnected(ConfigEntry peer) {
+			Assert.assertEquals(this.upstreamPeer, peer);
+			this.upstreamPeer = null;
 		}
 	}
 }

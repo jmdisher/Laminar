@@ -231,7 +231,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 	}
 
 	@Override
-	public void mainConnectedToDownstreamPeer(ConfigEntry peer) {
+	public void mainConnectedToDownstreamPeer(ConfigEntry peer, long lastReceivedMutationOffset) {
 		// Called on main thread.
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		// See if we still have this peer (this will always be true in the current implementation as the ClusterManager checks this).
@@ -251,6 +251,22 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		state.isConnectionUp = false;
 		// For temporary testing purposes, we will say that this peer has no data (just allows us to test this config flow without full cluster commits)
 		state.lastMutationOffsetReceived = 0L;
+	}
+
+	@Override
+	public void mainUpstreamPeerConnected(ConfigEntry peer) {
+		// Called on main thread.
+		Assert.assertTrue(Thread.currentThread() == _mainThread);
+		// We currently don't do anything with these.
+		System.out.println("Upstream peer connected: " + peer);
+	}
+
+	@Override
+	public void mainUpstreamPeerDisconnected(ConfigEntry peer) {
+		// Called on main thread.
+		Assert.assertTrue(Thread.currentThread() == _mainThread);
+		// We currently don't do anything with these.
+		System.out.println("Upstream peer disconnected: " + peer);
 	}
 	// </IClusterManagerCallbacks>
 
