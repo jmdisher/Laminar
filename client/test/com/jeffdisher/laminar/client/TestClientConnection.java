@@ -182,7 +182,8 @@ public class TestClientConnection {
 			// Do the reconnect.
 			fakeServer.disconnect();
 			results[9] = connection.sendTemp(new byte[]{110});
-			fakeServer.handleReconnect();
+			// We should only have stored the next 2 commits after this one.
+			fakeServer.handleReconnect(2);
 			// Now, process all re-sent and the new message (index [5..9]).
 			for (int i = 5; i <= 9; ++i) {
 				fakeServer.processNextMessage(true, true, true);
@@ -201,6 +202,56 @@ public class TestClientConnection {
 			Assert.assertEquals(messagePayloadBias + i, ((ClientMessagePayload_Temp)message.payload).contents[0]);
 			
 		}
+	}
+
+	/**
+	 * This test uses 2 servers:  an initial one, and a second one.
+	 * A single client connects to initial and completes the expected handshake and sends one message while the server
+	 * sends only a RECEIVED (no commit).
+	 * The initial server then sends a redirect to the second.
+	 * The client drops its connection to initial and initiates a reconnect with the second.
+	 * The second sends the missing COMMIT and then CLIENT_READY.
+	 * The client then sends another message and verifies it goes through as expected.
+	 */
+	@Test
+	public void testRedirect() throws Throwable {
+		// Create both servers.
+		int port1 = PORT_BASE + 4;
+		int port2 = PORT_BASE + 5;
+		long baseMutationOffset = 1000L;
+		ServerSocketChannel socket1 = createSocket(port1);
+		ServerSocketChannel socket2 = createSocket(port2);
+		FakeServer fakeServer1 = new FakeServer(socket1, baseMutationOffset);
+		FakeServer fakeServer2 = new FakeServer(socket2, baseMutationOffset);
+		
+		ConfigEntry entry1 = new ConfigEntry(new InetSocketAddress(InetAddress.getLocalHost(), 9999), new InetSocketAddress(InetAddress.getLocalHost(), port1));
+		ConfigEntry entry2 = new ConfigEntry(new InetSocketAddress(InetAddress.getLocalHost(), 9999), new InetSocketAddress(InetAddress.getLocalHost(), port2));
+		
+		// Start the client.
+		try (ClientConnection connection = ClientConnection.open(entry1.client)) {
+			fakeServer1.handleConnect();
+			
+			// Send a message.
+			ClientResult result1 = connection.sendTemp(new byte[]{101});
+			fakeServer1.processNextMessage(true, true, false);
+			result1.waitForReceived();
+			
+			// Now, send the REDIRECT.
+			fakeServer1.sendRedirect(entry2);
+			// Handle the reconnect on the new server.
+			// We won't send any commits back - pretend this server didn't see anything.
+			fakeServer2.handleReconnect(0);
+			// (we can't check if the original connection dropped since we haven't tried to use that socket).
+			
+			// Verify that we got the commit and then send another message.
+			fakeServer2.processNextMessage(true, true, true);
+			result1.waitForCommitted();
+			ClientResult result2 = connection.sendTemp(new byte[]{101});
+			fakeServer2.processNextMessage(true, true, true);
+			result2.waitForCommitted();
+		}
+		socket1.close();
+		socket2.close();
 	}
 
 
@@ -301,19 +352,24 @@ public class TestClientConnection {
 			_clientConnection = null;
 		}
 		
-		public void handleReconnect() throws IOException {
+		public void handleReconnect(int commitsToResend) throws IOException {
 			_clientConnection = _socket.accept();
 			_clientConnection.configureBlocking(true);
 			ClientMessage message = _readNextMessage();
 			ClientMessagePayload_Reconnect reconnect = (ClientMessagePayload_Reconnect)message.payload;
-			Assert.assertEquals(_clientId, reconnect.clientId);
+			if (null != _clientId) {
+				// They were connected to us so make sure this is the same client ID.
+				Assert.assertEquals(_clientId, reconnect.clientId);
+			} else {
+				// They were redirected so we haven't seen them before.
+				_clientId = reconnect.clientId;
+			}
 			// The last commit we would have told them the same "last commit" in the last few responses.
 			Assert.assertEquals(_mostRecentCommitOffset, reconnect.lastCommitGlobalOffset);
 			
-			// We should only have stored the next 2 commits after this one.
 			_clientNextNonce = message.nonce;
 			long globalMutationToLoad = reconnect.lastCommitGlobalOffset + 1L;
-			for (int i = 0; i < 2; ++i) {
+			for (int i = 0; i < commitsToResend; ++i) {
 				ClientMessage oneToSendBack = this.messageByMutationOffset.get(globalMutationToLoad);
 				Assert.assertNotNull(oneToSendBack);
 				_sendResponse(ClientResponse.received(oneToSendBack.nonce, _mostRecentCommitOffset));
@@ -329,6 +385,11 @@ public class TestClientConnection {
 			// Just send them the ready since we have fallen off our storage.
 			_sendResponse(ClientResponse.clientReady(_clientNextNonce, _mostRecentCommitOffset, _synthesizeConfig()));
 		}
+		
+		public void sendRedirect(ConfigEntry entry) throws IOException {
+			_sendResponse(ClientResponse.redirect(entry, _mostRecentCommitOffset));
+		}
+		
 		
 		private ClientMessage _readNextMessage() throws IOException {
 			ByteBuffer frameSize = ByteBuffer.allocate(Short.BYTES);

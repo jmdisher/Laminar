@@ -4,6 +4,7 @@ import java.io.Closeable;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.nio.ByteBuffer;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.SortedMap;
@@ -15,6 +16,7 @@ import com.jeffdisher.laminar.components.NetworkManager;
 import com.jeffdisher.laminar.types.ClientMessage;
 import com.jeffdisher.laminar.types.ClientResponse;
 import com.jeffdisher.laminar.types.ClusterConfig;
+import com.jeffdisher.laminar.types.ConfigEntry;
 import com.jeffdisher.laminar.utils.Assert;
 
 
@@ -65,7 +67,7 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 	}
 
 
-	private final InetSocketAddress _serverAddress;
+	private InetSocketAddress _serverAddress;
 	private final NetworkManager _network;
 	private final UUID _clientId;
 	private NetworkManager.NodeToken _connection;
@@ -248,14 +250,7 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 	@Override
 	public synchronized void outboundNodeDisconnected(NetworkManager.NodeToken node, IOException cause) {
 		Assert.assertTrue(_connection == node);
-		_connection = null;
-		// We will also need to reconnect and wait for CLIENT_READY so the client isn't ready.
-		_isClientReady = false;
-		// We record that a disconnect happened so our next connection attempt is a reconnect.
-		_hasDisconnectedEver = true;
-		_currentConnectionFailure = cause;
-		// We also need to dump any pending messages we were told about since we set _connection to null.
-		_pendingMessages = 0;
+		_handleDisconnect(cause);
 		this.notifyAll();
 	}
 
@@ -439,6 +434,14 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 			// Now, just deserialize and set the config (whether our exising one was null, or not).
 			_currentClusterConfig = ClusterConfig.deserialize(deserialized.extraData);
 			break;
+		case REDIRECT:
+			// We need to shut down our current connection and establish a new one to this new cluster leader.
+			ConfigEntry newLeader = ConfigEntry.deserializeFrom(ByteBuffer.wrap(deserialized.extraData));
+			// We will do this by changing the server address and simulating a dropped connection.
+			_serverAddress = newLeader.client;
+			_network.closeConnection(_connection);
+			_handleDisconnect(new IOException("Redirect received"));
+			break;
 		default:
 			Assert.unreachable("Default response case reached");
 			break;
@@ -460,5 +463,16 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 		boolean didSend = _network.trySendMessage(_connection, serialized);
 		// We only wrote in response to the buffer being empty so this can't fail.
 		Assert.assertTrue(didSend);
+	}
+
+	private void _handleDisconnect(IOException cause) {
+		_connection = null;
+		// We will also need to reconnect and wait for CLIENT_READY so the client isn't ready.
+		_isClientReady = false;
+		// We record that a disconnect happened so our next connection attempt is a reconnect.
+		_hasDisconnectedEver = true;
+		_currentConnectionFailure = cause;
+		// We also need to dump any pending messages we were told about since we set _connection to null.
+		_pendingMessages = 0;
 	}
 }

@@ -22,6 +22,7 @@ import com.jeffdisher.laminar.types.ClientMessagePayload_Handshake;
 import com.jeffdisher.laminar.types.ClientMessagePayload_Reconnect;
 import com.jeffdisher.laminar.types.ClientResponse;
 import com.jeffdisher.laminar.types.ClusterConfig;
+import com.jeffdisher.laminar.types.ConfigEntry;
 import com.jeffdisher.laminar.types.EventRecord;
 import com.jeffdisher.laminar.types.MutationRecord;
 import com.jeffdisher.laminar.utils.Assert;
@@ -39,6 +40,8 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 	private final NetworkManager _networkManager;
 	private final IClientManagerCallbacks _callbacks;
 
+	// The current leader of the cluster (null if we are the leader).  Clients will be redirected to it.
+	private ConfigEntry _clusterLeader;
 	// Note that we track clients in 1 of 3 different states:  new, normal, listener.
 	// -new clients just connected and haven't yet sent a message so we don't know what they are doing.
 	// -normal clients are the kind which send mutative operations and wait for acks
@@ -258,6 +261,25 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 		_send(target, toSend);
 	}
 
+	/**
+	 * Called when the node has entered a FOLLOWER state, in the cluster.
+	 * This means sending a redirect to all current and future clients.
+	 * We will leave listeners connected, though, as they will be able to listen to a FOLLOWER.
+	 * 
+	 * @param clusterLeader The new leader of the cluster.
+	 * @param lastCommittedMutationOffset The offset of the most recent mutation the server committed.
+	 */
+	public void mainEnterFollowerState(ConfigEntry clusterLeader, long lastCommittedMutationOffset) {
+		// Set the config entry for future connection redirects.
+		_clusterLeader = clusterLeader;
+		
+		// Send this to all clients (not new clients since we don't yet know if they are normal clients or listeners).
+		ClientResponse redirect = ClientResponse.redirect(_clusterLeader, lastCommittedMutationOffset);
+		for (UUID client : _normalClientsById.keySet()) {
+			_mainEnqueueMessageToClient(client, redirect);
+		}
+	}
+
 	@Override
 	public void nodeDidConnect(NetworkManager.NodeToken node) {
 		// We handle this here but we ask to handle this on a main thread callback.
@@ -437,10 +459,18 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 			// Create the new state and change the connection state in the maps.
 			ClientState state = _createAndInstallNewClient(client, clientId, 1L);
 			
-			// The HANDSHAKE is special so we return CLIENT_READY instead of a RECEIVED and COMMIT (which is otherwise all we send).
-			ClientResponse ready = ClientResponse.clientReady(state.nextNonce, lastCommittedMutationOffset, currentConfig);
-			System.out.println("HANDSHAKE: " + state.clientId);
-			_mainEnqueueMessageToClient(clientId, ready);
+			if (null == _clusterLeader) {
+				// The HANDSHAKE is special so we return CLIENT_READY instead of a RECEIVED and COMMIT (which is otherwise all we send).
+				ClientResponse ready = ClientResponse.clientReady(state.nextNonce, lastCommittedMutationOffset, currentConfig);
+				System.out.println("HANDSHAKE: " + state.clientId);
+				_mainEnqueueMessageToClient(clientId, ready);
+			} else {
+				// Someone else is the leader so send them a redirect.
+				// On new connections, the redirect shouldn't pretend to know what the leader has committed (could confuse client).
+				ClientResponse redirect = ClientResponse.redirect(_clusterLeader, 0L);
+				System.out.println("REDIRECT: " + state.clientId);
+				_mainEnqueueMessageToClient(clientId, redirect);
+			}
 			break;
 		}
 		case RECONNECT: {

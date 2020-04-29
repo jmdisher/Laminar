@@ -33,4 +33,9 @@ public enum ClientResponseType {
 	 * specific action taken by the receiving client.
 	 */
 	UPDATE_CONFIG,
+	/**
+	 * Can be sent to a normal client at any time.  The nonce should be ignored but the extraData contains the
+	 * serialized ConfigEntry of the cluster leader.
+	 */
+	REDIRECT,
 }

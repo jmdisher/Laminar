@@ -46,6 +46,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 	private ConsoleManager _consoleManager;
 
 	private RaftState _currentState;
+	private ConfigEntry _clusterLeader;
 	private final ConfigEntry _self;
 	// We keep an image of ourself as a downstream peer state to avoid special-cases in looking at clusters so we will need to update it with latest mutation offset as soon as we assign one.
 	private final DownstreamPeerState _selfState;
@@ -257,8 +258,13 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 	public void mainUpstreamPeerConnected(ConfigEntry peer) {
 		// Called on main thread.
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
-		// We currently don't do anything with these.
-		System.out.println("Upstream peer connected: " + peer);
+		
+		// For now, we will interpret an upstream connection as the cluster leader.
+		_currentState = RaftState.FOLLOWER;
+		_clusterLeader = peer;
+		
+		// Send all clients a REDIRECT.
+		_clientManager.mainEnterFollowerState(_clusterLeader, _lastCommittedMutationOffset);
 	}
 
 	@Override

@@ -76,6 +76,20 @@ public class ClientResponse {
 	}
 
 	/**
+	 * Sent to the client when the server becomes a follower (or already was one).  This is only sent to normal clients
+	 * so it can only be sent to a client which has send a HANDSHAKE or RECONNECT at some point.
+	 * 
+	 * @param clusterLeader The new leader the client should contact.
+	 * @param lastCommitGlobalOffset The most recent global message offset which was committed on the server.
+	 * @return A new ClientResponse instance.
+	 */
+	public static ClientResponse redirect(ConfigEntry clusterLeader, long lastCommittedMutationOffset) {
+		ByteBuffer buffer = ByteBuffer.allocate(clusterLeader.serializedSize());
+		clusterLeader.serializeInto(buffer);
+		return new ClientResponse(ClientResponseType.REDIRECT, -1L, lastCommittedMutationOffset, buffer.array());
+	}
+
+	/**
 	 * Creates a new response instance by deserializing it from a payload.
 	 * 
 	 * @param serialized The serialized representation of the response.

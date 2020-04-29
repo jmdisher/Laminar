@@ -18,6 +18,7 @@ import com.jeffdisher.laminar.state.StateSnapshot;
 import com.jeffdisher.laminar.types.ClientMessage;
 import com.jeffdisher.laminar.types.ClientMessagePayload_Temp;
 import com.jeffdisher.laminar.types.ClientResponse;
+import com.jeffdisher.laminar.types.ClientResponseType;
 import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.types.ConfigEntry;
 import com.jeffdisher.laminar.types.EventRecord;
@@ -147,6 +148,96 @@ public class TestClientManager {
 			Assert.assertEquals(record.localOffset, deserialized.localOffset);
 			Assert.assertEquals(record.clientId, deserialized.clientId);
 			Assert.assertArrayEquals(record.payload, deserialized.payload);
+		}
+		NetworkManager.NodeToken noNode = callbacks.runRunnableAndGetNewClientNode(manager);
+		Assert.assertNull(noNode);
+		
+		manager.stopAndWaitForTermination();
+		socket.close();
+	}
+
+	/**
+	 * Tests that we get a redirect message, on the client side, when telling the ClientManager to go into a FOLLOWER
+	 * state.
+	 */
+	@Test
+	public void testClientRedirectExisting() throws Throwable {
+		// Create a server.
+		int port = PORT_BASE + 4;
+		ServerSocketChannel socket = createSocket(port);
+		LatchedCallbacks callbacks = new LatchedCallbacks();
+		ClientManager manager = new ClientManager(socket, callbacks);
+		manager.startAndWaitForReady();
+		
+		// Create the connection, send the commit message, and read it, directly.
+		try (Socket client = new Socket("localhost", port)) {
+			// Send the HANDSHAKE and wait for the CLIENT_READY.
+			UUID clientId = UUID.randomUUID();
+			// -nodeDidConnect
+			callbacks.runAndGetNextMessage();
+			_writeFramedMessage(client.getOutputStream(), ClientMessage.handshake(clientId).serialize());
+			// -nodeReadReady
+			callbacks.runAndGetNextMessage();
+			// -nodeWriteReady
+			callbacks.runAndGetNextMessage();
+			InputStream fromServer = client.getInputStream();
+			byte[] raw = _readFramedMessage(fromServer);
+			ClientResponse ready = ClientResponse.deserialize(raw);
+			Assert.assertEquals(ClientResponseType.CLIENT_READY, ready.type);
+			
+			// Now, tell the ClientManager to enter the follower state.
+			ConfigEntry entry = new ConfigEntry(new InetSocketAddress(9999), new InetSocketAddress(port+1));
+			manager.mainEnterFollowerState(entry, 0L);
+			// -nodeWriteReady
+			callbacks.runAndGetNextMessage();
+			raw = _readFramedMessage(fromServer);
+			ClientResponse redirect = ClientResponse.deserialize(raw);
+			Assert.assertEquals(ClientResponseType.REDIRECT, redirect.type);
+			Assert.assertEquals(-1L, redirect.nonce);
+			Assert.assertEquals(0L, redirect.lastCommitGlobalOffset);
+			Assert.assertEquals(entry, ConfigEntry.deserializeFrom(ByteBuffer.wrap(redirect.extraData)));
+		}
+		NetworkManager.NodeToken noNode = callbacks.runRunnableAndGetNewClientNode(manager);
+		Assert.assertNull(noNode);
+		
+		manager.stopAndWaitForTermination();
+		socket.close();
+	}
+
+	/**
+	 * Tests that we get a new client gets a redirect immediately after handshake when in FOLLOWER state.
+	 */
+	@Test
+	public void testClientRedirectNew() throws Throwable {
+		// Create a server.
+		int port = PORT_BASE + 5;
+		ServerSocketChannel socket = createSocket(port);
+		LatchedCallbacks callbacks = new LatchedCallbacks();
+		ClientManager manager = new ClientManager(socket, callbacks);
+		manager.startAndWaitForReady();
+		
+		// Now, tell the ClientManager to enter the follower state.
+		ConfigEntry entry = new ConfigEntry(new InetSocketAddress(9999), new InetSocketAddress(port+1));
+		manager.mainEnterFollowerState(entry, 0L);
+		
+		// Create the connection, send the commit message, and read it, directly.
+		try (Socket client = new Socket("localhost", port)) {
+			// Send the HANDSHAKE and wait for the REDIRECT.
+			UUID clientId = UUID.randomUUID();
+			// -nodeDidConnect
+			callbacks.runAndGetNextMessage();
+			_writeFramedMessage(client.getOutputStream(), ClientMessage.handshake(clientId).serialize());
+			// -nodeReadReady
+			callbacks.runAndGetNextMessage();
+			// -nodeWriteReady
+			callbacks.runAndGetNextMessage();
+			InputStream fromServer = client.getInputStream();
+			byte[] raw = _readFramedMessage(fromServer);
+			ClientResponse redirect = ClientResponse.deserialize(raw);
+			Assert.assertEquals(ClientResponseType.REDIRECT, redirect.type);
+			Assert.assertEquals(-1L, redirect.nonce);
+			Assert.assertEquals(0L, redirect.lastCommitGlobalOffset);
+			Assert.assertEquals(entry, ConfigEntry.deserializeFrom(ByteBuffer.wrap(redirect.extraData)));
 		}
 		NetworkManager.NodeToken noNode = callbacks.runRunnableAndGetNewClientNode(manager);
 		Assert.assertNull(noNode);
