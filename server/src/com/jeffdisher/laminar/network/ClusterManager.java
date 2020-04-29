@@ -20,6 +20,7 @@ import com.jeffdisher.laminar.utils.Assert;
  */
 public class ClusterManager implements INetworkManagerBackgroundCallbacks {
 	private final Thread _mainThread;
+	private final ConfigEntry _self;
 	private final NetworkManager _networkManager;
 	private final IClusterManagerCallbacks _callbacks;
 
@@ -30,8 +31,9 @@ public class ClusterManager implements INetworkManagerBackgroundCallbacks {
 	// Much like ClientManager, we store new upstream peers until we get the handshake from them to know their state.
 	private final Set<NetworkManager.NodeToken> _newUpstreamNodes;
 
-	public ClusterManager(ServerSocketChannel serverSocket, IClusterManagerCallbacks callbacks) throws IOException {
+	public ClusterManager(ConfigEntry self, ServerSocketChannel serverSocket, IClusterManagerCallbacks callbacks) throws IOException {
 		_mainThread = Thread.currentThread();
+		_self = self;
 		// This is really just a high-level wrapper over the common NetworkManager so create that here.
 		_networkManager = NetworkManager.bidirectional(serverSocket, this);
 		_callbacks = callbacks;

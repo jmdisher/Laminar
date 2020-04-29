@@ -1,7 +1,9 @@
 package com.jeffdisher.laminar.network;
 
 import java.io.IOException;
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.net.UnknownHostException;
 import java.nio.channels.ServerSocketChannel;
 import java.util.function.Consumer;
 
@@ -9,6 +11,7 @@ import org.junit.Assert;
 import org.junit.Test;
 
 import com.jeffdisher.laminar.state.StateSnapshot;
+import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.types.ConfigEntry;
 
 
@@ -18,9 +21,10 @@ public class TestClusterManager {
 	@Test
 	public void testStartStop() throws Throwable {
 		int port = PORT_BASE + 1;
+		ConfigEntry self = _buildSelf();
 		ServerSocketChannel socket = createSocket(port);
 		TestClusterCallbacks callbacks = new TestClusterCallbacks();
-		ClusterManager manager = new ClusterManager(socket, callbacks);
+		ClusterManager manager = new ClusterManager(self, socket, callbacks);
 		manager.startAndWaitForReady();
 		manager.stopAndWaitForTermination();
 		socket.close();
@@ -35,9 +39,10 @@ public class TestClusterManager {
 		int managerPort = PORT_BASE + 2;
 		int testPort = PORT_BASE + 3;
 		ConfigEntry testEntry = new ConfigEntry(new InetSocketAddress(testPort), new InetSocketAddress(9999));
+		ConfigEntry self = _buildSelf();
 		ServerSocketChannel socket = createSocket(managerPort);
 		TestClusterCallbacks callbacks = new TestClusterCallbacks();
-		ClusterManager manager = new ClusterManager(socket, callbacks);
+		ClusterManager manager = new ClusterManager(self, socket, callbacks);
 		manager.startAndWaitForReady();
 		
 		// Issue the open connection request, wait for the command that we failed to run, and verify it wasn't connected.
@@ -63,6 +68,13 @@ public class TestClusterManager {
 		InetSocketAddress clientAddress = new InetSocketAddress(port);
 		socket.bind(clientAddress);
 		return socket;
+	}
+
+	private static ConfigEntry _buildSelf() throws UnknownHostException {
+		InetAddress localhost = InetAddress.getLocalHost();
+		InetSocketAddress cluster = ClusterConfig.cleanSocketAddress(new InetSocketAddress(localhost, 1000));
+		InetSocketAddress client = ClusterConfig.cleanSocketAddress(new InetSocketAddress(localhost, 1001));
+		return new ConfigEntry(cluster, client);
 	}
 
 
