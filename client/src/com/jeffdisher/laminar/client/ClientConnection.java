@@ -75,12 +75,12 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 	private ClusterConfig _currentClusterConfig;
 
 	private volatile boolean _keepRunning;
-	private Thread _backgroundThread;
+	private Thread _internalThread;
 	private int _pendingMessages;
 	private boolean _canWrite;
 	private final List<ClientResult> _outgoingMessages;
 	// _inFlightMessages must be sorted since we traverse the keys in-order at the start and end of reconnect.
-	// NOTE:  _inFlightMessages can ONLY be accessed by _backgroundThread.
+	// NOTE:  _inFlightMessages can ONLY be accessed by _internalThread.
 	private final SortedMap<Long, ClientResult> _inFlightMessages;
 	// This is part of the connection state machine - once a connection is established, we need to ask the internal
 	// thread to send a handshake.  This also means that a single write is allowed, although _canWrite wasn't set for
@@ -91,7 +91,7 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 	private boolean _isClientReady;
 	private long _nextNonce;
 	// We store the last global commit the server sends us in responses so we can ask what happened since then, when
-	// reconnecting.  It is only read or written by _backgroundThread.
+	// reconnecting.  It is only read or written by _internalThread.
 	private long _lastCommitGlobalOffset;
 
 	// Due to reconnection requirements, it is possible to fail a connection but not want to bring down the system.
@@ -113,16 +113,16 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 		// First message has nonce of 1L.
 		_nextNonce = 1L;
 		_keepRunning = true;
-		_backgroundThread = new Thread() {
+		_internalThread = new Thread() {
 			@Override
 			public void run() {
-				_backgroundThreadMain();
+				_internalThreadMain();
 			}
 		};
 		// Note that it is normally poor form to start the thread in the constructor but this is a private constructor
 		// so the matter is 6 vs 1/2 dozen and this is more direct.
-		_backgroundThread.setName("Laminar client (" + server + ")");
-		_backgroundThread.start();
+		_internalThread.setName("Laminar client (" + _serverAddress + ")");
+		_internalThread.start();
 	}
 
 	/**
@@ -133,6 +133,7 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 	 * @throws InterruptedException The user interrupted this thread before it had an answer.
 	 */
 	public synchronized void waitForConnection() throws InterruptedException {
+		Assert.assertTrue(Thread.currentThread() != _internalThread);
 		// Wait until we get a CLIENT_READY message on this connection.
 		while (!_isClientReady) {
 			this.wait();
@@ -140,6 +141,7 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 	}
 
 	public synchronized ClientResult sendTemp(byte[] payload) {
+		Assert.assertTrue(Thread.currentThread() != _internalThread);
 		ClientMessage message = ClientMessage.temp(_nextNonce++, payload);
 		ClientResult result = new ClientResult(message);
 		_outgoingMessages.add(result);
@@ -148,6 +150,7 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 	}
 
 	public synchronized ClientResult sendPoison(byte[] payload) {
+		Assert.assertTrue(Thread.currentThread() != _internalThread);
 		ClientMessage message = ClientMessage.poison(_nextNonce++, payload);
 		ClientResult result = new ClientResult(message);
 		_outgoingMessages.add(result);
@@ -156,6 +159,7 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 	}
 
 	public synchronized ClientResult sendUpdateConfig(ClusterConfig config) {
+		Assert.assertTrue(Thread.currentThread() != _internalThread);
 		ClientMessage message = ClientMessage.updateConfig(_nextNonce++, config);
 		ClientResult result = new ClientResult(message);
 		_outgoingMessages.add(result);
@@ -170,6 +174,7 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 	 * @return The UUID of this client.
 	 */
 	public UUID getClientId() {
+		Assert.assertTrue(Thread.currentThread() != _internalThread);
 		return _clientId;
 	}
 
@@ -177,6 +182,7 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 	 * @return The nonce that this client will assign to the next message it sends.
 	 */
 	public long getNextNonce() {
+		Assert.assertTrue(Thread.currentThread() != _internalThread);
 		return _nextNonce;
 	}
 
@@ -194,6 +200,7 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 	 * @throws InterruptedException The user interrupted this thread before it had an answer.
 	 */
 	public synchronized void waitForConnectionOrFailure() throws IOException, InterruptedException {
+		Assert.assertTrue(Thread.currentThread() != _internalThread);
 		while (!_isClientReady && (null == _mostRecentConnectionFailure)) {
 			this.wait();
 		}
@@ -206,22 +213,26 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 	 * @return The most recent cluster config we received from the server (null during start-up).
 	 */
 	public ClusterConfig getCurrentConfig() {
+		Assert.assertTrue(Thread.currentThread() != _internalThread);
 		return _currentClusterConfig;
 	}
 
 	// <INetworkManagerBackgroundCallbacks>
 	@Override
 	public void nodeDidConnect(NetworkManager.NodeToken node) {
+		Assert.assertTrue(Thread.currentThread() != _internalThread);
 		throw Assert.unreachable("Incoming connections not exposed");
 	}
 
 	@Override
 	public void nodeDidDisconnect(NetworkManager.NodeToken node, IOException cause) {
+		Assert.assertTrue(Thread.currentThread() != _internalThread);
 		throw Assert.unreachable("Incoming connections not exposed");
 	}
 
 	@Override
 	public synchronized void nodeWriteReady(NetworkManager.NodeToken node) {
+		Assert.assertTrue(Thread.currentThread() != _internalThread);
 		Assert.assertTrue(_connection == node);
 		_canWrite = true;
 		this.notifyAll();
@@ -229,6 +240,7 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 
 	@Override
 	public synchronized void nodeReadReady(NetworkManager.NodeToken node) {
+		Assert.assertTrue(Thread.currentThread() != _internalThread);
 		Assert.assertTrue(_connection == node);
 		_pendingMessages += 1;
 		if (1 == _pendingMessages) {
@@ -238,6 +250,7 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 
 	@Override
 	public synchronized void outboundNodeConnected(NetworkManager.NodeToken node) {
+		Assert.assertTrue(Thread.currentThread() != _internalThread);
 		Assert.assertTrue(null == _connection);
 		_connection = node;
 		// Clear any now-stale connection error.
@@ -249,6 +262,7 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 
 	@Override
 	public synchronized void outboundNodeDisconnected(NetworkManager.NodeToken node, IOException cause) {
+		Assert.assertTrue(Thread.currentThread() != _internalThread);
 		Assert.assertTrue(_connection == node);
 		_handleDisconnect(cause);
 		this.notifyAll();
@@ -256,8 +270,9 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 
 	@Override
 	public synchronized void outboundNodeConnectionFailed(NetworkManager.NodeToken token, IOException cause) {
+		Assert.assertTrue(Thread.currentThread() != _internalThread);
 		Assert.assertTrue(null == _connection);
-		// Store the cause and interrupt the background thread so it will attempt a reconnect.
+		// Store the cause and interrupt the internal thread so it will attempt a reconnect.
 		_currentConnectionFailure = cause;
 		this.notifyAll();
 	}
@@ -265,12 +280,13 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 
 	@Override
 	public void close() throws IOException {
+		Assert.assertTrue(Thread.currentThread() != _internalThread);
 		synchronized (this) {
 			_keepRunning = false;
 			this.notifyAll();
 		}
 		try {
-			_backgroundThread.join();
+			_internalThread.join();
 		} catch (InterruptedException e) {
 			// We don't rely on interruption.
 			Assert.unexpected(e);
@@ -279,7 +295,7 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 	}
 
 
-	private void _backgroundThreadMain() {
+	private void _internalThreadMain() {
 		while (_keepRunning) {
 			synchronized (this) {
 				// Wait for something to do.
@@ -347,23 +363,24 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 				// Now apply whatever changes we can make in response to waking.
 				if (canRead) {
 					// Note that this method may receive a CLIENT_READY message in which case we may need to notify the user thread that the connection is up.
-					boolean clientBecameReady = _lockedBackgroundReadAndDispatchMessage();
+					boolean clientBecameReady = _lockedInternalReadAndDispatchMessage();
 					if (clientBecameReady) {
 						_isClientReady = true;
 						this.notifyAll();
 					}
 				}
 				if (null != messageToWrite) {
-					_lockedBackgroundSendMessageInWrapper(messageToWrite);
+					_lockedInternalSendMessageInWrapper(messageToWrite);
 				}
 				if (null != handshakeToSend) {
-					_lockedBackgroundSerializeAndSendMessage(handshakeToSend);
+					_lockedInternalSerializeAndSendMessage(handshakeToSend);
 				}
 			}
 		}
 	}
 
-	private boolean _lockedBackgroundReadAndDispatchMessage() {
+	private boolean _lockedInternalReadAndDispatchMessage() {
+		Assert.assertTrue(Thread.currentThread() == _internalThread);
 		byte[] message = _network.readWaitingMessage(_connection);
 		// We were told this was here so it can't fail.
 		Assert.assertTrue(null != message);
@@ -440,6 +457,7 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 			// We will do this by changing the server address and simulating a dropped connection.
 			_serverAddress = newLeader.client;
 			_network.closeConnection(_connection);
+			_internalThread.setName("Laminar client (" + _serverAddress + ")");
 			_handleDisconnect(new IOException("Redirect received"));
 			break;
 		default:
@@ -449,15 +467,17 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 		return clientBecameReady;
 	}
 
-	private void _lockedBackgroundSendMessageInWrapper(ClientResult wrapper) {
+	private void _lockedInternalSendMessageInWrapper(ClientResult wrapper) {
+		Assert.assertTrue(Thread.currentThread() == _internalThread);
 		// Unwrap the message.
 		ClientMessage messageToWrite = wrapper.message;
-		_lockedBackgroundSerializeAndSendMessage(messageToWrite);
+		_lockedInternalSerializeAndSendMessage(messageToWrite);
 		// We also need to track this as an in-flight message.
 		_inFlightMessages.put(messageToWrite.nonce, wrapper);
 	}
 
-	private void _lockedBackgroundSerializeAndSendMessage(ClientMessage messageToWrite) {
+	private void _lockedInternalSerializeAndSendMessage(ClientMessage messageToWrite) {
+		Assert.assertTrue(Thread.currentThread() == _internalThread);
 		// Serialize the message.
 		byte[] serialized = messageToWrite.serialize();
 		boolean didSend = _network.trySendMessage(_connection, serialized);
