@@ -195,13 +195,13 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		// It is invalid to request a mutation from the future.
 		Assert.assertTrue(mutationOffsetToFetch < _nextGlobalMutationOffset);
 		
-		if (mutationOffsetToFetch < _inFlightMutationOffsetBias) {
+		// We will fail to get the tuple if it has already been committed and is no longer in-flight.
+		InFlightTuple tuple = _getInFlightTuple(mutationOffsetToFetch);
+		if (null == tuple) {
 			// If the mutation is on disk, fetch it from there.
 			_diskManager.fetchMutation(mutationOffsetToFetch);
 		} else {
 			// This must be in our in-flight tuples waiting to commit.
-			int index = (int)(mutationOffsetToFetch - _inFlightMutationOffsetBias);
-			InFlightTuple tuple = _inFlightMutations.get(index);
 			MutationRecord preCommitMutation = tuple.mutation;
 			// This must be the mutation we wanted.
 			Assert.assertTrue(mutationOffsetToFetch == preCommitMutation.globalOffset);
@@ -534,6 +534,17 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 			InFlightTuple record = _inFlightMutations.remove();
 			_commitAndUpdateBias(record.mutation, record.event);
 		}
+	}
+
+	private InFlightTuple _getInFlightTuple(long mutationOffsetToFetch) {
+		Assert.assertTrue(mutationOffsetToFetch < _nextGlobalMutationOffset);
+		
+		InFlightTuple tuple = null;
+		if (mutationOffsetToFetch >= _inFlightMutationOffsetBias) {
+			int index = (int)(mutationOffsetToFetch - _inFlightMutationOffsetBias);
+			tuple = _inFlightMutations.get(index);
+		}
+		return tuple;
 	}
 
 
