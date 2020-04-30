@@ -12,6 +12,7 @@ import com.jeffdisher.laminar.client.ClientConnection;
 import com.jeffdisher.laminar.client.ClientResult;
 import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.types.ConfigEntry;
+import com.jeffdisher.laminar.types.EventRecord;
 
 
 /**
@@ -205,5 +206,74 @@ public class TestCluster {
 		
 		// Shut down.
 		Assert.assertEquals(0, wrapper.stop());
+	}
+
+	/**
+	 * Tests how a client is redirected from follower to leader and that a listener is still able to be connected to the
+	 * follower.
+	 */
+	@Test
+	public void testListenToFollower() throws Throwable {
+		ServerWrapper leader = ServerWrapper.startedServerWrapper("testListenToFollower-LEADER", 2003, 2002, new File("/tmp/laminar"));
+		InetSocketAddress leaderClientAddress = new InetSocketAddress(InetAddress.getLocalHost(), 2002);
+		ServerWrapper follower = ServerWrapper.startedServerWrapper("testListenToFollower-FOLLOWER", 2005, 2004, new File("/tmp/laminar2"));
+		InetSocketAddress followerClientAddress= new InetSocketAddress(InetAddress.getLocalHost(), 2004);
+		
+		// Start the listeners.
+		// NOTE:  Until the heartbeat is implemented, the follower will always be 1 element behind.
+		CaptureListener leaderListener = new CaptureListener(leaderClientAddress, 3);
+		CaptureListener followerListener = new CaptureListener(followerClientAddress, 2);
+		leaderListener.setName("Leader");
+		followerListener.setName("Follower");
+		leaderListener.start();
+		followerListener.start();
+		
+		// Create 2 clients.
+		ClientConnection client1 = ClientConnection.open(leaderClientAddress);
+		ClientConnection client2 = ClientConnection.open(followerClientAddress);
+		
+		try {
+			// Capture the config
+			client1.waitForConnection();
+			client2.waitForConnection();
+			ClusterConfig leaderInitial = client1.getCurrentConfig();
+			ClusterConfig followerInitial = client2.getCurrentConfig();
+			Assert.assertEquals(1, leaderInitial.entries.length);
+			Assert.assertEquals(1, followerInitial.entries.length);
+			ClusterConfig config = ClusterConfig.configFromEntries(new ConfigEntry[] {leaderInitial.entries[0], followerInitial.entries[0]});
+			
+			// Send the config on client1 (will make it the leader) and wait for it to commit.
+			leaderListener.skipNonceCheck(client1.getClientId(), 1L);
+			followerListener.skipNonceCheck(client1.getClientId(), 1L);
+			ClientResult configResult = client1.sendUpdateConfig(config);
+			configResult.waitForCommitted();
+			
+			// Now, send another message on client1 and 2 on client2.
+			// NOTE:  Without the hearbeat, these MUST be lock-step:  wait for commit before sending the next or the follower won't see them commit.
+			ClientResult client1_1 = client1.sendTemp(new byte[] {1});
+			client1_1.waitForCommitted();
+			ClientResult client2_1 = client2.sendTemp(new byte[] {2});
+			client2_1.waitForCommitted();
+			ClientResult client2_2 = client2.sendTemp(new byte[] {3});
+			client2_2.waitForCommitted();
+			
+			// Finally, check that the listeners saw all the results.
+			EventRecord[] leaderRecords = leaderListener.waitForTerminate();
+			EventRecord[] followerRecords = followerListener.waitForTerminate();
+			Assert.assertEquals(leaderRecords[0].globalOffset, followerRecords[0].globalOffset);
+			Assert.assertEquals(leaderRecords[1].globalOffset, followerRecords[1].globalOffset);
+			Assert.assertEquals(leaderRecords[1].globalOffset, leaderRecords[0].globalOffset + 1);
+			Assert.assertEquals(leaderRecords[2].globalOffset, leaderRecords[1].globalOffset + 1);
+			
+			// The listeners should also have seen the config update, even though they didn't both change target.
+			Assert.assertEquals(2, leaderListener.getCurrentConfig().entries.length);
+			Assert.assertEquals(2, followerListener.getCurrentConfig().entries.length);
+		} finally {
+			// Shut down.
+			client1.close();
+			client2.close();
+			Assert.assertEquals(0, leader.stop());
+			Assert.assertEquals(0, follower.stop());
+		}
 	}
 }

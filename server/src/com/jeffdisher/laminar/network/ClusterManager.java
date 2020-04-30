@@ -12,11 +12,14 @@ import java.util.function.Consumer;
 import com.jeffdisher.laminar.components.INetworkManagerBackgroundCallbacks;
 import com.jeffdisher.laminar.components.NetworkManager;
 import com.jeffdisher.laminar.network.p2p.DownstreamMessage;
+import com.jeffdisher.laminar.network.p2p.DownstreamPayload_AppendMutations;
 import com.jeffdisher.laminar.network.p2p.DownstreamPayload_Identity;
 import com.jeffdisher.laminar.network.p2p.UpstreamPayload_PeerState;
+import com.jeffdisher.laminar.network.p2p.UpstreamPayload_ReceivedMutations;
 import com.jeffdisher.laminar.network.p2p.UpstreamResponse;
 import com.jeffdisher.laminar.state.StateSnapshot;
 import com.jeffdisher.laminar.types.ConfigEntry;
+import com.jeffdisher.laminar.types.MutationRecord;
 import com.jeffdisher.laminar.utils.Assert;
 
 
@@ -75,6 +78,38 @@ public class ClusterManager implements INetworkManagerBackgroundCallbacks {
 		_downstreamConfigByNode.put(token, entry);
 	}
 
+	public void mainSendMutationToDownstreamNode(ConfigEntry peer, MutationRecord mutation, long lastCommittedMutationOffset) {
+		Assert.assertTrue(Thread.currentThread() == _mainThread);
+		
+		// Make sure this didn't asynchronously disconnect.
+		NetworkManager.NodeToken token = _downstreamNodesByConfig.get(peer);
+		if (null != token) {
+			// Wrap this in APPEND_MUTATIONS.
+			DownstreamMessage message = DownstreamMessage.appendMutations(mutation, lastCommittedMutationOffset);
+			ByteBuffer buffer = ByteBuffer.allocate(message.serializedSize());
+			message.serializeInto(buffer);
+			boolean didSend = _networkManager.trySendMessage(token, buffer.array());
+			// This path is only taken when they are writable.
+			Assert.assertTrue(didSend);
+		} else {
+			System.out.println("Mutation to downstream dropped");
+		}
+	}
+
+	public void mainSendAckToLeader(ConfigEntry peer, long mutationToAck) {
+		Assert.assertTrue(Thread.currentThread() == _mainThread);
+		// This MUST be the leader (disconnects not currently handled).
+		Assert.assertTrue(_readyUpstreamNodesByConfig.containsKey(peer));
+		
+		// Wrap this in RECEIVED_MUTATIONS.
+		UpstreamResponse ack = UpstreamResponse.receivedMutations(mutationToAck);
+		ByteBuffer buffer = ByteBuffer.allocate(ack.serializedSize());
+		ack.serializeInto(buffer);
+		boolean didSend = _networkManager.trySendMessage(_readyUpstreamNodesByConfig.get(peer), buffer.array());
+		// This path is only taken when they are writable.
+		Assert.assertTrue(didSend);
+	}
+
 	@Override
 	public void nodeDidConnect(NetworkManager.NodeToken node) {
 		Assert.assertTrue(Thread.currentThread() != _mainThread);
@@ -129,7 +164,12 @@ public class ClusterManager implements INetworkManagerBackgroundCallbacks {
 				boolean isDownstream = _downstreamConfigByNode.containsKey(node);
 				// They can't be write-ready as new and they must be one of these.
 				Assert.assertTrue(isUpstream != isDownstream);
-				System.out.println("TODO:  Handle nodeWriteReady: " + (isUpstream ? "UPSTREAM" : "DOWNSTREAM"));
+				
+				if (isDownstream) {
+					_callbacks.mainDownstreamPeerWriteReady(_downstreamConfigByNode.get(node));
+				} else {
+					_callbacks.mainUpstreamPeerWriteReady(_readyUpstreamNodesByNode.get(node));
+				}
 			}});
 	}
 
@@ -147,10 +187,14 @@ public class ClusterManager implements INetworkManagerBackgroundCallbacks {
 					// We are the upstream node so they must be sending the PEER_STATE.
 					byte[] payload = _networkManager.readWaitingMessage(node);
 					UpstreamResponse response = UpstreamResponse.deserializeFrom(ByteBuffer.wrap(payload));
-					Assert.assertTrue(UpstreamResponse.Type.PEER_STATE == response.type);
-					// This now counts as us being "connected".
-					_callbacks.mainConnectedToDownstreamPeer(_downstreamConfigByNode.get(node), ((UpstreamPayload_PeerState)response.payload).lastReceivedMutationOffset);
-				} else {
+					if (UpstreamResponse.Type.PEER_STATE == response.type) {
+						// This now counts as us being "connected".
+						_callbacks.mainConnectedToDownstreamPeer(_downstreamConfigByNode.get(node), ((UpstreamPayload_PeerState)response.payload).lastReceivedMutationOffset);
+					} else if (UpstreamResponse.Type.RECEIVED_MUTATIONS == response.type) {
+						// The peer received the last mutations we sent so we can proceed with the next.
+						_callbacks.mainDownstreamPeerReceivedMutations(_downstreamConfigByNode.get(node), ((UpstreamPayload_ReceivedMutations)response.payload).lastReceivedMutationOffset);
+					}
+				} else if (_newUpstreamNodes.contains(node)) {
 					// We currently don't allow a "ready" upstream node to send us anything, nor are we handling disconnects at this point, yet.
 					Assert.assertTrue(_newUpstreamNodes.contains(node));
 					
@@ -173,6 +217,15 @@ public class ClusterManager implements INetworkManagerBackgroundCallbacks {
 					_readyUpstreamNodesByNode.put(node, entry);
 					_readyUpstreamNodesByConfig.put(entry, node);
 					_callbacks.mainUpstreamPeerConnected(entry);
+				} else {
+					// Ready upstream nodes just means the leader sending us an APPEND_MUTATIONS, for now.
+					Assert.assertTrue(_readyUpstreamNodesByNode.containsKey(node));
+					
+					byte[] raw = _networkManager.readWaitingMessage(node);
+					DownstreamMessage message = DownstreamMessage.deserializeFrom(ByteBuffer.wrap(raw));
+					Assert.assertTrue(DownstreamMessage.Type.APPEND_MUTATIONS == message.type);
+					DownstreamPayload_AppendMutations payload = (DownstreamPayload_AppendMutations)message.payload;
+					_callbacks.mainUpstreamSentMutation(_readyUpstreamNodesByNode.get(node), payload.record, payload.lastCommittedMutationOffset);
 				}
 			}});
 	}

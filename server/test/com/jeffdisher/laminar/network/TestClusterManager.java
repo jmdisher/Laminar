@@ -6,6 +6,7 @@ import java.net.Socket;
 import java.net.UnknownHostException;
 import java.nio.ByteBuffer;
 import java.nio.channels.ServerSocketChannel;
+import java.util.UUID;
 import java.util.function.Consumer;
 
 import org.junit.Assert;
@@ -18,6 +19,7 @@ import com.jeffdisher.laminar.state.StateSnapshot;
 import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.types.ConfigEntry;
 import com.jeffdisher.laminar.types.MutationRecord;
+import com.jeffdisher.laminar.types.MutationRecordType;
 import com.jeffdisher.laminar.utils.TestingHelpers;
 
 
@@ -138,6 +140,81 @@ public class TestClusterManager {
 		socket1.close();
 	}
 
+	/**
+	 * Creates 2 ClusterManagers and verifies the messages being sent between them during and after an initial
+	 * handshake which describes the need for 1 element to be synchronized from upstream to downstream.
+	 */
+	@Test
+	public void testElementSynchronization() throws Throwable {
+		int upstreamPort = PORT_BASE + 6;
+		int downstreamPort = PORT_BASE + 7;
+		ServerSocketChannel upstreamSocket = TestingHelpers.createServerSocket(upstreamPort);
+		ServerSocketChannel downstreamSocket = TestingHelpers.createServerSocket(downstreamPort);
+		ConfigEntry upstreamEntry = new ConfigEntry(new InetSocketAddress(upstreamPort), new InetSocketAddress(9999));
+		ConfigEntry downstreamEntry = new ConfigEntry(new InetSocketAddress(downstreamPort), new InetSocketAddress(9999));
+		TestClusterCallbacks upstreamCallbacks = new TestClusterCallbacks();
+		TestClusterCallbacks downstreamCallbacks = new TestClusterCallbacks();
+		ClusterManager upstreamManager = new ClusterManager(upstreamEntry, upstreamSocket, upstreamCallbacks);
+		ClusterManager downstreamManager = new ClusterManager(downstreamEntry, downstreamSocket, downstreamCallbacks);
+		upstreamManager.startAndWaitForReady();
+		downstreamManager.startAndWaitForReady();
+		
+		// Initial handshake.
+		// Open the connection and run commands:
+		upstreamManager.mainOpenDownstreamConnection(downstreamEntry);
+		// -1 outboundNodeConnected
+		upstreamCallbacks.runOneCommand();
+		// (we don't see callback until handshake completes)
+		Assert.assertNull(upstreamCallbacks.downstreamPeer);
+		// -2 nodeDidConnect
+		downstreamCallbacks.runOneCommand();
+		// (we don't see callback until handshake completes)
+		Assert.assertNull(downstreamCallbacks.upstreamPeer);
+		// -2 nodeReadReady (gives us the upstream peer callback)
+		Assert.assertNull(downstreamCallbacks.upstreamPeer);
+		downstreamCallbacks.runOneCommand();
+		Assert.assertEquals(upstreamEntry, downstreamCallbacks.upstreamPeer);
+		// -1 nodeWriteReady
+		upstreamCallbacks.runOneCommand();
+		// -2 nodeWriteReady
+		downstreamCallbacks.runOneCommand();
+		// downstreamCallbacks1 nodeReadReady (gives us the downstream peer callback)
+		Assert.assertNull(upstreamCallbacks.downstreamPeer);
+		upstreamCallbacks.runOneCommand();
+		Assert.assertEquals(downstreamEntry, upstreamCallbacks.downstreamPeer);
+		
+		// Send synchronization element.
+		long offset1 = 1L;
+		UUID clientId1 = UUID.randomUUID();
+		long nonce1 = 1L;
+		byte[] payload1 = new byte[] {1,2,3};
+		MutationRecord mutation1 = MutationRecord.generateRecord(MutationRecordType.TEMP, offset1, clientId1, nonce1, payload1);
+		long upstreamCommitOffset = 0L;
+		upstreamManager.mainSendMutationToDownstreamNode(downstreamEntry, mutation1, upstreamCommitOffset);
+		// -down nodeReadReady
+		Assert.assertNull(downstreamCallbacks.upstreamMutation);
+		downstreamCallbacks.runOneCommand();
+		Assert.assertNotNull(downstreamCallbacks.upstreamMutation);
+		Assert.assertEquals(0L, downstreamCallbacks.upstreamCommitOffset);
+		Assert.assertEquals(offset1, downstreamCallbacks.upstreamMutation.globalOffset);
+		// -up nodeWriteReady
+		upstreamCallbacks.runOneCommand();
+		
+		// Send ack from downstream to upstream.
+		downstreamManager.mainSendAckToLeader(downstreamCallbacks.upstreamPeer, downstreamCallbacks.upstreamMutation.globalOffset);
+		// -up nodeReadReady
+		Assert.assertEquals(0L, upstreamCallbacks.downstreamReceivedMutation);
+		upstreamCallbacks.runOneCommand();
+		Assert.assertEquals(offset1, upstreamCallbacks.downstreamReceivedMutation);
+		// -down nodeWriteReady
+		downstreamCallbacks.runOneCommand();
+		
+		downstreamManager.stopAndWaitForTermination();
+		upstreamManager.stopAndWaitForTermination();
+		downstreamSocket.close();
+		upstreamSocket.close();
+	}
+
 
 	private static ConfigEntry _buildSelf() throws UnknownHostException {
 		InetAddress localhost = InetAddress.getLocalHost();
@@ -151,6 +228,9 @@ public class TestClusterManager {
 		private Consumer<StateSnapshot> _command;
 		public ConfigEntry downstreamPeer;
 		public ConfigEntry upstreamPeer;
+		public MutationRecord upstreamMutation;
+		public long upstreamCommitOffset;
+		public long downstreamReceivedMutation;
 		
 		public synchronized void runOneCommand() throws InterruptedException {
 			while (null == _command) {
@@ -205,6 +285,9 @@ public class TestClusterManager {
 
 		@Override
 		public void mainDownstreamPeerReceivedMutations(ConfigEntry peer, long lastReceivedMutationOffset) {
+			Assert.assertTrue(this.downstreamPeer == peer);
+			Assert.assertEquals(0L,  this.downstreamReceivedMutation);
+			this.downstreamReceivedMutation = lastReceivedMutationOffset;
 		}
 
 		@Override
@@ -213,6 +296,11 @@ public class TestClusterManager {
 
 		@Override
 		public void mainUpstreamSentMutation(ConfigEntry peer, MutationRecord record, long lastCommittedMutationOffset) {
+			Assert.assertTrue(this.upstreamPeer == peer);
+			Assert.assertNull(this.upstreamMutation);
+			Assert.assertEquals(0L,  this.upstreamCommitOffset);
+			this.upstreamMutation = record;
+			this.upstreamCommitOffset = lastCommittedMutationOffset;
 		}
 	}
 }
