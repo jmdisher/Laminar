@@ -35,16 +35,25 @@ public class MutationRecord {
 
 	public static MutationRecord deserialize(byte[] serialized) {
 		ByteBuffer wrapper = ByteBuffer.wrap(serialized);
-		int ordinal = (int) wrapper.get();
+		return _deserializeFrom(wrapper);
+	}
+
+	public static MutationRecord deserializeFrom(ByteBuffer buffer) {
+		return _deserializeFrom(buffer);
+	}
+
+
+	private static MutationRecord _deserializeFrom(ByteBuffer buffer) {
+		int ordinal = (int) buffer.get();
 		if (ordinal >= MutationRecordType.values().length) {
 			throw Assert.unimplemented("Handle corrupt message");
 		}
 		MutationRecordType type = MutationRecordType.values()[ordinal];
-		long globalOffset = wrapper.getLong();
-		UUID clientId = new UUID(wrapper.getLong(), wrapper.getLong());
-		long clientNonce = wrapper.getLong();
-		byte[] payload = new byte[wrapper.remaining()];
-		wrapper.get(payload);
+		long globalOffset = buffer.getLong();
+		UUID clientId = new UUID(buffer.getLong(), buffer.getLong());
+		long clientNonce = buffer.getLong();
+		byte[] payload = new byte[buffer.remaining()];
+		buffer.get(payload);
 		return new MutationRecord(type, globalOffset, clientId, clientNonce, payload);
 	}
 
@@ -64,15 +73,32 @@ public class MutationRecord {
 	}
 
 	public byte[] serialize() {
-		byte[] buffer = new byte[Byte.BYTES + Long.BYTES + (2 * Long.BYTES) + Long.BYTES + this.payload.length];
+		byte[] buffer = new byte[_serializedSize()];
 		ByteBuffer wrapper = ByteBuffer.wrap(buffer);
-		wrapper
+		_serializeInto(wrapper);
+		return buffer;
+	}
+
+	public int serializedSize() {
+		return _serializedSize();
+	}
+
+	public void serializeInto(ByteBuffer buffer) {
+		_serializeInto(buffer);
+	}
+
+
+	private int _serializedSize() {
+		return Byte.BYTES + Long.BYTES + (2 * Long.BYTES) + Long.BYTES + this.payload.length;
+	}
+
+	private void _serializeInto(ByteBuffer buffer) {
+		buffer
 			.put((byte)this.type.ordinal())
 			.putLong(this.globalOffset)
 			.putLong(this.clientId.getMostSignificantBits()).putLong(this.clientId.getLeastSignificantBits())
 			.putLong(this.clientNonce)
 			.put(this.payload)
 		;
-		return buffer;
 	}
 }
