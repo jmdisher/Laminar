@@ -3,6 +3,7 @@ package com.jeffdisher.laminar.network.p2p;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
+import java.util.UUID;
 
 import org.junit.Assert;
 import org.junit.Test;
@@ -11,6 +12,8 @@ import com.jeffdisher.laminar.network.p2p.DownstreamMessage;
 import com.jeffdisher.laminar.network.p2p.DownstreamPayload_Identity;
 import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.types.ConfigEntry;
+import com.jeffdisher.laminar.types.MutationRecord;
+import com.jeffdisher.laminar.types.MutationRecordType;
 
 
 public class TestDownstreamMessage {
@@ -29,5 +32,20 @@ public class TestDownstreamMessage {
 		DownstreamMessage test = DownstreamMessage.deserializeFrom(buffer);
 		DownstreamPayload_Identity payload = (DownstreamPayload_Identity)test.payload;
 		Assert.assertEquals(entry, payload.self);
+	}
+
+	@Test
+	public void testAppendMutations() throws Throwable {
+		MutationRecord mutation = MutationRecord.generateRecord(MutationRecordType.TEMP, 1L, UUID.randomUUID(), 1L, new byte[] {1,2,3});
+		long lastCommittedMutationOffset = 1L;
+		DownstreamMessage message = DownstreamMessage.appendMutations(mutation, lastCommittedMutationOffset);
+		int size = message.serializedSize();
+		ByteBuffer buffer = ByteBuffer.allocate(size);
+		message.serializeInto(buffer);
+		buffer.flip();
+		
+		DownstreamMessage test = DownstreamMessage.deserializeFrom(buffer);
+		DownstreamPayload_AppendMutations payload = (DownstreamPayload_AppendMutations)test.payload;
+		Assert.assertArrayEquals(mutation.payload, payload.record.payload);
 	}
 }

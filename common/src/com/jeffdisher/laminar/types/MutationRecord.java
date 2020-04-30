@@ -52,7 +52,8 @@ public class MutationRecord {
 		long globalOffset = buffer.getLong();
 		UUID clientId = new UUID(buffer.getLong(), buffer.getLong());
 		long clientNonce = buffer.getLong();
-		byte[] payload = new byte[buffer.remaining()];
+		int payloadSize = Short.toUnsignedInt(buffer.getShort());
+		byte[] payload = new byte[payloadSize];
 		buffer.get(payload);
 		return new MutationRecord(type, globalOffset, clientId, clientNonce, payload);
 	}
@@ -89,7 +90,7 @@ public class MutationRecord {
 
 
 	private int _serializedSize() {
-		return Byte.BYTES + Long.BYTES + (2 * Long.BYTES) + Long.BYTES + this.payload.length;
+		return Byte.BYTES + Long.BYTES + (2 * Long.BYTES) + Long.BYTES + Short.BYTES + this.payload.length;
 	}
 
 	private void _serializeInto(ByteBuffer buffer) {
@@ -98,6 +99,7 @@ public class MutationRecord {
 			.putLong(this.globalOffset)
 			.putLong(this.clientId.getMostSignificantBits()).putLong(this.clientId.getLeastSignificantBits())
 			.putLong(this.clientNonce)
+			.putShort((short)this.payload.length)
 			.put(this.payload)
 		;
 	}

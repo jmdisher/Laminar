@@ -23,4 +23,18 @@ public class TestUpstreamResponse {
 		UpstreamPayload_PeerState payload = (UpstreamPayload_PeerState)test.payload;
 		Assert.assertEquals(lastReceivedMutationOffset, payload.lastReceivedMutationOffset);
 	}
+
+	@Test
+	public void testReceivedMutations() throws Throwable {
+		long lastReceivedMutationOffset = 10001L;
+		UpstreamResponse response = UpstreamResponse.receivedMutations(lastReceivedMutationOffset);
+		int size = response.serializedSize();
+		ByteBuffer buffer = ByteBuffer.allocate(size);
+		response.serializeInto(buffer);
+		buffer.flip();
+		
+		UpstreamResponse test = UpstreamResponse.deserializeFrom(buffer);
+		UpstreamPayload_ReceivedMutations payload = (UpstreamPayload_ReceivedMutations)test.payload;
+		Assert.assertEquals(lastReceivedMutationOffset, payload.lastReceivedMutationOffset);
+	}
 }

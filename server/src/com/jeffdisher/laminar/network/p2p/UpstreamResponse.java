@@ -14,6 +14,10 @@ public class UpstreamResponse {
 		return new UpstreamResponse(Type.PEER_STATE, UpstreamPayload_PeerState.create(lastReceivedMutationOffset));
 	}
 
+	public static UpstreamResponse receivedMutations(long lastReceivedMutationOffset) {
+		return new UpstreamResponse(Type.RECEIVED_MUTATIONS, UpstreamPayload_ReceivedMutations.create(lastReceivedMutationOffset));
+	}
+
 	public static UpstreamResponse deserializeFrom(ByteBuffer buffer) {
 		byte typeByte = buffer.get();
 		if ((typeByte < 0) || (typeByte >= Type.values().length)) {
@@ -24,6 +28,9 @@ public class UpstreamResponse {
 		switch (type) {
 		case PEER_STATE:
 			payload = UpstreamPayload_PeerState.deserializeFrom(buffer);
+			break;
+		case RECEIVED_MUTATIONS:
+			payload = UpstreamPayload_ReceivedMutations.deserializeFrom(buffer);
 			break;
 		case INVALID:
 			throw _parseError();
@@ -65,5 +72,6 @@ public class UpstreamResponse {
 	public static enum Type {
 		INVALID,
 		PEER_STATE,
+		RECEIVED_MUTATIONS,
 	}
 }

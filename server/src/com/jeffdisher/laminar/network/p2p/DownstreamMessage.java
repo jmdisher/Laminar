@@ -3,6 +3,7 @@ package com.jeffdisher.laminar.network.p2p;
 import java.nio.ByteBuffer;
 
 import com.jeffdisher.laminar.types.ConfigEntry;
+import com.jeffdisher.laminar.types.MutationRecord;
 import com.jeffdisher.laminar.utils.Assert;
 
 
@@ -15,6 +16,10 @@ public class DownstreamMessage {
 		return new DownstreamMessage(Type.IDENTITY, DownstreamPayload_Identity.create(self));
 	}
 
+	public static DownstreamMessage appendMutations(MutationRecord mutation, long lastCommittedMutationOffset) {
+		return new DownstreamMessage(Type.APPEND_MUTATIONS, DownstreamPayload_AppendMutations.create(mutation, lastCommittedMutationOffset));
+	}
+
 	public static DownstreamMessage deserializeFrom(ByteBuffer buffer) {
 		byte typeByte = buffer.get();
 		if ((typeByte < 0) || (typeByte >= Type.values().length)) {
@@ -25,6 +30,9 @@ public class DownstreamMessage {
 		switch (type) {
 		case IDENTITY:
 			payload = DownstreamPayload_Identity.deserializeFrom(buffer);
+			break;
+		case APPEND_MUTATIONS:
+			payload = DownstreamPayload_AppendMutations.deserializeFrom(buffer);
 			break;
 		case INVALID:
 			throw _parseError();
@@ -66,5 +74,6 @@ public class DownstreamMessage {
 	public static enum Type {
 		INVALID,
 		IDENTITY,
+		APPEND_MUTATIONS,
 	}
 }
