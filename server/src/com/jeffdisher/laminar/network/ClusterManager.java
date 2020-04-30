@@ -37,7 +37,8 @@ public class ClusterManager implements INetworkManagerBackgroundCallbacks {
 	private final Set<NetworkManager.NodeToken> _newUpstreamNodes;
 	// Once we have the handshake, we move them into ready nodes.
 	// (currently, we only know their ConfigEntry so we will just store that).
-	private final Map<NetworkManager.NodeToken, ConfigEntry> _readyUpstreamNodes;
+	private final Map<ConfigEntry, NetworkManager.NodeToken> _readyUpstreamNodesByConfig;
+	private final Map<NetworkManager.NodeToken, ConfigEntry> _readyUpstreamNodesByNode;
 
 	public ClusterManager(ConfigEntry self, ServerSocketChannel serverSocket, IClusterManagerCallbacks callbacks) throws IOException {
 		_mainThread = Thread.currentThread();
@@ -48,7 +49,8 @@ public class ClusterManager implements INetworkManagerBackgroundCallbacks {
 		_downstreamNodesByConfig = new HashMap<>();
 		_downstreamConfigByNode = new HashMap<>();
 		_newUpstreamNodes = new HashSet<>();
-		_readyUpstreamNodes = new HashMap<>();
+		_readyUpstreamNodesByConfig = new HashMap<>();
+		_readyUpstreamNodesByNode = new HashMap<>();
 	}
 
 	public void startAndWaitForReady() {
@@ -95,8 +97,10 @@ public class ClusterManager implements INetworkManagerBackgroundCallbacks {
 				if (_newUpstreamNodes.contains(node)) {
 					// We were waiting for a handshake so just drop this.
 					_newUpstreamNodes.remove(node);
-				} else if (_readyUpstreamNodes.containsKey(node)) {
-					ConfigEntry peerConfig = _readyUpstreamNodes.remove(node);
+				} else if (_readyUpstreamNodesByNode.containsKey(node)) {
+					ConfigEntry peerConfig = _readyUpstreamNodesByNode.remove(node);
+					NetworkManager.NodeToken check = _readyUpstreamNodesByConfig.remove(peerConfig);
+					Assert.assertTrue(check == node);
 					_callbacks.mainUpstreamPeerDisconnected(peerConfig);
 				} else if (_downstreamConfigByNode.containsKey(node)) {
 					ConfigEntry peerConfig = _downstreamConfigByNode.remove(node);
@@ -121,7 +125,7 @@ public class ClusterManager implements INetworkManagerBackgroundCallbacks {
 		_callbacks.ioEnqueueClusterCommandForMainThread(new Consumer<StateSnapshot>() {
 			@Override
 			public void accept(StateSnapshot arg0) {
-				boolean isUpstream = _readyUpstreamNodes.containsKey(node);
+				boolean isUpstream = _readyUpstreamNodesByNode.containsKey(node);
 				boolean isDownstream = _downstreamConfigByNode.containsKey(node);
 				// They can't be write-ready as new and they must be one of these.
 				Assert.assertTrue(isUpstream != isDownstream);
@@ -166,7 +170,8 @@ public class ClusterManager implements INetworkManagerBackgroundCallbacks {
 					
 					// Migrate this to the ready nodes and notify the callbacks.
 					_newUpstreamNodes.remove(node);
-					_readyUpstreamNodes.put(node, entry);
+					_readyUpstreamNodesByNode.put(node, entry);
+					_readyUpstreamNodesByConfig.put(entry, node);
 					_callbacks.mainUpstreamPeerConnected(entry);
 				}
 			}});
