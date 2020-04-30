@@ -275,6 +275,30 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		// We currently don't do anything with these.
 		System.out.println("Upstream peer disconnected: " + peer);
 	}
+
+	@Override
+	public void mainDownstreamPeerWriteReady(ConfigEntry peer) {
+		Assert.assertTrue(Thread.currentThread() == _mainThread);
+		Assert.unimplemented("Not used yet");
+	}
+
+	@Override
+	public void mainDownstreamPeerReceivedMutations(ConfigEntry peer, long lastReceivedMutationOffset) {
+		Assert.assertTrue(Thread.currentThread() == _mainThread);
+		Assert.unimplemented("Not used yet");
+	}
+
+	@Override
+	public void mainUpstreamPeerWriteReady(ConfigEntry peer) {
+		Assert.assertTrue(Thread.currentThread() == _mainThread);
+		Assert.unimplemented("Not used yet");
+	}
+
+	@Override
+	public void mainUpstreamSentMutation(ConfigEntry peer, MutationRecord record, long lastCommittedMutationOffset) {
+		Assert.assertTrue(Thread.currentThread() == _mainThread);
+		Assert.unimplemented("Not used yet");
+	}
 	// </IClusterManagerCallbacks>
 
 	// <IDiskManagerBackgroundCallbacks>

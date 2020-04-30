@@ -17,6 +17,7 @@ import com.jeffdisher.laminar.network.p2p.UpstreamResponse;
 import com.jeffdisher.laminar.state.StateSnapshot;
 import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.types.ConfigEntry;
+import com.jeffdisher.laminar.types.MutationRecord;
 import com.jeffdisher.laminar.utils.TestingHelpers;
 
 
@@ -196,6 +197,22 @@ public class TestClusterManager {
 		public void mainUpstreamPeerDisconnected(ConfigEntry peer) {
 			Assert.assertEquals(this.upstreamPeer, peer);
 			this.upstreamPeer = null;
+		}
+
+		@Override
+		public void mainDownstreamPeerWriteReady(ConfigEntry peer) {
+		}
+
+		@Override
+		public void mainDownstreamPeerReceivedMutations(ConfigEntry peer, long lastReceivedMutationOffset) {
+		}
+
+		@Override
+		public void mainUpstreamPeerWriteReady(ConfigEntry peer) {
+		}
+
+		@Override
+		public void mainUpstreamSentMutation(ConfigEntry peer, MutationRecord record, long lastCommittedMutationOffset) {
 		}
 	}
 }
