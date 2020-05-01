@@ -11,7 +11,7 @@ import java.util.function.Consumer;
  * 
  * @param <T> The type passed to the consumer.
  */
-public class UninterruptableQueue<T> {
+public class UninterruptibleQueue<T> {
 	private final LinkedBlockingQueue<Consumer<T>> _queue = new LinkedBlockingQueue<>();
 
 	/**
@@ -23,7 +23,7 @@ public class UninterruptableQueue<T> {
 		try {
 			_queue.put(input);
 		} catch (InterruptedException e) {
-			// Only used in statically uninterruptable cases.
+			// Only used in statically uninterruptible cases.
 			throw Assert.unexpected(e);
 		}
 	}
@@ -37,7 +37,7 @@ public class UninterruptableQueue<T> {
 		try {
 			return _queue.take();
 		} catch (InterruptedException e) {
-			// Only used in statically uninterruptable cases.
+			// Only used in statically uninterruptible cases.
 			throw Assert.unexpected(e);
 		}
 	}

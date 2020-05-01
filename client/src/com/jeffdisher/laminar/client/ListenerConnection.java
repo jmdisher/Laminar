@@ -92,7 +92,7 @@ public class ListenerConnection implements Closeable, INetworkManagerBackgroundC
 
 	/**
 	 * Block until the next EventRecord is available, then decode and return it.
-	 * Note that this call is interruptable using a thread interrupt.
+	 * Note that this call is interruptible using a thread interrupt.
 	 * 
 	 * @return The next EventRecord or null if the receiver was shut down.
 	 * @throws InterruptedException If the calling thread received an interrupt.
@@ -226,7 +226,7 @@ public class ListenerConnection implements Closeable, INetworkManagerBackgroundC
 					try {
 						this.wait();
 					} catch (InterruptedException e) {
-						// This operation isn't interruptable but we will restore the state when done.
+						// This operation isn't interruptible but we will restore the state when done.
 						interrupt = true;
 					}
 				}
@@ -236,7 +236,7 @@ public class ListenerConnection implements Closeable, INetworkManagerBackgroundC
 		if (shouldStopNetwork) {
 			_network.stopAndWaitForTermination();
 		}
-		// If someone tried to interrupt us during this uninterruptable operation, re-interrupt the thread.
+		// If someone tried to interrupt us during this uninterruptible operation, re-interrupt the thread.
 		if (interrupt) {
 			Thread.currentThread().interrupt();
 		}

@@ -20,7 +20,7 @@ import com.jeffdisher.laminar.types.ClientResponse;
 import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.types.ConfigEntry;
 import com.jeffdisher.laminar.utils.Assert;
-import com.jeffdisher.laminar.utils.UninterruptableQueue;
+import com.jeffdisher.laminar.utils.UninterruptibleQueue;
 
 
 /**
@@ -80,7 +80,7 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 	 * _isClientReady, _mostRecentConnectionFailure, and _currentClusterConfig are the only special cases as they exist
 	 * solely to communicate back to the external threads (they are modified and notified under lock).
 	 */
-	private final UninterruptableQueue<Void> _commandQueue;
+	private final UninterruptibleQueue<Void> _commandQueue;
 	private InetSocketAddress _serverAddress;
 	private final NetworkManager _network;
 	private final UUID _clientId;
@@ -111,7 +111,7 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 	private boolean _hasDisconnectedEver;
 
 	private ClientConnection(InetSocketAddress server) throws IOException {
-		_commandQueue = new UninterruptableQueue<Void>();
+		_commandQueue = new UninterruptibleQueue<Void>();
 		// Make sure we erase the hostname from this, if we were given one (fixes some checks, later on, since the internal system never uses hostnames).
 		// This is largely gratuitous but makes some very precise testing possible.
 		_serverAddress = new InetSocketAddress(InetAddress.getByAddress(server.getAddress().getAddress()), server.getPort());

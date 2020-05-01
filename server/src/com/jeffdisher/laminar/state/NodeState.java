@@ -27,7 +27,7 @@ import com.jeffdisher.laminar.types.EventRecordType;
 import com.jeffdisher.laminar.types.MutationRecord;
 import com.jeffdisher.laminar.types.MutationRecordType;
 import com.jeffdisher.laminar.utils.Assert;
-import com.jeffdisher.laminar.utils.UninterruptableQueue;
+import com.jeffdisher.laminar.utils.UninterruptibleQueue;
 
 
 /**
@@ -74,7 +74,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 
 	// Information related to the state of the main execution thread.
 	private boolean _keepRunning;
-	private final UninterruptableQueue<StateSnapshot> _commandQueue;
+	private final UninterruptibleQueue<StateSnapshot> _commandQueue;
 
 	public NodeState(ClusterConfig initialConfig) {
 		// We define the thread which instantiates us as "main".
@@ -99,7 +99,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		_inFlightMutations = new LinkedList<>();
 		_inFlightMutationOffsetBias = 1L;
 		
-		_commandQueue = new UninterruptableQueue<>();
+		_commandQueue = new UninterruptibleQueue<>();
 	}
 
 	public void runUntilShutdown() {
