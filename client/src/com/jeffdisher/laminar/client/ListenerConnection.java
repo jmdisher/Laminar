@@ -39,6 +39,8 @@ import com.jeffdisher.laminar.utils.Assert;
  * progress will be made while the user's thread isn't polling.
  */
 public class ListenerConnection implements Closeable, INetworkManagerBackgroundCallbacks {
+	private static final long MILLIS_BETWEEN_CONNECTION_ATTEMPTS = 100L;
+
 	/**
 	 * Creates a new listener connection with a background connection attempt to server.
 	 * 
@@ -79,6 +81,8 @@ public class ListenerConnection implements Closeable, INetworkManagerBackgroundC
 	// store a reference to the most recent failure we observed during connection, for external informational purposes.
 	private IOException _currentConnectionFailure;
 	private IOException _mostRecentConnectionFailure;
+	// To avoid a hard-spin when host is down, we will set this flag when we encounter a connection failure.
+	private boolean _shouldSleepBeforeNextConnection;
 
 	private ListenerConnection(InetSocketAddress server, long previousLocalOffset) throws IOException {
 		_serverAddress = server;
@@ -201,6 +205,7 @@ public class ListenerConnection implements Closeable, INetworkManagerBackgroundC
 		_didSendListen = true;
 		_pendingMessages = 0;
 		_currentConnectionFailure = cause;
+		// (note that we will retry a disconnect, immediately, so don't set our force sleep flag)
 		this.notifyAll();
 	}
 
@@ -208,6 +213,8 @@ public class ListenerConnection implements Closeable, INetworkManagerBackgroundC
 	public synchronized void outboundNodeConnectionFailed(NetworkManager.NodeToken token, IOException cause) {
 		Assert.assertTrue(null == _connection);
 		_currentConnectionFailure = cause;
+		// When a connection attempt fails, we will force a sleep since there is no point in hard-spinning on the same failure every few millis.
+		_shouldSleepBeforeNextConnection = true;
 		this.notifyAll();
 	}
 	// </INetworkManagerBackgroundCallbacks>
@@ -266,6 +273,11 @@ public class ListenerConnection implements Closeable, INetworkManagerBackgroundC
 				_didSendListen = true;
 			}
 			if (null != _currentConnectionFailure) {
+				if (_shouldSleepBeforeNextConnection) {
+					// We will sleep here, even though it is under lock, but we will still honour the interrupt as there is no state we need, above.
+					_shouldSleepBeforeNextConnection = false;
+					Thread.sleep(MILLIS_BETWEEN_CONNECTION_ATTEMPTS);
+				}
 				// The connection failed - save the failure and restart the connection attempt.
 				// (in the future, this will be rolled into broader reconnect logic).
 				try {
