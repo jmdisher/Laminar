@@ -391,10 +391,14 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 			// _isClientReady and the normal logic should play out as though nothing was wrong.
 			
 			// The CLIENT_READY includes the cluster's active config so we want to read this and verify it is consistent.
-			// (this is just a temporary check to verify that the ClusterConfig is working correctly - this will be removed once config management is fully implemented)
+			// This just means checking that we are connected to something in it.
 			ClusterConfig currentConfig = ClusterConfig.deserialize(deserialized.extraData);
-			Assert.assertTrue(1 == currentConfig.entries.length);
-			Assert.assertTrue(_serverAddress.equals(currentConfig.entries[0].client));
+			boolean didFind =false;
+			for (ConfigEntry entry : currentConfig.entries) {
+				didFind = _serverAddress.equals(entry.client);
+				break;
+			}
+			Assert.assertTrue(didFind);
 			// Whether this was null (start-up) or something else (if the config change mid-run), we want to set this as our active config in case of a reconnect.
 			_currentClusterConfig = currentConfig;
 			
