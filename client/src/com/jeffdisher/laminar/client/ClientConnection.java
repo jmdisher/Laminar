@@ -59,6 +59,8 @@ import com.jeffdisher.laminar.utils.UninterruptibleQueue;
  * the design doesn't depend on this, however, so it won't be added in the first version.
  */
 public class ClientConnection implements Closeable, INetworkManagerBackgroundCallbacks {
+	private static final long MILLIS_BETWEEN_CONNECTION_ATTEMPTS = 100L;
+
 	public static ClientConnection open(InetSocketAddress server) throws IOException {
 		if (null == server) {
 			throw new IllegalArgumentException("Address cannot be null");
@@ -322,12 +324,12 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 	@Override
 	public void outboundNodeConnectionFailed(NetworkManager.NodeToken token, IOException cause) {
 		Assert.assertTrue(Thread.currentThread() != _internalThread);
-		_commandQueue.put(new Consumer<Void>() {
+		_commandQueue.putPriority(new Consumer<Void>() {
 			@Override
 			public void accept(Void t) {
 				// We just issue the reconnect.
 				_internalIssueConnect(cause);
-			}});
+			}}, MILLIS_BETWEEN_CONNECTION_ATTEMPTS);
 	}
 	// </INetworkManagerBackgroundCallbacks>
 

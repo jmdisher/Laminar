@@ -232,6 +232,13 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 	}
 
 	@Override
+	public void ioEnqueuePriorityClusterCommandForMainThread(Consumer<StateSnapshot> command, long delayMillis) {
+		// Called on an IO thread.
+		Assert.assertTrue(Thread.currentThread() != _mainThread);
+		_commandQueue.putPriority(command, delayMillis);
+	}
+
+	@Override
 	public void mainAppendMutationFromUpstream(ConfigEntry peer, MutationRecord record, long lastCommittedMutationOffset) {
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		if (null == _clusterLeader) {

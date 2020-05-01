@@ -209,17 +209,14 @@ public class TestClusterManager {
 		}
 		
 		@Override
-		public synchronized void ioEnqueueClusterCommandForMainThread(Consumer<StateSnapshot> command) {
-			while (null != _command) {
-				try {
-					this.wait();
-				} catch (InterruptedException e) {
-					// We don't use interruption in this test - this is just for lock-step connection testing.
-					Assert.fail(e.getLocalizedMessage());
-				}
-			}
-			_command = command;
-			this.notifyAll();
+		public void ioEnqueueClusterCommandForMainThread(Consumer<StateSnapshot> command) {
+			_blockToStoreCommand(command);
+		}
+		
+		@Override
+		public void ioEnqueuePriorityClusterCommandForMainThread(Consumer<StateSnapshot> command, long delayMillis) {
+			// For the purposes of the test, we just treat this like a normal command.
+			_blockToStoreCommand(command);
 		}
 		
 		@Override
@@ -255,6 +252,19 @@ public class TestClusterManager {
 			}
 			Assert.assertEquals(0L,  this.downstreamReceivedMutation);
 			this.downstreamReceivedMutation = mutationOffset;
+		}
+		
+		private synchronized void _blockToStoreCommand(Consumer<StateSnapshot> command) {
+			while (null != _command) {
+				try {
+					this.wait();
+				} catch (InterruptedException e) {
+					// We don't use interruption in this test - this is just for lock-step connection testing.
+					Assert.fail(e.getLocalizedMessage());
+				}
+			}
+			_command = command;
+			this.notifyAll();
 		}
 	}
 }

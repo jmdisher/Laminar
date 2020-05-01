@@ -27,6 +27,8 @@ import com.jeffdisher.laminar.utils.Assert;
  * Top-level abstraction of a collection of network connections related to interactions with other servers.
  */
 public class ClusterManager implements INetworkManagerBackgroundCallbacks {
+	private static final long MILLIS_BETWEEN_CONNECTION_ATTEMPTS = 100L;
+
 	private final Thread _mainThread;
 	private final ConfigEntry _self;
 	private final NetworkManager _networkManager;
@@ -286,11 +288,12 @@ public class ClusterManager implements INetworkManagerBackgroundCallbacks {
 	@Override
 	public void outboundNodeConnectionFailed(NetworkManager.NodeToken node, IOException cause) {
 		Assert.assertTrue(Thread.currentThread() != _mainThread);
-		_callbacks.ioEnqueueClusterCommandForMainThread(new Consumer<StateSnapshot>() {
+		// The connection failed but we won't process the failure right away (no point in spinning).
+		_callbacks.ioEnqueuePriorityClusterCommandForMainThread(new Consumer<StateSnapshot>() {
 			@Override
 			public void accept(StateSnapshot arg0) {
 				_mainRemoveOutboundConnection(node);
-			}});
+			}}, MILLIS_BETWEEN_CONNECTION_ATTEMPTS);
 	}
 
 

@@ -17,6 +17,15 @@ public interface IClusterManagerCallbacks {
 	void ioEnqueueClusterCommandForMainThread(Consumer<StateSnapshot> command);
 
 	/**
+	 * Allows the IO thread from the NetworkManager under the ClusterManager to schedule priority tasks on the
+	 * NodeState's thread after a specified delay.
+	 * 
+	 * @param command A command to run on the main thread.
+	 * @param delayMillis The number of milliseconds before this command will be run.
+	 */
+	void ioEnqueuePriorityClusterCommandForMainThread(Consumer<StateSnapshot> command, long delayMillis);
+
+	/**
 	 * Called when a new mutation arrives from an upstream peer.
 	 * The ClusterManager doesn't expose upstream nodes so the peer is only provided so the receiver can capture this
 	 * as the leader, for redirects.
