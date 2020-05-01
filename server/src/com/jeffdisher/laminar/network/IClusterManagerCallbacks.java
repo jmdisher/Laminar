@@ -8,21 +8,45 @@ import com.jeffdisher.laminar.types.MutationRecord;
 
 
 public interface IClusterManagerCallbacks {
+	/**
+	 * Allows the IO thread from the NetworkManager under the ClusterManager to schedule tasks on the NodeState's
+	 * thread.
+	 * 
+	 * @param command A command to run on the main thread.
+	 */
 	void ioEnqueueClusterCommandForMainThread(Consumer<StateSnapshot> command);
 
-	void mainConnectedToDownstreamPeer(ConfigEntry peer, long lastReceivedMutationOffset);
+	/**
+	 * Called when a new mutation arrives from an upstream peer.
+	 * The ClusterManager doesn't expose upstream nodes so the peer is only provided so the receiver can capture this
+	 * as the leader, for redirects.
+	 * 
+	 * @param peer The peer which sent the mutation.
+	 * @param mutation The mutation.
+	 * @param lastCommittedMutationOffset The leader has committed mutations up to this point.
+	 */
+	void mainAppendMutationFromUpstream(ConfigEntry peer, MutationRecord mutation, long lastCommittedMutationOffset);
 
-	void mainDisconnectedFromDownstreamPeer(ConfigEntry peer);
+	/**
+	 * Called when the ClusterManager wishes to send a mutation to a downstream peer and needs it to be loaded.
+	 * Note that the receiver can respond to this in 3 different ways:
+	 * 1) return immediately if this is in-memory.
+	 * 2) schedule that it be fetched from disk.
+	 * 3) wait until a client sends this mutation.
+	 * 
+	 * @param mutationOffset The offset to fetch/return/await.
+	 * @return The mutation, only if it was immediately available, in-memory (typically not committed).
+	 */
+	MutationRecord mainFetchMutationIfAvailable(long mutationOffset);
 
-	void mainUpstreamPeerConnected(ConfigEntry peer);
-
-	void mainUpstreamPeerDisconnected(ConfigEntry peer);
-
-	void mainDownstreamPeerWriteReady(ConfigEntry peer);
-
-	void mainDownstreamPeerReceivedMutations(ConfigEntry peer, long lastReceivedMutationOffset);
-
-	void mainUpstreamPeerWriteReady(ConfigEntry peer);
-
-	void mainUpstreamSentMutation(ConfigEntry peer, MutationRecord record, long lastCommittedMutationOffset);
+	/**
+	 * Sent by the ClusterManager whenever a new acknowledgement arrives from a downstream peer.
+	 * This is only so that the NodeState can update its view on the cluster consensus.
+	 * Note that it is technically valid for mutationOffset for this peer to skip values but it will never be smaller or
+	 * equal to the last value it acked.
+	 * 
+	 * @param peer The peer who send the ack.
+	 * @param mutationOffset The mutation offset most recently acknowledged.
+	 */
+	void mainReceivedAckFromDownstream(ConfigEntry peer, long mutationOffset);
 }

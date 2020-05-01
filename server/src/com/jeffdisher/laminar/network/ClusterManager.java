@@ -32,16 +32,20 @@ public class ClusterManager implements INetworkManagerBackgroundCallbacks {
 	private final NetworkManager _networkManager;
 	private final IClusterManagerCallbacks _callbacks;
 
+	// These elements are relevant when _THIS_ node is the LEADER.
 	// In NodeState, we identify downstream nodes via ClusterConfig.ConfigEntry.
-	private final Map<ConfigEntry, NetworkManager.NodeToken> _downstreamNodesByConfig;
-	private final Map<NetworkManager.NodeToken, ConfigEntry> _downstreamConfigByNode;
+	private final Map<ConfigEntry, DownstreamPeerState> _downstreamPeerByConfig;
+	private final Map<NetworkManager.NodeToken, DownstreamPeerState> _downstreamPeerByNode;
+	// The last mutation offset committed on _THIS_ node.
+	private long _lastCommittedMutationOffset;
 
+	// These elements are relevant when _THIS_ node is a FOLLOWER.
 	// Much like ClientManager, we store new upstream peers until we get the handshake from them to know their state.
 	private final Set<NetworkManager.NodeToken> _newUpstreamNodes;
-	// Once we have the handshake, we move them into ready nodes.
-	// (currently, we only know their ConfigEntry so we will just store that).
-	private final Map<ConfigEntry, NetworkManager.NodeToken> _readyUpstreamNodesByConfig;
-	private final Map<NetworkManager.NodeToken, ConfigEntry> _readyUpstreamNodesByNode;
+	// (not addressable by ConfigEntry since they NodeState doesn't know about these).
+	private final Map<NetworkManager.NodeToken, UpstreamPeerState> _upstreamPeerByNode;
+	// Note that we record the last offset received, globally, meaning this mechanism can't sync _from_ multiple nodes - only a single leader.
+	private long _lastMutationOffsetReceived;
 
 	public ClusterManager(ConfigEntry self, ServerSocketChannel serverSocket, IClusterManagerCallbacks callbacks) throws IOException {
 		_mainThread = Thread.currentThread();
@@ -49,11 +53,10 @@ public class ClusterManager implements INetworkManagerBackgroundCallbacks {
 		// This is really just a high-level wrapper over the common NetworkManager so create that here.
 		_networkManager = NetworkManager.bidirectional(serverSocket, this);
 		_callbacks = callbacks;
-		_downstreamNodesByConfig = new HashMap<>();
-		_downstreamConfigByNode = new HashMap<>();
+		_downstreamPeerByConfig = new HashMap<>();
+		_downstreamPeerByNode = new HashMap<>();
 		_newUpstreamNodes = new HashSet<>();
-		_readyUpstreamNodesByConfig = new HashMap<>();
-		_readyUpstreamNodesByNode = new HashMap<>();
+		_upstreamPeerByNode = new HashMap<>();
 	}
 
 	public void startAndWaitForReady() {
@@ -74,40 +77,45 @@ public class ClusterManager implements INetworkManagerBackgroundCallbacks {
 		} catch (IOException e) {
 			throw Assert.unimplemented("TODO:  Handle fast-fail on outgoing connections: " + e.getLocalizedMessage());
 		}
-		_downstreamNodesByConfig.put(entry, token);
-		_downstreamConfigByNode.put(token, entry);
+		DownstreamPeerState peer = new DownstreamPeerState(entry, token);
+		_downstreamPeerByConfig.put(entry, peer);
+		_downstreamPeerByNode.put(token, peer);
 	}
 
-	public void mainSendMutationToDownstreamNode(ConfigEntry peer, MutationRecord mutation, long lastCommittedMutationOffset) {
+	/**
+	 * Called by the NodeState when a mutation was received or made available.  It may be committed or not.
+	 * This means it came in directly from a client or was just fetched from disk.
+	 * 
+	 * @param mutation The mutation.
+	 */
+	public void mainMutationWasReceivedOrFetched(MutationRecord mutation) {
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		
-		// Make sure this didn't asynchronously disconnect.
-		NetworkManager.NodeToken token = _downstreamNodesByConfig.get(peer);
-		if (null != token) {
-			// Wrap this in APPEND_MUTATIONS.
-			DownstreamMessage message = DownstreamMessage.appendMutations(mutation, lastCommittedMutationOffset);
-			ByteBuffer buffer = ByteBuffer.allocate(message.serializedSize());
-			message.serializeInto(buffer);
-			boolean didSend = _networkManager.trySendMessage(token, buffer.array());
-			// This path is only taken when they are writable.
-			Assert.assertTrue(didSend);
-		} else {
-			System.out.println("Mutation to downstream dropped");
+		// See if any of our downstream peers were waiting for this mutation and are writable.
+		long mutationOffset = mutation.globalOffset;
+		for (DownstreamPeerState state : _downstreamPeerByNode.values()) {
+			if (state.isConnectionUp
+					&& state.isWritable
+					&& state.didHandshake
+					&& (state.nextMutationOffsetToSend == mutationOffset)
+			) {
+				_sendMutationToPeer(state, mutation);
+			}
 		}
 	}
 
-	public void mainSendAckToLeader(ConfigEntry peer, long mutationToAck) {
+	/**
+	 * Called by the NodeState when it has committed a mutation to disk.
+	 * This is just to update the commit offset we will send the peers, next time we send them a message.
+	 * 
+	 * @param mutationOffset The mutation offset of the mutation just committed.
+	 */
+	public void mainMutationWasCommitted(long mutationOffset) {
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
-		// This MUST be the leader (disconnects not currently handled).
-		Assert.assertTrue(_readyUpstreamNodesByConfig.containsKey(peer));
 		
-		// Wrap this in RECEIVED_MUTATIONS.
-		UpstreamResponse ack = UpstreamResponse.receivedMutations(mutationToAck);
-		ByteBuffer buffer = ByteBuffer.allocate(ack.serializedSize());
-		ack.serializeInto(buffer);
-		boolean didSend = _networkManager.trySendMessage(_readyUpstreamNodesByConfig.get(peer), buffer.array());
-		// This path is only taken when they are writable.
-		Assert.assertTrue(didSend);
+		// This should never skip a value.
+		Assert.assertTrue((_lastCommittedMutationOffset + 1) == mutationOffset);
+		_lastCommittedMutationOffset = mutationOffset;
 	}
 
 	@Override
@@ -132,23 +140,17 @@ public class ClusterManager implements INetworkManagerBackgroundCallbacks {
 				if (_newUpstreamNodes.contains(node)) {
 					// We were waiting for a handshake so just drop this.
 					_newUpstreamNodes.remove(node);
-				} else if (_readyUpstreamNodesByNode.containsKey(node)) {
-					ConfigEntry peerConfig = _readyUpstreamNodesByNode.remove(node);
-					NetworkManager.NodeToken check = _readyUpstreamNodesByConfig.remove(peerConfig);
-					Assert.assertTrue(check == node);
-					_callbacks.mainUpstreamPeerDisconnected(peerConfig);
-				} else if (_downstreamConfigByNode.containsKey(node)) {
-					ConfigEntry peerConfig = _downstreamConfigByNode.remove(node);
-					NetworkManager.NodeToken check = _downstreamNodesByConfig.remove(peerConfig);
-					Assert.assertTrue(check == node);
-					_callbacks.mainDisconnectedFromDownstreamPeer(peerConfig);
+				} else if (_upstreamPeerByNode.containsKey(node)) {
+					UpstreamPeerState state = _upstreamPeerByNode.remove(node);
+					Assert.assertTrue(null != state);
+				} else if (_downstreamPeerByNode.containsKey(node)) {
+					DownstreamPeerState peer = _downstreamPeerByNode.remove(node);
+					DownstreamPeerState check = _downstreamPeerByConfig.remove(peer.entry);
+					Assert.assertTrue(check == peer);
 				} else {
 					// No idea who this is.
 					throw Assert.unreachable("Unknown node disconnected");
 				}
-				// Until we get the cluster handshake from a node, we don't know what to do with it.
-				boolean didAdd = _newUpstreamNodes.add(node);
-				Assert.assertTrue(didAdd);
 			}});
 	}
 
@@ -160,15 +162,22 @@ public class ClusterManager implements INetworkManagerBackgroundCallbacks {
 		_callbacks.ioEnqueueClusterCommandForMainThread(new Consumer<StateSnapshot>() {
 			@Override
 			public void accept(StateSnapshot arg0) {
-				boolean isUpstream = _readyUpstreamNodesByNode.containsKey(node);
-				boolean isDownstream = _downstreamConfigByNode.containsKey(node);
+				boolean isUpstream = _upstreamPeerByNode.containsKey(node);
+				boolean isDownstream = _downstreamPeerByNode.containsKey(node);
 				// They can't be write-ready as new and they must be one of these.
 				Assert.assertTrue(isUpstream != isDownstream);
 				
 				if (isDownstream) {
-					_callbacks.mainDownstreamPeerWriteReady(_downstreamConfigByNode.get(node));
+					DownstreamPeerState peer = _downstreamPeerByNode.get(node);
+					Assert.assertTrue(peer.isConnectionUp);
+					Assert.assertTrue(!peer.isWritable);
+					peer.isWritable = true;
+					_tryFetchOrSend(peer);
 				} else {
-					_callbacks.mainUpstreamPeerWriteReady(_readyUpstreamNodesByNode.get(node));
+					UpstreamPeerState peer = _upstreamPeerByNode.get(node);
+					Assert.assertTrue(!peer.isWritable);
+					peer.isWritable = true;
+					_tryAck(peer);
 				}
 			}});
 	}
@@ -183,49 +192,65 @@ public class ClusterManager implements INetworkManagerBackgroundCallbacks {
 			@Override
 			public void accept(StateSnapshot arg0) {
 				// Check the relationship with this node.
-				if (_downstreamConfigByNode.containsKey(node)) {
-					// We are the upstream node so they must be sending the PEER_STATE.
+				if (_downstreamPeerByNode.containsKey(node)) {
+					// They could be sending a PEER_STATE, if this is a handshake, or RECEIVED_MUTATIONS.
 					byte[] payload = _networkManager.readWaitingMessage(node);
 					UpstreamResponse response = UpstreamResponse.deserializeFrom(ByteBuffer.wrap(payload));
+					
 					if (UpstreamResponse.Type.PEER_STATE == response.type) {
-						// This now counts as us being "connected".
-						_callbacks.mainConnectedToDownstreamPeer(_downstreamConfigByNode.get(node), ((UpstreamPayload_PeerState)response.payload).lastReceivedMutationOffset);
+						long lastReceivedMutationOffset = ((UpstreamPayload_PeerState)response.payload).lastReceivedMutationOffset;
+						
+						// Set the state of the node and request that the next mutation they need be fetched.
+						DownstreamPeerState peer = _downstreamPeerByNode.get(node);
+						peer.didHandshake = true;
+						peer.nextMutationOffsetToSend = lastReceivedMutationOffset + 1;
+						
+						// See if we can send them anything or just fetch, if they are writable.
+						_tryFetchOrSend(peer);
 					} else if (UpstreamResponse.Type.RECEIVED_MUTATIONS == response.type) {
-						// The peer received the last mutations we sent so we can proceed with the next.
-						_callbacks.mainDownstreamPeerReceivedMutations(_downstreamConfigByNode.get(node), ((UpstreamPayload_ReceivedMutations)response.payload).lastReceivedMutationOffset);
+						long lastReceivedMutationOffset = ((UpstreamPayload_ReceivedMutations)response.payload).lastReceivedMutationOffset;
+						
+						// Internally, we don't actually use this value (we stream the mutations independent of acks, so
+						// long as the network is writable) but the NodeState uses it for consensus offset.
+						DownstreamPeerState peer = _downstreamPeerByNode.get(node);
+						_callbacks.mainReceivedAckFromDownstream(peer.entry, lastReceivedMutationOffset);
+					} else {
+						Assert.unreachable("Unknown response type");
 					}
 				} else if (_newUpstreamNodes.contains(node)) {
-					// We currently don't allow a "ready" upstream node to send us anything, nor are we handling disconnects at this point, yet.
-					Assert.assertTrue(_newUpstreamNodes.contains(node));
-					
-					// Read the SERVER_IDENTITY.
+					// The only thing we can get from upstream nodes is IDENTITY.
 					byte[] payload = _networkManager.readWaitingMessage(node);
 					DownstreamMessage message = DownstreamMessage.deserializeFrom(ByteBuffer.wrap(payload));
 					Assert.assertTrue(DownstreamMessage.Type.IDENTITY == message.type);
 					ConfigEntry entry = ((DownstreamPayload_Identity)message.payload).self;
 					
-					// Send back our PEER_STATE.
-					long lastReceivedMutationOffset = 0L;
-					UpstreamResponse response = UpstreamResponse.peerState(lastReceivedMutationOffset);
-					ByteBuffer buffer = ByteBuffer.allocate(response.serializedSize());
-					response.serializeInto(buffer);
-					boolean didSend = _networkManager.trySendMessage(node, buffer.array());
-					Assert.assertTrue(didSend);
-					
-					// Migrate this to the ready nodes and notify the callbacks.
+					// Create the upstream state and migrate this.
+					UpstreamPeerState state = new UpstreamPeerState(entry, node);
 					_newUpstreamNodes.remove(node);
-					_readyUpstreamNodesByNode.put(node, entry);
-					_readyUpstreamNodesByConfig.put(entry, node);
-					_callbacks.mainUpstreamPeerConnected(entry);
+					_upstreamPeerByNode.put(node, state);
+					
+					// Send back our PEER_STATE.
+					UpstreamResponse response = UpstreamResponse.peerState(_lastMutationOffsetReceived);
+					_sendUpstreamResponse(state, response);
+					
+					// We don't tell the NodeState about this unless they upstream starts acting like a LEADER and sending mutations.
 				} else {
 					// Ready upstream nodes just means the leader sending us an APPEND_MUTATIONS, for now.
-					Assert.assertTrue(_readyUpstreamNodesByNode.containsKey(node));
+					Assert.assertTrue(_upstreamPeerByNode.containsKey(node));
+					UpstreamPeerState peer = _upstreamPeerByNode.get(node);
 					
 					byte[] raw = _networkManager.readWaitingMessage(node);
 					DownstreamMessage message = DownstreamMessage.deserializeFrom(ByteBuffer.wrap(raw));
 					Assert.assertTrue(DownstreamMessage.Type.APPEND_MUTATIONS == message.type);
 					DownstreamPayload_AppendMutations payload = (DownstreamPayload_AppendMutations)message.payload;
-					_callbacks.mainUpstreamSentMutation(_readyUpstreamNodesByNode.get(node), payload.record, payload.lastCommittedMutationOffset);
+					
+					// Update our last offset received and notify the callbacks of this mutation.
+					Assert.assertTrue((_lastMutationOffsetReceived + 1) == payload.record.globalOffset);
+					_lastMutationOffsetReceived = payload.record.globalOffset;
+					_callbacks.mainAppendMutationFromUpstream(peer.entry, payload.record, payload.lastCommittedMutationOffset);
+					
+					// See if we can ack this, immediately.
+					_tryAck(peer);
 				}
 			}});
 	}
@@ -237,17 +262,14 @@ public class ClusterManager implements INetworkManagerBackgroundCallbacks {
 			@Override
 			public void accept(StateSnapshot arg0) {
 				// Verify that this is still in the map.
-				ConfigEntry entry = _downstreamConfigByNode.get(node);
-				Assert.assertTrue(null != entry);
+				DownstreamPeerState peer = _downstreamPeerByNode.get(node);
+				Assert.assertTrue(null != peer);
+				peer.isConnectionUp = true;
+				peer.isWritable = true;
 				
 				// We are the upstream node so send the SERVER_IDENTITY.
 				DownstreamMessage identity = DownstreamMessage.identity(_self);
-				int size = identity.serializedSize();
-				ByteBuffer buffer = ByteBuffer.allocate(size);
-				identity.serializeInto(buffer);
-				byte[] payload = buffer.array();
-				boolean didSend = _networkManager.trySendMessage(node, payload);
-				Assert.assertTrue(didSend);
+				_sendDownstreamMessage(peer, identity);
 			}});
 	}
 
@@ -257,9 +279,7 @@ public class ClusterManager implements INetworkManagerBackgroundCallbacks {
 		_callbacks.ioEnqueueClusterCommandForMainThread(new Consumer<StateSnapshot>() {
 			@Override
 			public void accept(StateSnapshot arg0) {
-				// We handle this largely the same way as a connection failure but we also notify the callbacks.
-				ConfigEntry entry = _mainRemoveOutboundConnection(node);
-				_callbacks.mainDisconnectedFromDownstreamPeer(entry);
+				_mainRemoveOutboundConnection(node);
 			}});
 	}
 
@@ -274,21 +294,86 @@ public class ClusterManager implements INetworkManagerBackgroundCallbacks {
 	}
 
 
-	private ConfigEntry _mainRemoveOutboundConnection(NetworkManager.NodeToken node) throws AssertionError {
-		// We will unregister this and re-register it with our maps, creating a new connection.
-		ConfigEntry entry = _downstreamConfigByNode.remove(node);
-		Assert.assertTrue(null != entry);
+	private void _mainRemoveOutboundConnection(NetworkManager.NodeToken node) throws AssertionError {
+		// We will be creating a new connection so we need to modify the underlying states and one of the mappings.
+		DownstreamPeerState state = _downstreamPeerByNode.remove(node);
+		DownstreamPeerState check = _downstreamPeerByConfig.get(state.entry);
+		Assert.assertTrue(state == check);
+		
 		NetworkManager.NodeToken token;
 		try {
-			token = _networkManager.createOutgoingConnection(entry.cluster);
+			token = _networkManager.createOutgoingConnection(state.entry.cluster);
 		} catch (IOException e) {
 			// We previously succeeded in this step so it should still succeed.
 			throw Assert.unexpected(e);
 		}
-		NetworkManager.NodeToken check = _downstreamNodesByConfig.put(entry, token);
-		Assert.assertTrue(node == check);
-		ConfigEntry checkEntry = _downstreamConfigByNode.put(token, entry);
-		Assert.assertTrue(null == checkEntry);
-		return entry;
+		state.token = token;
+		_downstreamPeerByNode.put(token, state);
+	}
+
+	private void _tryFetchOrSend(DownstreamPeerState peer) {
+		Assert.assertTrue(Thread.currentThread() == _mainThread);
+		
+		if (peer.isConnectionUp
+				&& peer.didHandshake
+				&& peer.isWritable
+		) {
+			MutationRecord mutation = _callbacks.mainFetchMutationIfAvailable(peer.nextMutationOffsetToSend);
+			if (null != mutation) {
+				_sendMutationToPeer(peer, mutation);
+			} else {
+				// We will wait for this to come in, later.
+			}
+		}
+	}
+
+	private void _tryAck(UpstreamPeerState peer) {
+		Assert.assertTrue(Thread.currentThread() == _mainThread);
+		
+		if (peer.isWritable
+				&& (peer.lastMutationOffsetAcknowledged < _lastMutationOffsetReceived)
+		) {
+			UpstreamResponse ack = UpstreamResponse.receivedMutations(_lastMutationOffsetReceived);
+			ByteBuffer buffer = ByteBuffer.allocate(ack.serializedSize());
+			ack.serializeInto(buffer);
+			boolean didSend = _networkManager.trySendMessage(peer.token, buffer.array());
+			// This path is only taken when they are writable.
+			Assert.assertTrue(didSend);
+			
+			// Update state for the next.
+			peer.lastMutationOffsetAcknowledged = _lastMutationOffsetReceived;
+			peer.isWritable = false;
+		}
+	}
+
+	private void _sendMutationToPeer(DownstreamPeerState peer, MutationRecord mutation) {
+		Assert.assertTrue(Thread.currentThread() == _mainThread);
+		
+		DownstreamMessage message = DownstreamMessage.appendMutations(mutation, _lastCommittedMutationOffset);
+		_sendDownstreamMessage(peer, message);
+	}
+
+	private void _sendDownstreamMessage(DownstreamPeerState peer, DownstreamMessage message) {
+		Assert.assertTrue(Thread.currentThread() == _mainThread);
+		Assert.assertTrue(peer.isWritable);
+		
+		ByteBuffer buffer = ByteBuffer.allocate(message.serializedSize());
+		message.serializeInto(buffer);
+		boolean didSend = _networkManager.trySendMessage(peer.token, buffer.array());
+		// This path is only taken when they are writable.
+		Assert.assertTrue(didSend);
+		
+		// Update state for the next.
+		peer.nextMutationOffsetToSend += 1;
+		peer.isWritable = false;
+	}
+
+	private void _sendUpstreamResponse(UpstreamPeerState state, UpstreamResponse response) {
+		Assert.assertTrue(state.isWritable);
+		ByteBuffer buffer = ByteBuffer.allocate(response.serializedSize());
+		response.serializeInto(buffer);
+		boolean didSend = _networkManager.trySendMessage(state.token, buffer.array());
+		Assert.assertTrue(didSend);
+		state.isWritable = false;
 	}
 }

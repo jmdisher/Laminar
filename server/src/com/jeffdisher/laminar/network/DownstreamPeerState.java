@@ -1,5 +1,7 @@
-package com.jeffdisher.laminar.state;
+package com.jeffdisher.laminar.network;
 
+import com.jeffdisher.laminar.components.NetworkManager;
+import com.jeffdisher.laminar.types.ConfigEntry;
 
 /**
  * Holds data associated with a downstream connection to a peer server node in the cluster.
@@ -13,31 +15,38 @@ package com.jeffdisher.laminar.state;
  * timeout.
  */
 public class DownstreamPeerState {
+	public final ConfigEntry entry;
+	public NetworkManager.NodeToken token;
 	/**
 	 * Whether or not our downstream connection to this node is active.
+	 * Starts false since this is created before the connection is open.
 	 */
 	public boolean isConnectionUp = false;
 	/**
+	 * True if this peer has sent back their PEER_STATE, false if we are still waiting for that.
+	 * Starts false since this is created before the connection is open.
+	 */
+	public boolean didHandshake = false;
+	/**
 	 * Whether or not the socket can currently be written.  Set to true when the connection is first active.
 	 * We don't currently buffer the downstream peer connections so this being false will block further sync.
+	 * Starts false since this is created before the connection is open.
 	 */
 	public boolean isWritable = false;
 	/**
-	 * The mutation offset this node most recently told us it had received.
-	 */
-	public long lastMutationOffsetReceived = 0L;
-	/**
-	 * The last mutation offset we sent them.  This is updated when we send a mutation to make sure we aren't getting
-	 * ahead of them.  That is, we only update nextMutationOffsetToSend when lastMutationOffsetSent matches
-	 * lastMutationOffsetReceived.
-	 */
-	public long lastMutationOffsetSent = 0L;
-	/**
-	 * The next mutation offset we need to send them.  This will be equal to lastMutationOffsetSent until we update
-	 * lastMutationOffsetReceived, meaning we can now send them the next.  This allows us to lock-step the sync progress
-	 * of the downstream node with our own view of their state.
-	 * When this number is NOT equal to lastMutationOffsetSent, it means we are either waiting for this mutation to load
-	 * or waiting for a client to produce it.
+	 * The next mutation offset we need to send them.
+	 * When a downstream peer is first connected, we base this on the PEER_STATE they send us.  After that, we increment
+	 * it whenever we send them a mutation.  Once the peer becomes writable, we will ask the NodeState to fetch this for
+	 * us.
+	 * Since this mutation may be returned immediately, may be asynchronously fetched from disk, or may not appear until
+	 * a client produces it, the ClusterManager listens to fetched and new mutations and consults this number to see if
+	 * it should send a copy to the peer.
+	 * This value starts at 0L since we don't know what their state is until we receive a PEER_STATE.
 	 */
 	public long nextMutationOffsetToSend = 0L;
+
+	public DownstreamPeerState(ConfigEntry entry, NetworkManager.NodeToken token) {
+		this.entry = entry;
+		this.token = token;
+	}
 }

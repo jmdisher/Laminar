@@ -16,9 +16,9 @@ import com.jeffdisher.laminar.types.ClusterConfig;
  */
 public class SyncProgress {
 	public final ClusterConfig config;
-	private final Set<DownstreamPeerState> _downstreamConnections;
+	private final Set<DownstreamPeerSyncState> _downstreamConnections;
 
-	public SyncProgress(ClusterConfig config, Set<DownstreamPeerState> downstreamConnections) {
+	public SyncProgress(ClusterConfig config, Set<DownstreamPeerSyncState> downstreamConnections) {
 		this.config = config;
 		_downstreamConnections = downstreamConnections;
 	}
@@ -26,7 +26,7 @@ public class SyncProgress {
 	public long checkCurrentProgress() {
 		// For now, we are just using the unanimous consensus so just find the lowest number in the set.
 		long progress = Long.MAX_VALUE;
-		for (DownstreamPeerState state : _downstreamConnections) {
+		for (DownstreamPeerSyncState state : _downstreamConnections) {
 			progress = Math.min(state.lastMutationOffsetReceived, progress);
 		}
 		return progress;

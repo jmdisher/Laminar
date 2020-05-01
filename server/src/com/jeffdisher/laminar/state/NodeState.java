@@ -48,13 +48,11 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 
 	private RaftState _currentState;
 	private ConfigEntry _clusterLeader;
-	private boolean _leaderIsWritable;
-	private long _ackToSendToLeader;
 	private final ConfigEntry _self;
 	// We keep an image of ourself as a downstream peer state to avoid special-cases in looking at clusters so we will need to update it with latest mutation offset as soon as we assign one.
-	private final DownstreamPeerState _selfState;
+	private final DownstreamPeerSyncState _selfState;
 	// The union of all config entries we are currently monitoring (normally just from the current config but could be all in joint consensus).
-	private final Map<ConfigEntry, DownstreamPeerState> _unionOfDownstreamNodes;
+	private final Map<ConfigEntry, DownstreamPeerSyncState> _unionOfDownstreamNodes;
 	private SyncProgress _currentConfig;
 	// This map is usually empty but contains any ClusterConfigs which haven't yet committed (meaning they are part of joint consensus).
 	private final Map<Long, SyncProgress> _configsPendingCommit;
@@ -87,8 +85,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		// We rely on the initial config just being "self".
 		Assert.assertTrue(1 == initialConfig.entries.length);
 		_self = initialConfig.entries[0];
-		_selfState = new DownstreamPeerState();
-		_selfState.isConnectionUp = true;
+		_selfState = new DownstreamPeerSyncState();
 		_unionOfDownstreamNodes = new HashMap<>();
 		_unionOfDownstreamNodes.put(_self, _selfState);
 		_currentConfig = new SyncProgress(initialConfig, Collections.singleton(_selfState));
@@ -235,118 +232,16 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 	}
 
 	@Override
-	public void mainConnectedToDownstreamPeer(ConfigEntry peer, long lastReceivedMutationOffset) {
-		// Called on main thread.
+	public void mainAppendMutationFromUpstream(ConfigEntry peer, MutationRecord record, long lastCommittedMutationOffset) {
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
-		// They can't be ahead of us until we worry about RAFT elections.
-		Assert.assertTrue(lastReceivedMutationOffset < _nextGlobalMutationOffset);
-		
-		// See if we still have this peer (this will always be true in the current implementation as the ClusterManager checks this).
-		DownstreamPeerState state = _unionOfDownstreamNodes.get(peer);
-		
-		// Set their state based on this information - we start up in a state of being ready to send them the next.
-		state.isConnectionUp = true;
-		state.isWritable = true;
-		state.lastMutationOffsetReceived = lastReceivedMutationOffset;
-		state.lastMutationOffsetSent = lastReceivedMutationOffset;
-		state.nextMutationOffsetToSend = state.lastMutationOffsetReceived + 1;
-		
-		// See if this can be sent data now or request something to be fetched.
-		_mainProcessDownstreamPeerIfReady(peer);
-		
-		// See if we can change our commit offset in light of this (we might have been waiting for them after a disconnect).
-		_mainCommitValidInFlightTuples();
-	}
-
-	@Override
-	public void mainDisconnectedFromDownstreamPeer(ConfigEntry peer) {
-		// Called on main thread.
-		Assert.assertTrue(Thread.currentThread() == _mainThread);
-		// See if we still have this peer (this will always be true in the current implementation as the ClusterManager checks this).
-		DownstreamPeerState state = _unionOfDownstreamNodes.get(peer);
-		state.isConnectionUp = false;
-	}
-
-	@Override
-	public void mainUpstreamPeerConnected(ConfigEntry peer) {
-		// Called on main thread.
-		Assert.assertTrue(Thread.currentThread() == _mainThread);
-		
-		// For now, we will interpret an upstream connection as the cluster leader.
-		_currentState = RaftState.FOLLOWER;
-		Assert.assertTrue(null == _clusterLeader);
-		_clusterLeader = peer;
-		// We start the leader as not writable since the ClusterManager just put it into this state.
-		// (TODO:  Move this logic to ClusterManager)
-		_leaderIsWritable = false;
-		
-		// Send all clients a REDIRECT.
-		_clientManager.mainEnterFollowerState(_clusterLeader, _lastCommittedMutationOffset);
-	}
-
-	@Override
-	public void mainUpstreamPeerDisconnected(ConfigEntry peer) {
-		// Called on main thread.
-		Assert.assertTrue(Thread.currentThread() == _mainThread);
-		// We currently don't do anything with these.
-		System.out.println("Upstream peer disconnected: " + peer);
-	}
-
-	@Override
-	public void mainDownstreamPeerWriteReady(ConfigEntry peer) {
-		Assert.assertTrue(Thread.currentThread() == _mainThread);
-		
-		// We need to set the flag in the DownstreamPeerState and see if this needs to write.
-		DownstreamPeerState state = _unionOfDownstreamNodes.get(peer);
-		// This can be null if the config changed.
-		if (null != state) {
-			Assert.assertTrue(!state.isWritable);
-			state.isWritable = true;
-			
-			// See if this allows us to do something.
-			_mainProcessDownstreamPeerIfReady(peer);
+		if (null == _clusterLeader) {
+			// Cluster leadership is only discovered when a peer starts acting like a leader.
+			_currentState = RaftState.FOLLOWER;
+			_clusterLeader = peer;
+			_clientManager.mainEnterFollowerState(_clusterLeader, lastCommittedMutationOffset);
+		} else {
+			Assert.assertTrue(_clusterLeader == peer);
 		}
-	}
-
-	@Override
-	public void mainDownstreamPeerReceivedMutations(ConfigEntry peer, long lastReceivedMutationOffset) {
-		Assert.assertTrue(Thread.currentThread() == _mainThread);
-		
-		// Advance the state of the downstream node and see if it is ready to send or fetch.
-		DownstreamPeerState state = _unionOfDownstreamNodes.get(peer);
-		// This can be null if the config changed.
-		if (null != state) {
-			Assert.assertTrue(lastReceivedMutationOffset > state.lastMutationOffsetReceived );
-			state.lastMutationOffsetReceived = lastReceivedMutationOffset;
-			
-			// For now, these are always lock-step but buffering may change that.
-			Assert.assertTrue(state.lastMutationOffsetReceived == state.lastMutationOffsetSent);
-			state.nextMutationOffsetToSend = state.lastMutationOffsetSent + 1;
-			
-			// See if this allows us to send them the next.
-			_mainProcessDownstreamPeerIfReady(peer);
-			
-			// See if this updated our consensus commit offset such that we can proceed.
-			_mainCommitValidInFlightTuples();
-		}
-	}
-
-	@Override
-	public void mainUpstreamPeerWriteReady(ConfigEntry peer) {
-		Assert.assertTrue(Thread.currentThread() == _mainThread);
-		// For now, the only upstream peer is the leader.
-		Assert.assertTrue(_clusterLeader == peer);
-		Assert.assertTrue(!_leaderIsWritable);
-		
-		_leaderIsWritable = true;
-		_checkAndAckToLeader();
-	}
-
-	@Override
-	public void mainUpstreamSentMutation(ConfigEntry peer, MutationRecord record, long lastCommittedMutationOffset) {
-		Assert.assertTrue(Thread.currentThread() == _mainThread);
-		// For now, the only upstream peer is the leader.
-		Assert.assertTrue(_clusterLeader == peer);
 		
 		// Process this mutation and put it into our in-flight list.
 		EventRecord event = null;
@@ -372,9 +267,39 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		_mainCommitValidInFlightTuples();
 		_nextGlobalMutationOffset = record.globalOffset + 1;
 		_enqueueForCommit(record, event);
+	}
+
+	@Override
+	public MutationRecord mainFetchMutationIfAvailable(long mutationOffset) {
+		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		
-		_ackToSendToLeader = record.globalOffset;
-		_checkAndAckToLeader();
+		// See if this could be on-disk or if we are waiting for something new from the client.
+		MutationRecord inlineResponse = null;
+		if (mutationOffset < _nextGlobalMutationOffset) {
+			// See if this is in-memory.
+			InFlightTuple inFlight = _getInFlightTuple(mutationOffset);
+			if (null != inFlight) {
+				inlineResponse = inFlight.mutation;
+			} else {
+					// We should have this.
+					_diskManager.fetchMutation(mutationOffset);
+			}
+		} else {
+			// They are waiting for the next, just as we are.
+			Assert.assertTrue(mutationOffset == _nextGlobalMutationOffset);
+		}
+		return inlineResponse;
+	}
+
+	@Override
+	public void mainReceivedAckFromDownstream(ConfigEntry peer, long mutationOffset) {
+		Assert.assertTrue(Thread.currentThread() == _mainThread);
+		
+		// Update the offset in our sync tracking.
+		_unionOfDownstreamNodes.get(peer).lastMutationOffsetReceived = mutationOffset;
+		
+		// See if this changed the consensus offset.
+		_mainCommitValidInFlightTuples();
 	}
 	// </IClusterManagerCallbacks>
 
@@ -410,6 +335,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 						_rebuildDownstreamUnionAfterConfigChange();
 					}
 				}
+				_clusterManager.mainMutationWasCommitted(completed.globalOffset);
 			}});
 	}
 
@@ -444,7 +370,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 				_clientManager.mainReplayMutationForReconnects(arg, record, true);
 				
 				// Check to see if a downstream peer needs this.
-				_mainSendMutationToDownstreamPeers(record);
+				_clusterManager.mainMutationWasReceivedOrFetched(record);
 			}});
 	}
 
@@ -535,12 +461,12 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 			// -we need to initiate an outgoing connection to any of these new nodes
 			
 			// Add the missing nodes and start the outgoing connections.
-			Set<DownstreamPeerState> nodesInConfig = new HashSet<>();
+			Set<DownstreamPeerSyncState> nodesInConfig = new HashSet<>();
 			for (ConfigEntry entry : newConfig.entries) {
-				DownstreamPeerState peer = _unionOfDownstreamNodes.get(entry);
+				DownstreamPeerSyncState peer = _unionOfDownstreamNodes.get(entry);
 				if (null == peer) {
 					// This is a new node so start the connection and add it to the map.
-					peer = new DownstreamPeerState();
+					peer = new DownstreamPeerSyncState();
 					_clusterManager.mainOpenDownstreamConnection(entry);
 					_unionOfDownstreamNodes.put(entry, peer);
 				}
@@ -575,7 +501,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 			// Store in list for later commit.
 			_inFlightMutations.add(new InFlightTuple(mutation, event));
 			// Notify anyone downstream about this.
-			_mainSendMutationToDownstreamPeers(mutation);
+			_clusterManager.mainMutationWasReceivedOrFetched(mutation);
 		}
 	}
 
@@ -605,7 +531,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 	}
 
 	private void _rebuildDownstreamUnionAfterConfigChange() {
-		HashMap<ConfigEntry, DownstreamPeerState> copy = new HashMap<>(_unionOfDownstreamNodes);
+		HashMap<ConfigEntry, DownstreamPeerSyncState> copy = new HashMap<>(_unionOfDownstreamNodes);
 		_unionOfDownstreamNodes.clear();
 		for (ConfigEntry entry : _currentConfig.config.entries) {
 			_unionOfDownstreamNodes.put(entry, copy.get(entry));
@@ -634,80 +560,6 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 			tuple = _inFlightMutations.get(index);
 		}
 		return tuple;
-	}
-
-	private void _dispatchRequiredMutationFetch(long nextMutationOffsetToSend) {
-		if (nextMutationOffsetToSend <= _lastCommittedMutationOffset) {
-			// We need to fetch this mutation from disk but count how many are requesting it to ensure that we didn't
-			// already request it (first one to need it issues the request).
-			int countWaiting = 0;
-			for (DownstreamPeerState elt : _unionOfDownstreamNodes.values()) {
-				// If they are up, they need this mutation, and we didn't already send it to them, count them.
-				if (elt.isConnectionUp
-						&& elt.isWritable
-						&& (elt.nextMutationOffsetToSend == nextMutationOffsetToSend)
-						&& (elt.nextMutationOffsetToSend != elt.lastMutationOffsetSent)
-				) {
-					countWaiting += 1;
-				}
-			}
-			if (1 == countWaiting) {
-				// Only one peer is waiting so they are the first.
-				_diskManager.fetchMutation(nextMutationOffsetToSend);
-			}
-		}
-	}
-
-	private void _mainSendMutationToDownstreamPeers(MutationRecord record) {
-		Assert.assertTrue(Thread.currentThread() == _mainThread);
-		
-		// Check all the peers and any who are ready can receive this, immediately.
-		for (ConfigEntry peer : _unionOfDownstreamNodes.keySet()) {
-			DownstreamPeerState state = _unionOfDownstreamNodes.get(peer);
-			if (state.isConnectionUp
-					&& state.isWritable
-					&& (state.nextMutationOffsetToSend != state.lastMutationOffsetSent)
-					&& (state.nextMutationOffsetToSend == record.globalOffset)
-			) {
-				_clusterManager.mainSendMutationToDownstreamNode(peer, record, _lastCommittedMutationOffset);
-				state.lastMutationOffsetSent = state.nextMutationOffsetToSend;
-				state.isWritable = false;
-			}
-		}
-	}
-
-	private void _mainProcessDownstreamPeerIfReady(ConfigEntry peer) {
-		Assert.assertTrue(Thread.currentThread() == _mainThread);
-		
-		DownstreamPeerState state = _unionOfDownstreamNodes.get(peer);
-		if ((null != state)
-				&& state.isConnectionUp
-				&& state.isWritable
-				&& (state.nextMutationOffsetToSend != state.lastMutationOffsetSent)
-				&& (state.nextMutationOffsetToSend < _nextGlobalMutationOffset)
-		) {
-			// Check if we can just send them a pending mutation, right from memory.
-			InFlightTuple inFlight = _getInFlightTuple(state.nextMutationOffsetToSend);
-			if (null != inFlight) {
-				// Send this to them, right away.
-				_clusterManager.mainSendMutationToDownstreamNode(peer, inFlight.mutation, _lastCommittedMutationOffset);
-				state.lastMutationOffsetSent = state.nextMutationOffsetToSend;
-				state.isWritable = false;
-			}
-			
-			if (null == inFlight) {
-				// Check if we need to fetch any mutations to account for this (we don't want to double-fetch so this is a new requirement).
-				_dispatchRequiredMutationFetch(state.nextMutationOffsetToSend);
-			}
-		}
-	}
-
-	private void _checkAndAckToLeader() {
-		if (_leaderIsWritable && (0L != _ackToSendToLeader)) {
-			_clusterManager.mainSendAckToLeader(_clusterLeader, _ackToSendToLeader);
-			_leaderIsWritable = false;
-			_ackToSendToLeader = 0L;
-		}
 	}
 
 
