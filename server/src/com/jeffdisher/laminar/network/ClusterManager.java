@@ -371,6 +371,7 @@ public class ClusterManager implements INetworkManagerBackgroundCallbacks {
 		if (_isLeader) {
 			DownstreamMessage message = DownstreamMessage.appendMutations(mutation, _lastCommittedMutationOffset);
 			_sendDownstreamMessage(peer, message);
+			peer.nextMutationOffsetToSend += 1;
 		}
 	}
 
@@ -385,7 +386,6 @@ public class ClusterManager implements INetworkManagerBackgroundCallbacks {
 		Assert.assertTrue(didSend);
 		
 		// Update state for the next.
-		peer.nextMutationOffsetToSend += 1;
 		peer.isWritable = false;
 	}
 
