@@ -44,6 +44,10 @@ public class DownstreamPeerState {
 	 * This value starts at 0L since we don't know what their state is until we receive a PEER_STATE.
 	 */
 	public long nextMutationOffsetToSend = 0L;
+	/**
+	 * The millisecond clock the last time we sent a message to this peer.  This is tracked for heartbeat.
+	 */
+	public long lastSentMessageMillis = 0L;
 
 	public DownstreamPeerState(ConfigEntry entry, NetworkManager.NodeToken token) {
 		this.entry = entry;

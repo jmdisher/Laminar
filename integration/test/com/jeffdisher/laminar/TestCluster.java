@@ -220,9 +220,8 @@ public class TestCluster {
 		InetSocketAddress followerClientAddress= new InetSocketAddress(InetAddress.getLocalHost(), 2004);
 		
 		// Start the listeners.
-		// NOTE:  Until the heartbeat is implemented, the follower will always be 1 element behind.
 		CaptureListener leaderListener = new CaptureListener(leaderClientAddress, 3);
-		CaptureListener followerListener = new CaptureListener(followerClientAddress, 2);
+		CaptureListener followerListener = new CaptureListener(followerClientAddress, 3);
 		leaderListener.setName("Leader");
 		followerListener.setName("Follower");
 		leaderListener.start();
@@ -249,12 +248,13 @@ public class TestCluster {
 			configResult.waitForCommitted();
 			
 			// Now, send another message on client1 and 2 on client2.
-			// NOTE:  Without the hearbeat, these MUST be lock-step:  wait for commit before sending the next or the follower won't see them commit.
 			ClientResult client1_1 = client1.sendTemp(new byte[] {1});
-			client1_1.waitForCommitted();
 			ClientResult client2_1 = client2.sendTemp(new byte[] {2});
-			client2_1.waitForCommitted();
 			ClientResult client2_2 = client2.sendTemp(new byte[] {3});
+			
+			// We can wait for these to commit at once, to stress the ordering further.
+			client1_1.waitForCommitted();
+			client2_1.waitForCommitted();
 			client2_2.waitForCommitted();
 			
 			// Finally, check that the listeners saw all the results.
@@ -262,6 +262,7 @@ public class TestCluster {
 			EventRecord[] followerRecords = followerListener.waitForTerminate();
 			Assert.assertEquals(leaderRecords[0].globalOffset, followerRecords[0].globalOffset);
 			Assert.assertEquals(leaderRecords[1].globalOffset, followerRecords[1].globalOffset);
+			Assert.assertEquals(leaderRecords[2].globalOffset, followerRecords[2].globalOffset);
 			Assert.assertEquals(leaderRecords[1].globalOffset, leaderRecords[0].globalOffset + 1);
 			Assert.assertEquals(leaderRecords[2].globalOffset, leaderRecords[1].globalOffset + 1);
 			

@@ -28,6 +28,7 @@ import com.jeffdisher.laminar.utils.Assert;
  */
 public class ClusterManager implements INetworkManagerBackgroundCallbacks {
 	private static final long MILLIS_BETWEEN_CONNECTION_ATTEMPTS = 100L;
+	private static final long MILLIS_BETWEEN_HEARTBEATS = 100L;
 
 	private final Thread _mainThread;
 	private final ConfigEntry _self;
@@ -67,6 +68,9 @@ public class ClusterManager implements INetworkManagerBackgroundCallbacks {
 	public void startAndWaitForReady() {
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		_networkManager.startAndWaitForReady("ClusterManager");
+		
+		// This is also our opportunity to do further startup so register our first heartbeat.
+		_mainRegisterHeartbeat(System.currentTimeMillis());
 	}
 
 	public void stopAndWaitForTermination() {
@@ -98,13 +102,14 @@ public class ClusterManager implements INetworkManagerBackgroundCallbacks {
 		
 		// See if any of our downstream peers were waiting for this mutation and are writable.
 		long mutationOffset = mutation.globalOffset;
+		long nowMillis = System.currentTimeMillis();
 		for (DownstreamPeerState state : _downstreamPeerByNode.values()) {
 			if (state.isConnectionUp
 					&& state.isWritable
 					&& state.didHandshake
 					&& (state.nextMutationOffsetToSend == mutationOffset)
 			) {
-				_sendMutationToPeer(state, mutation);
+				_sendMutationToPeer(state, mutation, nowMillis);
 			}
 		}
 	}
@@ -287,7 +292,8 @@ public class ClusterManager implements INetworkManagerBackgroundCallbacks {
 				
 				// We are the upstream node so send the SERVER_IDENTITY.
 				DownstreamMessage identity = DownstreamMessage.identity(_self);
-				_sendDownstreamMessage(peer, identity);
+				long nowMillis = System.currentTimeMillis();
+				_sendDownstreamMessage(peer, identity, nowMillis);
 			}});
 	}
 
@@ -340,7 +346,8 @@ public class ClusterManager implements INetworkManagerBackgroundCallbacks {
 		) {
 			MutationRecord mutation = _callbacks.mainFetchMutationIfAvailable(peer.nextMutationOffsetToSend);
 			if (null != mutation) {
-				_sendMutationToPeer(peer, mutation);
+				long nowMillis = System.currentTimeMillis();
+				_sendMutationToPeer(peer, mutation, nowMillis);
 			} else {
 				// We will wait for this to come in, later.
 			}
@@ -366,17 +373,17 @@ public class ClusterManager implements INetworkManagerBackgroundCallbacks {
 		}
 	}
 
-	private void _sendMutationToPeer(DownstreamPeerState peer, MutationRecord mutation) {
+	private void _sendMutationToPeer(DownstreamPeerState peer, MutationRecord mutation, long nowMillis) {
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		
 		if (_isLeader) {
 			DownstreamMessage message = DownstreamMessage.appendMutations(mutation, _lastCommittedMutationOffset);
-			_sendDownstreamMessage(peer, message);
+			_sendDownstreamMessage(peer, message, nowMillis);
 			peer.nextMutationOffsetToSend += 1;
 		}
 	}
 
-	private void _sendDownstreamMessage(DownstreamPeerState peer, DownstreamMessage message) {
+	private void _sendDownstreamMessage(DownstreamPeerState peer, DownstreamMessage message, long nowMillis) {
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		Assert.assertTrue(peer.isWritable);
 		
@@ -388,6 +395,7 @@ public class ClusterManager implements INetworkManagerBackgroundCallbacks {
 		
 		// Update state for the next.
 		peer.isWritable = false;
+		peer.lastSentMessageMillis = nowMillis;
 	}
 
 	private void _sendUpstreamResponse(UpstreamPeerState state, UpstreamResponse response) {
@@ -397,5 +405,35 @@ public class ClusterManager implements INetworkManagerBackgroundCallbacks {
 		boolean didSend = _networkManager.trySendMessage(state.token, buffer.array());
 		Assert.assertTrue(didSend);
 		state.isWritable = false;
+	}
+
+	private void _mainRegisterHeartbeat(long nowMillis) {
+		Assert.assertTrue(Thread.currentThread() == _mainThread);
+		
+		_callbacks.mainEnqueuePriorityClusterCommandForMainThread((snapshot) -> {
+			// We will only do the work or reschedule if we are leader.
+			if (_isLeader) {
+				long now = System.currentTimeMillis();
+				_mainRegisterHeartbeat(now);
+				_mainSendHeartbeat(now);
+			}
+		}, MILLIS_BETWEEN_HEARTBEATS);
+	}
+
+	private void _mainSendHeartbeat(long nowMillis) {
+		Assert.assertTrue(Thread.currentThread() == _mainThread);
+		
+		DownstreamMessage heartbeat = DownstreamMessage.heartbeat(_lastCommittedMutationOffset);
+		long thresholdForHeartbeat = nowMillis - MILLIS_BETWEEN_HEARTBEATS;
+		for (DownstreamPeerState peer : _downstreamPeerByNode.values()) {
+			if (_isLeader
+					&& peer.isConnectionUp
+					&& peer.didHandshake
+					&& peer.isWritable
+					&& (peer.lastSentMessageMillis < thresholdForHeartbeat)
+			) {
+				_sendDownstreamMessage(peer, heartbeat, nowMillis);
+			}
+		}
 	}
 }
