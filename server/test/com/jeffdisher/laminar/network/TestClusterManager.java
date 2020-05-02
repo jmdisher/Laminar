@@ -245,7 +245,7 @@ public class TestClusterManager {
 		}
 		
 		@Override
-		public MutationRecord mainFetchMutationIfAvailable(long mutationOffset) {
+		public MutationRecord mainClusterFetchMutationIfAvailable(long mutationOffset) {
 			MutationRecord mutationToReturn = null;
 			if (null != this.nextMutationToReturn) {
 				Assert.assertEquals(this.nextMutationToReturn.globalOffset, mutationOffset);

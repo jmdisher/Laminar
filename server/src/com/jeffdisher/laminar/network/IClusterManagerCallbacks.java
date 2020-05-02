@@ -66,7 +66,7 @@ public interface IClusterManagerCallbacks {
 	 * @param mutationOffset The offset to fetch/return/await.
 	 * @return The mutation, only if it was immediately available, in-memory (typically not committed).
 	 */
-	MutationRecord mainFetchMutationIfAvailable(long mutationOffset);
+	MutationRecord mainClusterFetchMutationIfAvailable(long mutationOffset);
 
 	/**
 	 * Sent by the ClusterManager whenever a new acknowledgement arrives from a downstream peer.

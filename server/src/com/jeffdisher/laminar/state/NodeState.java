@@ -295,7 +295,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 	}
 
 	@Override
-	public MutationRecord mainFetchMutationIfAvailable(long mutationOffset) {
+	public MutationRecord mainClusterFetchMutationIfAvailable(long mutationOffset) {
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		
 		// See if this could be on-disk or if we are waiting for something new from the client.

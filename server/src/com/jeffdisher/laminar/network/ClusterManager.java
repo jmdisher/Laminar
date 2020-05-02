@@ -344,7 +344,7 @@ public class ClusterManager implements INetworkManagerBackgroundCallbacks {
 				&& peer.didHandshake
 				&& peer.isWritable
 		) {
-			MutationRecord mutation = _callbacks.mainFetchMutationIfAvailable(peer.nextMutationOffsetToSend);
+			MutationRecord mutation = _callbacks.mainClusterFetchMutationIfAvailable(peer.nextMutationOffsetToSend);
 			if (null != mutation) {
 				long nowMillis = System.currentTimeMillis();
 				_sendMutationToPeer(peer, mutation, nowMillis);
