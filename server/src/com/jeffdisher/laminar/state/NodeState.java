@@ -260,7 +260,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 			// Cluster leadership is only discovered when a peer starts acting like a leader.
 			_currentState = RaftState.FOLLOWER;
 			_clusterLeader = peer;
-			_clientManager.mainEnterFollowerState(_clusterLeader, lastCommittedMutationOffset);
+			_clientManager.mainEnterFollowerState(_clusterLeader, _lastCommittedMutationOffset);
 			_clusterManager.mainEnterFollowerState();
 		} else {
 			Assert.assertTrue(_clusterLeader == peer);
