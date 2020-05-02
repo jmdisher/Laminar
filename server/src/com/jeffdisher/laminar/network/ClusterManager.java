@@ -33,6 +33,7 @@ public class ClusterManager implements INetworkManagerBackgroundCallbacks {
 	private final ConfigEntry _self;
 	private final NetworkManager _networkManager;
 	private final IClusterManagerCallbacks _callbacks;
+	private boolean _isLeader;
 
 	// These elements are relevant when _THIS_ node is the LEADER.
 	// In NodeState, we identify downstream nodes via ClusterConfig.ConfigEntry.
@@ -55,6 +56,8 @@ public class ClusterManager implements INetworkManagerBackgroundCallbacks {
 		// This is really just a high-level wrapper over the common NetworkManager so create that here.
 		_networkManager = NetworkManager.bidirectional(serverSocket, this);
 		_callbacks = callbacks;
+		// We start assuming that we are the leader until told otherwise.
+		_isLeader = true;
 		_downstreamPeerByConfig = new HashMap<>();
 		_downstreamPeerByNode = new HashMap<>();
 		_newUpstreamNodes = new HashSet<>();
@@ -118,6 +121,16 @@ public class ClusterManager implements INetworkManagerBackgroundCallbacks {
 		// This should never skip a value.
 		Assert.assertTrue((_lastCommittedMutationOffset + 1) == mutationOffset);
 		_lastCommittedMutationOffset = mutationOffset;
+	}
+
+	/**
+	 * Called to instruct the receiver that the node has entered the follower state so it should not attempt to sync
+	 * data to any other node.  This means no sending APPEND_MUTATIONS messages or requesting that the callbacks fetch
+	 * data for it to send.
+	 */
+	public void mainEnterFollowerState() {
+		Assert.assertTrue(Thread.currentThread() == _mainThread);
+		_isLeader = false;
 	}
 
 	@Override
@@ -317,7 +330,8 @@ public class ClusterManager implements INetworkManagerBackgroundCallbacks {
 	private void _tryFetchOrSend(DownstreamPeerState peer) {
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		
-		if (peer.isConnectionUp
+		if (_isLeader
+				&& peer.isConnectionUp
 				&& peer.didHandshake
 				&& peer.isWritable
 		) {
@@ -352,8 +366,10 @@ public class ClusterManager implements INetworkManagerBackgroundCallbacks {
 	private void _sendMutationToPeer(DownstreamPeerState peer, MutationRecord mutation) {
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		
-		DownstreamMessage message = DownstreamMessage.appendMutations(mutation, _lastCommittedMutationOffset);
-		_sendDownstreamMessage(peer, message);
+		if (_isLeader) {
+			DownstreamMessage message = DownstreamMessage.appendMutations(mutation, _lastCommittedMutationOffset);
+			_sendDownstreamMessage(peer, message);
+		}
 	}
 
 	private void _sendDownstreamMessage(DownstreamPeerState peer, DownstreamMessage message) {

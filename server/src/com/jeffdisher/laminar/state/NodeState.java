@@ -46,6 +46,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 
 	private RaftState _currentState;
 	private ConfigEntry _clusterLeader;
+	private long _clusterLeaderCommitOffset;
 	private final ConfigEntry _self;
 	// We keep an image of ourself as a downstream peer state to avoid special-cases in looking at clusters so we will need to update it with latest mutation offset as soon as we assign one.
 	private final DownstreamPeerSyncState _selfState;
@@ -253,33 +254,20 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 			_currentState = RaftState.FOLLOWER;
 			_clusterLeader = peer;
 			_clientManager.mainEnterFollowerState(_clusterLeader, lastCommittedMutationOffset);
+			_clusterManager.mainEnterFollowerState();
 		} else {
 			Assert.assertTrue(_clusterLeader == peer);
 		}
 		
-		// Process this mutation and put it into our in-flight list.
-		EventRecord event = null;
-		switch (record.type) {
-		case INVALID:
-			throw Assert.unimplemented("Invalid message type");
-		case TEMP:
-			event = EventRecord.generateRecord(EventRecordType.TEMP, record.globalOffset, _nextLocalEventOffset++, record.clientId, record.clientNonce, record.payload);
-			break;
-		case UPDATE_CONFIG:
-			// No record type for config.
-			// We add this to the map of pending config changes so we will notify connected listeners when it commits.
-			// We also fake the nodes in config since the follower is a speical-case until full raft is implemented.
-			_configsPendingCommit.put(record.globalOffset, new SyncProgress(ClusterConfig.deserialize(record.payload), Collections.emptySet()));
-			System.out.println("TODO: Handle config update on the follower");
-			break;
-		default:
-			throw Assert.unreachable("Default record type");
-		}
-		// We actually store the mutation offset of the leader as the last one we "received" since the follower views this somewhat backward.
-		_selfState.lastMutationOffsetReceived = lastCommittedMutationOffset;
-		// This changes our consensus offset so re-run any commits.
-		_mainCommitValidInFlightTuples();
+		// Update our consensus offset.
+		Assert.assertTrue(lastCommittedMutationOffset >= _clusterLeaderCommitOffset);
+		_clusterLeaderCommitOffset = lastCommittedMutationOffset;
 		_nextGlobalMutationOffset = record.globalOffset + 1;
+		// Process the mutation into a local event.
+		EventRecord event = _processReceivedMutation(record);
+		// The commit offset probably changed so see if we can commit anything.
+		_mainCommitValidInFlightTuples();
+		// NOTE:  We enqueue after clearing any commits since we are testing we can remain lock-step with the cluster.
 		_enqueueForCommit(record, event);
 	}
 
@@ -490,12 +478,21 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 	}
 
 	private long _checkConsesusMutationOffset() {
-		// We want the minimum offset of all active configs.
-		long offset = _currentConfig.checkCurrentProgress();
-		for (SyncProgress pending : _configsPendingCommit.values()) {
-			offset = Math.min(offset, pending.checkCurrentProgress());
+		long commitOffset = 0L;
+		if (RaftState.LEADER == _currentState) {
+			// We want the minimum offset of all active configs.
+			long offset = _currentConfig.checkCurrentProgress();
+			for (SyncProgress pending : _configsPendingCommit.values()) {
+				offset = Math.min(offset, pending.checkCurrentProgress());
+			}
+			commitOffset = offset;
+		} else if (RaftState.FOLLOWER == _currentState) {
+			// If we are follower so we only care about what the leader told us.
+			commitOffset = _clusterLeaderCommitOffset;
+		} else {
+			throw Assert.unimplemented("TODO: Handle messages still in-flight during election");
 		}
-		return offset;
+		return commitOffset;
 	}
 
 	private long _getAndUpdateNextMutationOffset() {
