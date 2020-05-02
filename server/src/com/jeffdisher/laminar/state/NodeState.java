@@ -18,14 +18,12 @@ import com.jeffdisher.laminar.network.ClusterManager;
 import com.jeffdisher.laminar.network.IClientManagerCallbacks;
 import com.jeffdisher.laminar.network.IClusterManagerCallbacks;
 import com.jeffdisher.laminar.types.ClientMessage;
-import com.jeffdisher.laminar.types.ClientMessagePayload_Temp;
-import com.jeffdisher.laminar.types.ClientMessagePayload_UpdateConfig;
+import com.jeffdisher.laminar.types.ClientMessageType;
 import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.types.ConfigEntry;
 import com.jeffdisher.laminar.types.EventRecord;
 import com.jeffdisher.laminar.types.EventRecordType;
 import com.jeffdisher.laminar.types.MutationRecord;
-import com.jeffdisher.laminar.types.MutationRecordType;
 import com.jeffdisher.laminar.utils.Assert;
 import com.jeffdisher.laminar.utils.UninterruptibleQueue;
 
@@ -182,7 +180,16 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		// All nonce accounting is done before we get here and acks are managed on response so just apply the message.
 		// (we return the globalMutationOffset it was assigned so the caller can generate correct acks).
-		return _mainNormalMessage(clientId, incoming);
+		long mutationOffsetToAssign = _getAndUpdateNextMutationOffset();
+		MutationRecord mutation = Helpers.convertClientMessageToMutation(incoming, clientId, mutationOffsetToAssign);
+		EventRecord event = _processReceivedMutation(mutation);
+		if (ClientMessageType.POISON == incoming.type) {
+			// POISON is special in that it is just for testing so it maps to a TEMP, as a mutation, but we still want to preserve this.
+			_clientManager.mainDisconnectAllClientsAndListeners();
+		}
+		// Now request that both of these records be committed (event may be null).
+		_enqueueForCommit(mutation, event);
+		return mutationOffsetToAssign;
 	}
 
 	@Override
@@ -411,56 +418,29 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 	// </IConsoleManagerBackgroundCallbacks>
 
 
-	private long _mainNormalMessage(UUID clientId, ClientMessage incoming) {
+	private EventRecord _processReceivedMutation(MutationRecord mutation) {
 		// Main thread helper.
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
-		// We return 0 if this is an error or the globalMutationOffset we assigned to the message so it can be acked.
-		long globalMutationOffsetOfAcceptedMessage = 0L;
-		switch (incoming.type) {
+		
+		EventRecord eventToReturn = null;
+		switch (mutation.type) {
 		case INVALID:
 			Assert.unimplemented("Invalid message type");
 			break;
 		case TEMP: {
 			// This is just for initial testing:  send the received, log it, and send the commit.
-			byte[] contents = ((ClientMessagePayload_Temp)incoming.payload).contents;
-			System.out.println("GOT TEMP FROM " + clientId + " nonce " + incoming.nonce + " data " + contents[0]);
-			// Create the MutationRecord and EventRecord.
-			long globalOffset = _getAndUpdateNextMutationOffset();
+			System.out.println("GOT TEMP FROM " + mutation.clientId + " nonce " + mutation.clientNonce + " data " + mutation.payload[0]);
+			// Create the event record.
 			long localOffset = _nextLocalEventOffset++;
-			MutationRecord mutation = MutationRecord.generateRecord(MutationRecordType.TEMP, globalOffset, clientId, incoming.nonce, contents);
-			EventRecord event = EventRecord.generateRecord(EventRecordType.TEMP, globalOffset, localOffset, clientId, incoming.nonce, contents);
-			// Now request that both of these records be committed.
-			_enqueueForCommit(mutation, event);
-			globalMutationOffsetOfAcceptedMessage = globalOffset;
-		}
-			break;
-		case POISON: {
-			// This is just for initial testing:  send the received, log it, and send the commit.
-			byte[] contents = ((ClientMessagePayload_Temp)incoming.payload).contents;
-			System.out.println("GOT POISON FROM " + clientId + " nonce " + incoming.nonce + " data " + contents[0]);
-			// Create the MutationRecord and EventRecord.
-			long globalOffset = _getAndUpdateNextMutationOffset();
-			long localOffset = _nextLocalEventOffset++;
-			MutationRecord mutation = MutationRecord.generateRecord(MutationRecordType.TEMP, globalOffset, clientId, incoming.nonce, contents);
-			EventRecord event = EventRecord.generateRecord(EventRecordType.TEMP, globalOffset, localOffset, clientId, incoming.nonce, contents);
-			// Now request that both of these records be committed.
-			_enqueueForCommit(mutation, event);
-			
-			// Now that we did the usual work, disconnect everyone.
-			_clientManager.mainDisconnectAllClientsAndListeners();
-			globalMutationOffsetOfAcceptedMessage = globalOffset;
+			eventToReturn = EventRecord.generateRecord(EventRecordType.TEMP, mutation.globalOffset, localOffset, mutation.clientId, mutation.clientNonce, mutation.payload);
 		}
 			break;
 		case UPDATE_CONFIG: {
 			// Eventually, this will kick-off the joint consensus where we change to having 2 active configs until this commits on all nodes and the local disk.
 			// For now, however, we just send the received ack and enqueue this for commit (note that it DOES NOT generate an event - only a mutation).
 			// The more complex operation happens after the commit completes since that is when we will change our state and broadcast the new config to all clients and listeners.
-			ClusterConfig newConfig = ((ClientMessagePayload_UpdateConfig)incoming.payload).config;
-			System.out.println("GOT UPDATE_CONFIG FROM " + clientId + ": " + newConfig.entries.length + " entries (nonce " + incoming.nonce + ")");
-			
-			// Create the MutationRecord but NO EventRecord.
-			long globalOffset = _getAndUpdateNextMutationOffset();
-			MutationRecord mutation = MutationRecord.generateRecord(MutationRecordType.UPDATE_CONFIG, globalOffset, clientId, incoming.nonce, newConfig.serialize());
+			ClusterConfig newConfig = ClusterConfig.deserialize(mutation.payload);
+			System.out.println("GOT UPDATE_CONFIG FROM " + mutation.clientId + ": " + newConfig.entries.length + " entries (nonce " + mutation.clientNonce + ")");
 			
 			// Notes about handling a new config:
 			// -we now enter (or compound) joint consensus, until this config commits on a majority of servers
@@ -480,18 +460,15 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 				nodesInConfig.add(peer);
 			}
 			// Add this to our pending map of commits so we know when to exit joint consensus.
-			_configsPendingCommit.put(globalOffset, new SyncProgress(newConfig, nodesInConfig));
-			
-			// Request that the MutationRecord be committed (no EventRecord).
-			_enqueueForCommit(mutation, null);
-			globalMutationOffsetOfAcceptedMessage = globalOffset;
+			_configsPendingCommit.put(mutation.globalOffset, new SyncProgress(newConfig, nodesInConfig));
+			// There is no event for UPDATE_CONFIG.
+			eventToReturn = null;
 		}
 			break;
 		default:
-			Assert.unimplemented("This is an invalid message for this client type and should be disconnected");
-			break;
+			throw Assert.unimplemented("Case missing in mutation processing");
 		}
-		return globalMutationOffsetOfAcceptedMessage;
+		return eventToReturn;
 	}
 
 	private void _enqueueForCommit(MutationRecord mutation, EventRecord event) {
