@@ -228,7 +228,7 @@ public class TestClusterManager {
 		}
 		
 		@Override
-		public void mainAppendMutationFromUpstream(ConfigEntry peer, MutationRecord mutation, long lastCommittedMutationOffset) {
+		public void mainAppendMutationFromUpstream(ConfigEntry peer, MutationRecord mutation) {
 			if (null == this.upstreamPeer) {
 				this.upstreamPeer = peer;
 			} else {
@@ -237,6 +237,10 @@ public class TestClusterManager {
 			Assert.assertNull(this.upstreamMutation);
 			Assert.assertEquals(0L,  this.upstreamCommitOffset);
 			this.upstreamMutation = mutation;
+		}
+		
+		@Override
+		public void mainCommittedMutationOffsetFromUpstream(ConfigEntry peer, long lastCommittedMutationOffset) {
 			this.upstreamCommitOffset = lastCommittedMutationOffset;
 		}
 		

@@ -259,12 +259,13 @@ public class ClusterManager implements INetworkManagerBackgroundCallbacks {
 					Assert.assertTrue(DownstreamMessage.Type.APPEND_MUTATIONS == message.type);
 					DownstreamPayload_AppendMutations payload = (DownstreamPayload_AppendMutations)message.payload;
 					
-					// Update our last offset received and notify the callbacks of this mutation.
-					// This is just temporary until the broader changes to support heartbeat are implemented.
-					Assert.assertTrue(1 == payload.records.length);
-					Assert.assertTrue((_lastMutationOffsetReceived + 1) == payload.records[0].globalOffset);
-					_lastMutationOffsetReceived = payload.records[0].globalOffset;
-					_callbacks.mainAppendMutationFromUpstream(peer.entry, payload.records[0], payload.lastCommittedMutationOffset);
+					for (MutationRecord record : payload.records) {
+						// Update our last offset received and notify the callbacks of this mutation.
+						Assert.assertTrue((_lastMutationOffsetReceived + 1) == record.globalOffset);
+						_lastMutationOffsetReceived = record.globalOffset;
+						_callbacks.mainAppendMutationFromUpstream(peer.entry, record);
+					}
+					_callbacks.mainCommittedMutationOffsetFromUpstream(peer.entry, payload.lastCommittedMutationOffset);
 					
 					// See if we can ack this, immediately.
 					_tryAck(peer);

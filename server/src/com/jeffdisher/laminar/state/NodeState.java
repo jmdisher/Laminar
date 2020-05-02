@@ -254,7 +254,28 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 	}
 
 	@Override
-	public void mainAppendMutationFromUpstream(ConfigEntry peer, MutationRecord record, long lastCommittedMutationOffset) {
+	public void mainAppendMutationFromUpstream(ConfigEntry peer, MutationRecord record) {
+		Assert.assertTrue(Thread.currentThread() == _mainThread);
+		if (null == _clusterLeader) {
+			// Cluster leadership is only discovered when a peer starts acting like a leader.
+			_currentState = RaftState.FOLLOWER;
+			_clusterLeader = peer;
+			_clientManager.mainEnterFollowerState(_clusterLeader, _lastCommittedMutationOffset);
+			_clusterManager.mainEnterFollowerState();
+		} else {
+			Assert.assertTrue(_clusterLeader == peer);
+		}
+		
+		// Make sure that this is the expected mutation (as they must arrive in-order).
+		Assert.assertTrue(_nextGlobalMutationOffset == record.globalOffset);
+		_nextGlobalMutationOffset = record.globalOffset + 1;
+		// Process the mutation into a local event.
+		EventRecord event = _processReceivedMutation(record);
+		_enqueueForCommit(record, event);
+	}
+
+	@Override
+	public void mainCommittedMutationOffsetFromUpstream(ConfigEntry peer, long lastCommittedMutationOffset) {
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		if (null == _clusterLeader) {
 			// Cluster leadership is only discovered when a peer starts acting like a leader.
@@ -269,13 +290,8 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		// Update our consensus offset.
 		Assert.assertTrue(lastCommittedMutationOffset >= _clusterLeaderCommitOffset);
 		_clusterLeaderCommitOffset = lastCommittedMutationOffset;
-		_nextGlobalMutationOffset = record.globalOffset + 1;
-		// Process the mutation into a local event.
-		EventRecord event = _processReceivedMutation(record);
-		// The commit offset probably changed so see if we can commit anything.
+		// This changes our consensus offset so re-run any commits.
 		_mainCommitValidInFlightTuples();
-		// NOTE:  We enqueue after clearing any commits since we are testing we can remain lock-step with the cluster.
-		_enqueueForCommit(record, event);
 	}
 
 	@Override

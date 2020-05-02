@@ -43,9 +43,18 @@ public interface IClusterManagerCallbacks {
 	 * 
 	 * @param peer The peer which sent the mutation.
 	 * @param mutation The mutation.
+	 */
+	void mainAppendMutationFromUpstream(ConfigEntry peer, MutationRecord mutation);
+
+	/**
+	 * Called after processing a list of incoming mutations or a heartbeat from an upstream peer.
+	 * The ClusterManager doesn't expose upstream nodes so the peer is only provided so the receiver can capture this
+	 * as the leader, for redirects.
+	 * 
+	 * @param peer The peer which sent the update.
 	 * @param lastCommittedMutationOffset The leader has committed mutations up to this point.
 	 */
-	void mainAppendMutationFromUpstream(ConfigEntry peer, MutationRecord mutation, long lastCommittedMutationOffset);
+	void mainCommittedMutationOffsetFromUpstream(ConfigEntry peer, long lastCommittedMutationOffset);
 
 	/**
 	 * Called when the ClusterManager wishes to send a mutation to a downstream peer and needs it to be loaded.
