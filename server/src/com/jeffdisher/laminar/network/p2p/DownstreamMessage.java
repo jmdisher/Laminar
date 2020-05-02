@@ -17,7 +17,11 @@ public class DownstreamMessage {
 	}
 
 	public static DownstreamMessage appendMutations(MutationRecord mutation, long lastCommittedMutationOffset) {
-		return new DownstreamMessage(Type.APPEND_MUTATIONS, DownstreamPayload_AppendMutations.create(mutation, lastCommittedMutationOffset));
+		return new DownstreamMessage(Type.APPEND_MUTATIONS, DownstreamPayload_AppendMutations.create(new MutationRecord[] { mutation }, lastCommittedMutationOffset));
+	}
+
+	public static DownstreamMessage heartbeat(long lastCommittedMutationOffset) {
+		return new DownstreamMessage(Type.APPEND_MUTATIONS, DownstreamPayload_AppendMutations.create(new MutationRecord[0], lastCommittedMutationOffset));
 	}
 
 	public static DownstreamMessage deserializeFrom(ByteBuffer buffer) {

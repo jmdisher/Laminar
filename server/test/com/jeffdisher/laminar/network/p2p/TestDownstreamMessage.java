@@ -46,6 +46,22 @@ public class TestDownstreamMessage {
 		
 		DownstreamMessage test = DownstreamMessage.deserializeFrom(buffer);
 		DownstreamPayload_AppendMutations payload = (DownstreamPayload_AppendMutations)test.payload;
-		Assert.assertArrayEquals(mutation.payload, payload.record.payload);
+		Assert.assertEquals(lastCommittedMutationOffset, payload.lastCommittedMutationOffset);
+		Assert.assertArrayEquals(mutation.payload, payload.records[0].payload);
+	}
+
+	@Test
+	public void testHeartbeat() throws Throwable {
+		long lastCommittedMutationOffset = 1L;
+		DownstreamMessage message = DownstreamMessage.heartbeat(lastCommittedMutationOffset);
+		int size = message.serializedSize();
+		ByteBuffer buffer = ByteBuffer.allocate(size);
+		message.serializeInto(buffer);
+		buffer.flip();
+		
+		DownstreamMessage test = DownstreamMessage.deserializeFrom(buffer);
+		DownstreamPayload_AppendMutations payload = (DownstreamPayload_AppendMutations)test.payload;
+		Assert.assertEquals(lastCommittedMutationOffset, payload.lastCommittedMutationOffset);
+		Assert.assertEquals(0, payload.records.length);
 	}
 }
