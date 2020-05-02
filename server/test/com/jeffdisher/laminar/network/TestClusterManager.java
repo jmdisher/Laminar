@@ -220,6 +220,14 @@ public class TestClusterManager {
 		}
 		
 		@Override
+		public void mainEnqueuePriorityClusterCommandForMainThread(Consumer<StateSnapshot> command, long delayMillis) {
+			// WARNING:  We explicitly drop this for our current tests.
+			// Part of this is because it would require changing the message hand-off (this is a reentrant call so it breaks this locked single hand-off design).
+			// The other part is that we know that this is used for scheduling heartbeats which we don't currently test and relies on wall clock time.
+			// TODO:  Redesign this along with a way to inject a time source to ClusterManager.
+		}
+		
+		@Override
 		public void mainAppendMutationFromUpstream(ConfigEntry peer, MutationRecord mutation, long lastCommittedMutationOffset) {
 			if (null == this.upstreamPeer) {
 				this.upstreamPeer = peer;
