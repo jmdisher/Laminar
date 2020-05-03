@@ -196,31 +196,9 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 	@Override
 	public MutationRecord mainClientFetchMutationIfAvailable(long mutationOffset) {
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
-		// The mutations are 1-indexed so this must be a positive number.
-		Assert.assertTrue(mutationOffset > 0L);
 		// It is invalid to request a mutation from the future.
 		Assert.assertTrue(mutationOffset < _nextGlobalMutationOffset);
-		
-		// We will fail to get the tuple if it has already been committed and is no longer in-flight.
-		InFlightTuple tuple = _getInFlightTuple(mutationOffset);
-		if (null == tuple) {
-			// If the mutation is on disk, fetch it from there.
-			_diskManager.fetchMutation(mutationOffset);
-		} else {
-			// This must be in our in-flight tuples waiting to commit.
-			MutationRecord preCommitMutation = tuple.mutation;
-			// This must be the mutation we wanted.
-			Assert.assertTrue(mutationOffset == preCommitMutation.globalOffset);
-			// While it would be possible to specialize this path, we will keep the code smaller but handling this response asynchronously to hit the common path.
-			_commandQueue.put(new Consumer<StateSnapshot>() {
-				@Override
-				public void accept(StateSnapshot arg) {
-					Assert.assertTrue(Thread.currentThread() == _mainThread);
-					_clientManager.mainReplayMutationForReconnects(arg, preCommitMutation, false);
-				}});
-		}
-		// During the transition, we always return null.
-		return null;
+		return _mainFetchMutationIfAvailable(mutationOffset);
 	}
 
 	@Override
@@ -298,23 +276,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 	@Override
 	public MutationRecord mainClusterFetchMutationIfAvailable(long mutationOffset) {
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
-		
-		// See if this could be on-disk or if we are waiting for something new from the client.
-		MutationRecord inlineResponse = null;
-		if (mutationOffset < _nextGlobalMutationOffset) {
-			// See if this is in-memory.
-			InFlightTuple inFlight = _getInFlightTuple(mutationOffset);
-			if (null != inFlight) {
-				inlineResponse = inFlight.mutation;
-			} else {
-					// We should have this.
-					_diskManager.fetchMutation(mutationOffset);
-			}
-		} else {
-			// They are waiting for the next, just as we are.
-			Assert.assertTrue(mutationOffset == _nextGlobalMutationOffset);
-		}
-		return inlineResponse;
+		return _mainFetchMutationIfAvailable(mutationOffset);
 	}
 
 	@Override
@@ -392,8 +354,8 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 			public void accept(StateSnapshot arg) {
 				Assert.assertTrue(Thread.currentThread() == _mainThread);
 				
-				// Check to see if a client needs this (mutations from disk are always committed)
-				_clientManager.mainReplayMutationForReconnects(arg, record, true);
+				// Check to see if a client needs this
+				_clientManager.mainReplayCommittedMutationForReconnects(arg, record);
 				
 				// Check to see if a downstream peer needs this.
 				_clusterManager.mainMutationWasReceivedOrFetched(record);
@@ -565,6 +527,29 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 			tuple = _inFlightMutations.get(index);
 		}
 		return tuple;
+	}
+
+	private MutationRecord _mainFetchMutationIfAvailable(long mutationOffset) {
+		Assert.assertTrue(Thread.currentThread() == _mainThread);
+		// The mutations are 1-indexed so this must be a positive number.
+		Assert.assertTrue(mutationOffset > 0L);
+		
+		// See if this could be on-disk or if we are waiting for something new from the client.
+		MutationRecord inlineResponse = null;
+		if (mutationOffset < _nextGlobalMutationOffset) {
+			// See if this is in-memory.
+			InFlightTuple inFlight = _getInFlightTuple(mutationOffset);
+			if (null != inFlight) {
+				inlineResponse = inFlight.mutation;
+			} else {
+				// We should have this.
+				_diskManager.fetchMutation(mutationOffset);
+			}
+		} else {
+			// They are waiting for the next, just as we are.
+			Assert.assertTrue(mutationOffset == _nextGlobalMutationOffset);
+		}
+		return inlineResponse;
 	}
 
 

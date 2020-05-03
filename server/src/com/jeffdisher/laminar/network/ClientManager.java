@@ -183,61 +183,17 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 		}
 	}
 
-	public void mainReplayMutationForReconnects(StateSnapshot snapshot, MutationRecord record, boolean isCommitted) {
+	public void mainReplayCommittedMutationForReconnects(StateSnapshot snapshot, MutationRecord record) {
 		// Called on main thread.
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
-		// See which syncing clients requested this (we will remove and rebuild the list since it is usually 1 element).
-		List<ReconnectingClientState> reconnecting = _reconnectingClientsByGlobalOffset.remove(record.globalOffset);
-		// This mutation may have been loaded for another syncing node, not a client, so check if we requested this.
-		if (null != reconnecting) {
-			List<ReconnectingClientState> moveToNext = new LinkedList<>();
-			long nextMutationOffset = record.globalOffset + 1;
-			for (ReconnectingClientState state : reconnecting) {
-				// Make sure that the UUID matches.
-				// (in the future, we might want this to aggressively check if the client is still connected to short-circuit multiple-reconnects from the same client)
-				if (record.clientId.equals(state.clientId)) {
-					// We need to synthesize a RECEIVED message and potentially a COMMITTED message for this mutation so the client knows not to re-send it and what they should wait for.
-					// We want to make sure that we provide a lastCommitGlobalOffset which allows the client to make progress in case of a reconnect _during_ an in-progress reconnect.
-					// If we kept sending their original lastCheckedGlobalOffset, then the second reconnect would have already remove in-flight messages they weill be told about.
-					// If we always sent the offset of the specific record, then we would tell it we have committed messages which may not have committed.
-					// Thus, we use mostRecentlySentServerCommitOffset and update it for every COMMITTED message we send.
-					
-					// Note that we won't send the committed if we think that we already have one pending for this reconnect (it already committed while the reconnect was in progress).
-					boolean willSendCommitted = (isCommitted && (record.globalOffset <= state.finalCommitToReturnInReconnect));
-					long lastCommitGlobalOffset = willSendCommitted
-							? record.globalOffset
-							: state.mostRecentlySentServerCommitOffset;
-					_mainEnqueueMessageToClient(state.clientId, ClientResponse.received(record.clientNonce, lastCommitGlobalOffset));
-					if (willSendCommitted) {
-						_mainEnqueueMessageToClient(state.clientId, ClientResponse.committed(record.clientNonce, lastCommitGlobalOffset));
-						state.mostRecentlySentServerCommitOffset = lastCommitGlobalOffset;
-					}
-					// Make sure to bump ahead the expected nonce, if this is later.
-					if (record.clientNonce >= state.earliestNextNonce) {
-						state.earliestNextNonce = record.clientNonce + 1;
-					}
-				}
-				// Check if there is still more to see for this record (we might have run off the end of the latest commit when we started).
-				if (nextMutationOffset <= state.finalGlobalOffsetToCheck) {
-					moveToNext.add(state);
-				} else {
-					// Reconnect has concluded so make this client normal.
-					_mainConcludeReconnectPhase(_normalClientsById.get(state.clientId), state.earliestNextNonce, snapshot.lastCommittedMutationOffset, snapshot.currentConfig);
-				}
-			}
-			// Only move this list to the next offset if we still have more and there were any.
-			if (!moveToNext.isEmpty()) {
-				List<ReconnectingClientState> nextList = _reconnectingClientsByGlobalOffset.get(nextMutationOffset);
-				if (null != nextList) {
-					nextList.addAll(moveToNext);
-				} else {
-					_reconnectingClientsByGlobalOffset.put(nextMutationOffset, moveToNext);
-					// We added somethod new for this offset so fetch it.
-					MutationRecord nextToProcess = _callbacks.mainClientFetchMutationIfAvailable(nextMutationOffset);
-					// Note that this is currently always null (just during this transition).
-					Assert.assertTrue(null == nextToProcess);
-				}
-			}
+		
+		MutationRecord nextToProcess = record;
+		// The first mutation is always loaded from disk, so committed.
+		boolean isCommitted = true;
+		while (null != nextToProcess) {
+			nextToProcess = _mainReplayMutationAndFetchNext(snapshot, nextToProcess, isCommitted);
+			// Later mutations are only in-flight, so not committed.
+			isCommitted = false;
 		}
 	}
 
@@ -398,9 +354,13 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 					// Note that the client maps are modified by this helper.
 					long mutationOffsetToFetch = _mainTransitionNewConnectionState(node, incoming, arg.lastReceivedMutationOffset, arg.lastCommittedMutationOffset, arg.currentConfig, arg.lastCommittedEventOffset);
 					if (-1 != mutationOffsetToFetch) {
+						// This might return an in-flight mutation, immediately.
 						MutationRecord nextToProcess = _callbacks.mainClientFetchMutationIfAvailable(mutationOffsetToFetch);
-						// Note that this is currently always null (just during this transition).
-						Assert.assertTrue(null == nextToProcess);
+						while (null != nextToProcess) {
+							// These in-flight mutations are never committed if returned inline.
+							boolean isCommitted = false;
+							nextToProcess = _mainReplayMutationAndFetchNext(arg, nextToProcess, isCommitted);
+						}
 					}
 				} else if (null != normalState) {
 					Assert.assertTrue(null == listenerState);
@@ -653,5 +613,62 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 			_mainEnqueueMessageToClient(state.clientId, synthesizedCommit);
 		}
 		state.noncesCommittedDuringReconnect = null;
+	}
+
+	private MutationRecord _mainReplayMutationAndFetchNext(StateSnapshot snapshot, MutationRecord record, boolean isCommitted) {
+		MutationRecord nextToProcess = null;
+		// See which syncing clients requested this (we will remove and rebuild the list since it is usually 1 element).
+		List<ReconnectingClientState> reconnecting = _reconnectingClientsByGlobalOffset.remove(record.globalOffset);
+		// This mutation may have been loaded for another syncing node, not a client, so check if we requested this.
+		if (null != reconnecting) {
+			List<ReconnectingClientState> moveToNext = new LinkedList<>();
+			long nextMutationOffset = record.globalOffset + 1;
+			for (ReconnectingClientState state : reconnecting) {
+				// Make sure that the UUID matches.
+				// (in the future, we might want this to aggressively check if the client is still connected to short-circuit multiple-reconnects from the same client)
+				if (record.clientId.equals(state.clientId)) {
+					// We need to synthesize a RECEIVED message and potentially a COMMITTED message for this mutation so the client knows not to re-send it and what they should wait for.
+					// We want to make sure that we provide a lastCommitGlobalOffset which allows the client to make progress in case of a reconnect _during_ an in-progress reconnect.
+					// If we kept sending their original lastCheckedGlobalOffset, then the second reconnect would have already remove in-flight messages they weill be told about.
+					// If we always sent the offset of the specific record, then we would tell it we have committed messages which may not have committed.
+					// Thus, we use mostRecentlySentServerCommitOffset and update it for every COMMITTED message we send.
+					
+					// Note that we won't send the committed if we think that we already have one pending for this reconnect (it already committed while the reconnect was in progress).
+					boolean willSendCommitted = (isCommitted && (record.globalOffset <= state.finalCommitToReturnInReconnect));
+					long lastCommitGlobalOffset = willSendCommitted
+							? record.globalOffset
+							: state.mostRecentlySentServerCommitOffset;
+					_mainEnqueueMessageToClient(state.clientId, ClientResponse.received(record.clientNonce, lastCommitGlobalOffset));
+					if (willSendCommitted) {
+						_mainEnqueueMessageToClient(state.clientId, ClientResponse.committed(record.clientNonce, lastCommitGlobalOffset));
+						state.mostRecentlySentServerCommitOffset = lastCommitGlobalOffset;
+					}
+					// Make sure to bump ahead the expected nonce, if this is later.
+					if (record.clientNonce >= state.earliestNextNonce) {
+						state.earliestNextNonce = record.clientNonce + 1;
+					}
+				}
+				// Check if there is still more to see for this record (we might have run off the end of the latest commit when we started).
+				if (nextMutationOffset <= state.finalGlobalOffsetToCheck) {
+					moveToNext.add(state);
+				} else {
+					// Reconnect has concluded so make this client normal.
+					_mainConcludeReconnectPhase(_normalClientsById.get(state.clientId), state.earliestNextNonce, snapshot.lastCommittedMutationOffset, snapshot.currentConfig);
+				}
+			}
+			// Only move this list to the next offset if we still have more and there were any.
+			if (!moveToNext.isEmpty()) {
+				List<ReconnectingClientState> nextList = _reconnectingClientsByGlobalOffset.get(nextMutationOffset);
+				if (null != nextList) {
+					nextList.addAll(moveToNext);
+				} else {
+					_reconnectingClientsByGlobalOffset.put(nextMutationOffset, moveToNext);
+					// We added something new for this offset so fetch it.
+					// This can return immediately, so we will loop if it does.
+					nextToProcess = _callbacks.mainClientFetchMutationIfAvailable(nextMutationOffset);
+				}
+			}
+		}
+		return nextToProcess;
 	}
 }
