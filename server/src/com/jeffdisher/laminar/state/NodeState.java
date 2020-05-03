@@ -194,24 +194,23 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 	}
 
 	@Override
-	public void mainRequestMutationFetch(long mutationOffsetToFetch) {
-		// Called on main thread.
+	public MutationRecord mainClientFetchMutationIfAvailable(long mutationOffset) {
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		// The mutations are 1-indexed so this must be a positive number.
-		Assert.assertTrue(mutationOffsetToFetch > 0L);
+		Assert.assertTrue(mutationOffset > 0L);
 		// It is invalid to request a mutation from the future.
-		Assert.assertTrue(mutationOffsetToFetch < _nextGlobalMutationOffset);
+		Assert.assertTrue(mutationOffset < _nextGlobalMutationOffset);
 		
 		// We will fail to get the tuple if it has already been committed and is no longer in-flight.
-		InFlightTuple tuple = _getInFlightTuple(mutationOffsetToFetch);
+		InFlightTuple tuple = _getInFlightTuple(mutationOffset);
 		if (null == tuple) {
 			// If the mutation is on disk, fetch it from there.
-			_diskManager.fetchMutation(mutationOffsetToFetch);
+			_diskManager.fetchMutation(mutationOffset);
 		} else {
 			// This must be in our in-flight tuples waiting to commit.
 			MutationRecord preCommitMutation = tuple.mutation;
 			// This must be the mutation we wanted.
-			Assert.assertTrue(mutationOffsetToFetch == preCommitMutation.globalOffset);
+			Assert.assertTrue(mutationOffset == preCommitMutation.globalOffset);
 			// While it would be possible to specialize this path, we will keep the code smaller but handling this response asynchronously to hit the common path.
 			_commandQueue.put(new Consumer<StateSnapshot>() {
 				@Override
@@ -220,6 +219,8 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 					_clientManager.mainReplayMutationForReconnects(arg, preCommitMutation, false);
 				}});
 		}
+		// During the transition, we always return null.
+		return null;
 	}
 
 	@Override

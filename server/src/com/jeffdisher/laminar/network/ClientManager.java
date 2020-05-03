@@ -233,7 +233,9 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 				} else {
 					_reconnectingClientsByGlobalOffset.put(nextMutationOffset, moveToNext);
 					// We added somethod new for this offset so fetch it.
-					_callbacks.mainRequestMutationFetch(nextMutationOffset);
+					MutationRecord nextToProcess = _callbacks.mainClientFetchMutationIfAvailable(nextMutationOffset);
+					// Note that this is currently always null (just during this transition).
+					Assert.assertTrue(null == nextToProcess);
 				}
 			}
 		}
@@ -396,7 +398,9 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 					// Note that the client maps are modified by this helper.
 					long mutationOffsetToFetch = _mainTransitionNewConnectionState(node, incoming, arg.lastReceivedMutationOffset, arg.lastCommittedMutationOffset, arg.currentConfig, arg.lastCommittedEventOffset);
 					if (-1 != mutationOffsetToFetch) {
-						_callbacks.mainRequestMutationFetch(mutationOffsetToFetch);
+						MutationRecord nextToProcess = _callbacks.mainClientFetchMutationIfAvailable(mutationOffsetToFetch);
+						// Note that this is currently always null (just during this transition).
+						Assert.assertTrue(null == nextToProcess);
 					}
 				} else if (null != normalState) {
 					Assert.assertTrue(null == listenerState);

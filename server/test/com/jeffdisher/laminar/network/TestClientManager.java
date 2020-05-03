@@ -22,6 +22,7 @@ import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.types.ConfigEntry;
 import com.jeffdisher.laminar.types.EventRecord;
 import com.jeffdisher.laminar.types.EventRecordType;
+import com.jeffdisher.laminar.types.MutationRecord;
 import com.jeffdisher.laminar.utils.TestingHelpers;
 
 
@@ -332,8 +333,9 @@ public class TestClientManager {
 		}
 
 		@Override
-		public void mainRequestMutationFetch(long mutationOffsetToFetch) {
+		public MutationRecord mainClientFetchMutationIfAvailable(long mutationOffset) {
 			Assert.fail("Not used in test");
+			return null;
 		}
 
 		@Override

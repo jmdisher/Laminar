@@ -5,6 +5,7 @@ import java.util.function.Consumer;
 
 import com.jeffdisher.laminar.state.StateSnapshot;
 import com.jeffdisher.laminar.types.ClientMessage;
+import com.jeffdisher.laminar.types.MutationRecord;
 
 
 public interface IClientManagerCallbacks {
@@ -22,7 +23,16 @@ public interface IClientManagerCallbacks {
 	 */
 	long mainHandleValidClientMessage(UUID clientId, ClientMessage incoming);
 
-	void mainRequestMutationFetch(long mutationOffsetToFetch);
+	/**
+	 * Called when the ClientManager wishes to use a mutation in client reconnect and needs it to be loaded.
+	 * Note that the receiver can respond to this in 2 different ways:
+	 * 1) return immediately if this is in-memory.
+	 * 2) schedule that it be fetched from disk.
+	 * 
+	 * @param mutationOffset The offset to fetch/return/await.
+	 * @return The mutation, only if it was immediately available, in-memory (typically not committed).
+	 */
+	MutationRecord mainClientFetchMutationIfAvailable(long mutationOffset);
 
 	void mainRequestEventFetch(long nextLocalEventToFetch);
 }
