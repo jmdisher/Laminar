@@ -277,4 +277,55 @@ public class TestCluster {
 			Assert.assertEquals(0, follower.stop());
 		}
 	}
+
+	/**
+	 * Tests that the leader still makes progress even though a minority of the nodes are offline.
+	 */
+	@Test
+	public void testMajorityProgress() throws Throwable {
+		ServerWrapper leader = ServerWrapper.startedServerWrapper("testMajorityProgress-LEADER", 2003, 2002, new File("/tmp/laminar"));
+		InetSocketAddress leaderClientAddress = new InetSocketAddress(InetAddress.getLocalHost(), 2002);
+		ServerWrapper follower = ServerWrapper.startedServerWrapper("testMajorityProgress-FOLLOWER", 2005, 2004, new File("/tmp/laminar2"));
+		InetSocketAddress followerClientAddress= new InetSocketAddress(InetAddress.getLocalHost(), 2004);
+		ConfigEntry missingServer = new ConfigEntry(new InetSocketAddress(InetAddress.getLocalHost(), 2007), new InetSocketAddress(InetAddress.getLocalHost(), 2006));
+		
+		// Create 2 clients.
+		ClientConnection client1 = ClientConnection.open(leaderClientAddress);
+		ClientConnection client2 = ClientConnection.open(followerClientAddress);
+		
+		try {
+			// Capture the config
+			client1.waitForConnection();
+			client2.waitForConnection();
+			ClusterConfig leaderInitial = client1.getCurrentConfig();
+			ClusterConfig followerInitial = client2.getCurrentConfig();
+			Assert.assertEquals(1, leaderInitial.entries.length);
+			Assert.assertEquals(1, followerInitial.entries.length);
+			ClusterConfig config = ClusterConfig.configFromEntries(new ConfigEntry[] {leaderInitial.entries[0], followerInitial.entries[0], missingServer});
+			
+			// Send the config on client1 (will make it the leader) and wait for it to commit.
+			ClientResult configResult = client1.sendUpdateConfig(config);
+			configResult.waitForCommitted();
+			
+			// Now, send another message on client1 and 2 on client2.
+			ClientResult client1_1 = client1.sendTemp(new byte[] {1});
+			ClientResult client2_1 = client2.sendTemp(new byte[] {2});
+			ClientResult client2_2 = client2.sendTemp(new byte[] {3});
+			
+			// We can wait for these to commit at once, to stress the ordering further.
+			client1_1.waitForCommitted();
+			client2_1.waitForCommitted();
+			client2_2.waitForCommitted();
+			
+			// Make sure that the config is consistent.
+			Assert.assertEquals(3, client1.getCurrentConfig().entries.length);
+			Assert.assertEquals(3, client2.getCurrentConfig().entries.length);
+		} finally {
+			// Shut down.
+			client1.close();
+			client2.close();
+			Assert.assertEquals(0, leader.stop());
+			Assert.assertEquals(0, follower.stop());
+		}
+	}
 }

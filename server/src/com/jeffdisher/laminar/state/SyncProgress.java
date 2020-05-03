@@ -1,8 +1,10 @@
 package com.jeffdisher.laminar.state;
 
+import java.util.PriorityQueue;
 import java.util.Set;
 
 import com.jeffdisher.laminar.types.ClusterConfig;
+import com.jeffdisher.laminar.utils.Assert;
 
 
 /**
@@ -19,16 +21,27 @@ public class SyncProgress {
 	private final Set<DownstreamPeerSyncState> _downstreamConnections;
 
 	public SyncProgress(ClusterConfig config, Set<DownstreamPeerSyncState> downstreamConnections) {
+		Assert.assertTrue(config.entries.length > 0);
+		Assert.assertTrue(config.entries.length == downstreamConnections.size());
+		
 		this.config = config;
 		_downstreamConnections = downstreamConnections;
 	}
 
+	/**
+	 * @return The highest mutation offset observed by a majority of the cluster.
+	 */
 	public long checkCurrentProgress() {
-		// For now, we are just using the unanimous consensus so just find the lowest number in the set.
-		long progress = Long.MAX_VALUE;
+		// We want the majority (floor(count/2) + 1) so sort the responses strip off the low minority.
+		PriorityQueue<Long> sorter = new PriorityQueue<>();
 		for (DownstreamPeerSyncState state : _downstreamConnections) {
-			progress = Math.min(state.lastMutationOffsetReceived, progress);
+			sorter.add(state.lastMutationOffsetReceived);
 		}
-		return progress;
+		int majority = (sorter.size() / 2) + 1;
+		int minoritySize = sorter.size() - majority;
+		for (int i = 0; i < minoritySize; ++i) {
+			sorter.remove();
+		}
+		return sorter.remove();
 	}
 }
