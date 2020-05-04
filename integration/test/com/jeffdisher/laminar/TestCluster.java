@@ -328,4 +328,74 @@ public class TestCluster {
 			Assert.assertEquals(0, follower.stop());
 		}
 	}
+
+	/**
+	 * Tests that we make progress even when POISON breaks our connections and a node swaps late in the run.
+	 */
+	@Test
+	public void testPoisonClusterSwitch() throws Throwable {
+		ServerWrapper leader = ServerWrapper.startedServerWrapper("testPoisonClusterSwitch-LEADER", 2003, 2002, new File("/tmp/laminar"));
+		InetSocketAddress leaderClientAddress = new InetSocketAddress(InetAddress.getLocalHost(), 2002);
+		ServerWrapper follower = ServerWrapper.startedServerWrapper("testPoisonClusterSwitch-FOLLOWER", 2005, 2004, new File("/tmp/laminar2"));
+		InetSocketAddress followerClientAddress= new InetSocketAddress(InetAddress.getLocalHost(), 2004);
+		ServerWrapper follower2 = null;
+		ConfigEntry follower2Config = new ConfigEntry(new InetSocketAddress(InetAddress.getLocalHost(), 2007), new InetSocketAddress(InetAddress.getLocalHost(), 2006));
+		
+		// Create 2 clients.
+		ClientConnection client1 = ClientConnection.open(leaderClientAddress);
+		ClientConnection client2 = ClientConnection.open(followerClientAddress);
+		
+		try {
+			// Capture the config
+			client1.waitForConnection();
+			client2.waitForConnection();
+			ClusterConfig leaderInitial = client1.getCurrentConfig();
+			ClusterConfig followerInitial = client2.getCurrentConfig();
+			Assert.assertEquals(1, leaderInitial.entries.length);
+			Assert.assertEquals(1, followerInitial.entries.length);
+			ClusterConfig config = ClusterConfig.configFromEntries(new ConfigEntry[] {leaderInitial.entries[0], followerInitial.entries[0], follower2Config});
+			
+			// Send a normal message, the config update, the poison, and a normal message on client1.
+			ClientResult client1_1 = client1.sendTemp(new byte[] {1});
+			ClientResult configResult = client1.sendUpdateConfig(config);
+			ClientResult client1_2 = client1.sendPoison(new byte[] {2});
+			ClientResult client1_3 = client1.sendTemp(new byte[] {3});
+			
+			// Wait for them all to commit and then send a normal message on client2 and wait for it to commit.
+			client1_1.waitForCommitted();
+			configResult.waitForCommitted();
+			client1_2.waitForCommitted();
+			client1_3.waitForCommitted();
+			ClientResult client2_1 = client2.sendTemp(new byte[] {1});
+			client2_1.waitForCommitted();
+			
+			// Then, stop the existing follower, create another one.
+			Assert.assertEquals(0, follower.stop());
+			follower = null;
+			follower2 = ServerWrapper.startedServerWrapper("testPoisonClusterSwitch-FOLLOWER2", 2007, 2006, new File("/tmp/laminar3"));
+			
+			// Send poison from client2 and a normal message from each client, then wait for everything to commit.
+			ClientResult client2_2 = client2.sendPoison(new byte[] {2});
+			ClientResult client1_4 = client1.sendTemp(new byte[] {4});
+			ClientResult client2_3 = client1.sendTemp(new byte[] {3});
+			client2_2.waitForCommitted();
+			client1_4.waitForCommitted();
+			client2_3.waitForCommitted();
+			
+			// Make sure that the config is consistent.
+			Assert.assertEquals(3, client1.getCurrentConfig().entries.length);
+			Assert.assertEquals(3, client2.getCurrentConfig().entries.length);
+		} finally {
+			// Shut down.
+			client1.close();
+			client2.close();
+			Assert.assertEquals(0, leader.stop());
+			if (null != follower) {
+				Assert.assertEquals(0, follower.stop());
+			}
+			if (null != follower2) {
+				Assert.assertEquals(0, follower2.stop());
+			}
+		}
+	}
 }

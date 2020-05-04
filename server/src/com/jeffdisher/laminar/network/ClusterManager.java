@@ -5,6 +5,8 @@ import java.nio.ByteBuffer;
 import java.nio.channels.ServerSocketChannel;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedList;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Consumer;
@@ -130,6 +132,33 @@ public class ClusterManager implements INetworkManagerBackgroundCallbacks {
 		_isLeader = false;
 	}
 
+	/**
+	 * Disconnects all outgoing and incoming peers, but also queues up reconnections to all outgoing peers which were
+	 * disconnected (since some reconnects might already be queued up).
+	 * Called by the NodeState as part of the POISON testing message.
+	 */
+	public void mainDisconnectAllPeers() {
+		Assert.assertTrue(Thread.currentThread() == _mainThread);
+
+		// Close the downstream and re-initiate connections.
+		List<DownstreamPeerState> toReconnect = new LinkedList<>();
+		for (DownstreamPeerState state : _downstreamPeerByConfig.values()) {
+			if (state.isConnectionUp) {
+				toReconnect.add(state);
+			}
+		}
+		for (DownstreamPeerState state : toReconnect) {
+			// The remove will clean up the maps.
+			_mainRemoveOutboundConnection(state.token);
+		}
+		
+		// Close the upstream and wait for them to reconnect.
+		for (NetworkManager.NodeToken token : _upstreamPeerByNode.keySet()) {
+			_networkManager.closeConnection(token);
+		}
+		_upstreamPeerByNode.clear();
+	}
+
 	@Override
 	public void nodeDidConnect(NetworkManager.NodeToken node) {
 		Assert.assertTrue(Thread.currentThread() != _mainThread);
@@ -160,8 +189,8 @@ public class ClusterManager implements INetworkManagerBackgroundCallbacks {
 					DownstreamPeerState check = _downstreamPeerByConfig.remove(peer.entry);
 					Assert.assertTrue(check == peer);
 				} else {
-					// No idea who this is.
-					throw Assert.unreachable("Unknown node disconnected");
+					// This may be something we explicitly disconnected.
+					System.out.println("Unknown node disconnected");
 				}
 			}});
 	}

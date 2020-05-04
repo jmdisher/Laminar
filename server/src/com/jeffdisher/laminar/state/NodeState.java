@@ -187,6 +187,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		if (ClientMessageType.POISON == incoming.type) {
 			// POISON is special in that it is just for testing so it maps to a TEMP, as a mutation, but we still want to preserve this.
 			_clientManager.mainDisconnectAllClientsAndListeners();
+			_clusterManager.mainDisconnectAllPeers();
 		}
 		// Now request that both of these records be committed (event may be null).
 		_enqueueForCommit(mutation, event);
