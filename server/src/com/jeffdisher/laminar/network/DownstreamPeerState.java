@@ -16,7 +16,7 @@ import com.jeffdisher.laminar.types.ConfigEntry;
  */
 public class DownstreamPeerState {
 	public final ConfigEntry entry;
-	public NetworkManager.NodeToken token;
+	public final NetworkManager.NodeToken token;
 	/**
 	 * Whether or not our downstream connection to this node is active.
 	 * Starts false since this is created before the connection is open.

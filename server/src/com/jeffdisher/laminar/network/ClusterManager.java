@@ -80,15 +80,7 @@ public class ClusterManager implements INetworkManagerBackgroundCallbacks {
 
 	public void mainOpenDownstreamConnection(ConfigEntry entry) {
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
-		NetworkManager.NodeToken token;
-		try {
-			token = _networkManager.createOutgoingConnection(entry.cluster);
-		} catch (IOException e) {
-			throw Assert.unimplemented("TODO:  Handle fast-fail on outgoing connections: " + e.getLocalizedMessage());
-		}
-		DownstreamPeerState peer = new DownstreamPeerState(entry, token);
-		_downstreamPeerByConfig.put(entry, peer);
-		_downstreamPeerByNode.put(token, peer);
+		_mainCreateNewConnectionToPeer(entry);
 	}
 
 	/**
@@ -322,18 +314,25 @@ public class ClusterManager implements INetworkManagerBackgroundCallbacks {
 	private void _mainRemoveOutboundConnection(NetworkManager.NodeToken node) throws AssertionError {
 		// We will be creating a new connection so we need to modify the underlying states and one of the mappings.
 		DownstreamPeerState state = _downstreamPeerByNode.remove(node);
-		DownstreamPeerState check = _downstreamPeerByConfig.get(state.entry);
-		Assert.assertTrue(state == check);
-		
+		// (make sure we didn't already disconnect this).
+		if (null != state) {
+			DownstreamPeerState check = _downstreamPeerByConfig.remove(state.entry);
+			Assert.assertTrue(state == check);
+			
+			_mainCreateNewConnectionToPeer(state.entry);
+		}
+	}
+
+	private void _mainCreateNewConnectionToPeer(ConfigEntry entry) {
 		NetworkManager.NodeToken token;
 		try {
-			token = _networkManager.createOutgoingConnection(state.entry.cluster);
+			token = _networkManager.createOutgoingConnection(entry.cluster);
 		} catch (IOException e) {
-			// We previously succeeded in this step so it should still succeed.
-			throw Assert.unexpected(e);
+			throw Assert.unimplemented("TODO:  Handle fast-fail on outgoing connections: " + e.getLocalizedMessage());
 		}
-		state.token = token;
-		_downstreamPeerByNode.put(token, state);
+		DownstreamPeerState peer = new DownstreamPeerState(entry, token);
+		_downstreamPeerByConfig.put(entry, peer);
+		_downstreamPeerByNode.put(token, peer);
 	}
 
 	private void _tryFetchOrSend(DownstreamPeerState peer) {
