@@ -36,7 +36,7 @@ public class TestDownstreamMessage {
 
 	@Test
 	public void testAppendMutations() throws Throwable {
-		MutationRecord mutation = MutationRecord.generateRecord(MutationRecordType.TEMP, 1L, UUID.randomUUID(), 1L, new byte[] {1,2,3});
+		MutationRecord mutation = MutationRecord.generateRecord(MutationRecordType.TEMP, 1L, 1L, UUID.randomUUID(), 1L, new byte[] {1,2,3});
 		long lastCommittedMutationOffset = 1L;
 		DownstreamMessage message = DownstreamMessage.appendMutations(mutation, lastCommittedMutationOffset);
 		int size = message.serializedSize();

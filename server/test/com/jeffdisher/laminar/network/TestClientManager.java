@@ -158,7 +158,7 @@ public class TestClientManager {
 	@Test
 	public void testSendEvent() throws Throwable {
 		// Create an event record.
-		EventRecord record = EventRecord.generateRecord(EventRecordType.TEMP, 1L, 1L, UUID.randomUUID(), 1L, new byte[] { 1, 2, 3});
+		EventRecord record = EventRecord.generateRecord(EventRecordType.TEMP, 1L, 1L, 1L, UUID.randomUUID(), 1L, new byte[] { 1, 2, 3});
 		// Create a server.
 		int port = PORT_BASE + 3;
 		ServerSocketChannel socket = TestingHelpers.createServerSocket(port);

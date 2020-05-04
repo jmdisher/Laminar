@@ -182,7 +182,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		// All nonce accounting is done before we get here and acks are managed on response so just apply the message.
 		// (we return the globalMutationOffset it was assigned so the caller can generate correct acks).
 		long mutationOffsetToAssign = _getAndUpdateNextMutationOffset();
-		MutationRecord mutation = Helpers.convertClientMessageToMutation(incoming, clientId, mutationOffsetToAssign);
+		MutationRecord mutation = Helpers.convertClientMessageToMutation(incoming, 1L, clientId, mutationOffsetToAssign);
 		EventRecord event = _processReceivedMutation(mutation);
 		if (ClientMessageType.POISON == incoming.type) {
 			// POISON is special in that it is just for testing so it maps to a TEMP, as a mutation, but we still want to preserve this.
@@ -407,7 +407,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 			System.out.println("GOT TEMP FROM " + mutation.clientId + " nonce " + mutation.clientNonce + " data " + mutation.payload[0]);
 			// Create the event record.
 			long localOffset = _nextLocalEventOffset++;
-			eventToReturn = EventRecord.generateRecord(EventRecordType.TEMP, mutation.globalOffset, localOffset, mutation.clientId, mutation.clientNonce, mutation.payload);
+			eventToReturn = EventRecord.generateRecord(EventRecordType.TEMP, mutation.termNumber, mutation.globalOffset, localOffset, mutation.clientId, mutation.clientNonce, mutation.payload);
 		}
 			break;
 		case UPDATE_CONFIG: {

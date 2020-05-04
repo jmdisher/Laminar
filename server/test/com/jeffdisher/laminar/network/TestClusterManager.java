@@ -85,7 +85,7 @@ public class TestClusterManager {
 		// Run the write-ready.
 		callbacks.runOneCommand();
 		// Before the read-ready (which will observe the peer state and try to start sync), we need to set up some data to sync.
-		callbacks.nextMutationToReturn = MutationRecord.generateRecord(MutationRecordType.TEMP, 1L, UUID.randomUUID(), 1L, new byte[] {1,2,3});
+		callbacks.nextMutationToReturn = MutationRecord.generateRecord(MutationRecordType.TEMP, 1L, 1L, UUID.randomUUID(), 1L, new byte[] {1,2,3});
 		// Now run the read-ready.
 		callbacks.runOneCommand();
 		
@@ -150,7 +150,7 @@ public class TestClusterManager {
 		UUID clientId1 = UUID.randomUUID();
 		long nonce1 = 1L;
 		byte[] payload1 = new byte[] {1,2,3};
-		upstreamCallbacks.nextMutationToReturn = MutationRecord.generateRecord(MutationRecordType.TEMP, offset1, clientId1, nonce1, payload1);
+		upstreamCallbacks.nextMutationToReturn = MutationRecord.generateRecord(MutationRecordType.TEMP, 1L, offset1, clientId1, nonce1, payload1);
 		// -1 nodeReadReady (reads PEER_STATE - picks up mutation - sends APPEND).
 		upstreamCallbacks.runOneCommand();
 		Assert.assertNull(upstreamCallbacks.nextMutationToReturn);

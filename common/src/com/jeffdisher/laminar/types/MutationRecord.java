@@ -24,13 +24,14 @@ import com.jeffdisher.laminar.utils.Assert;
  * serialization/deserialization logic.
  */
 public class MutationRecord {
-	public static MutationRecord generateRecord(MutationRecordType type, long globalOffset, UUID clientId, long clientNonce, byte[] payload) {
+	public static MutationRecord generateRecord(MutationRecordType type, long termNumber, long globalOffset, UUID clientId, long clientNonce, byte[] payload) {
 		Assert.assertTrue(MutationRecordType.INVALID != type);
 		// The offsets must be positive.
+		Assert.assertTrue(termNumber > 0L);
 		Assert.assertTrue(globalOffset > 0L);
 		Assert.assertTrue(null != clientId);
 		Assert.assertTrue(clientNonce >= 0L);
-		return new MutationRecord(type, globalOffset, clientId, clientNonce, payload);
+		return new MutationRecord(type, termNumber, globalOffset, clientId, clientNonce, payload);
 	}
 
 	public static MutationRecord deserialize(byte[] serialized) {
@@ -49,24 +50,27 @@ public class MutationRecord {
 			throw Assert.unimplemented("Handle corrupt message");
 		}
 		MutationRecordType type = MutationRecordType.values()[ordinal];
+		long termNumber = buffer.getLong();
 		long globalOffset = buffer.getLong();
 		UUID clientId = new UUID(buffer.getLong(), buffer.getLong());
 		long clientNonce = buffer.getLong();
 		int payloadSize = Short.toUnsignedInt(buffer.getShort());
 		byte[] payload = new byte[payloadSize];
 		buffer.get(payload);
-		return new MutationRecord(type, globalOffset, clientId, clientNonce, payload);
+		return new MutationRecord(type, termNumber, globalOffset, clientId, clientNonce, payload);
 	}
 
 
 	public final MutationRecordType type;
+	public final long termNumber;
 	public final long globalOffset;
 	public final UUID clientId;
 	public final long clientNonce;
 	public final byte[] payload;
 	
-	private MutationRecord(MutationRecordType type, long globalOffset, UUID clientId, long clientNonce, byte[] payload) {
+	private MutationRecord(MutationRecordType type, long termNumber, long globalOffset, UUID clientId, long clientNonce, byte[] payload) {
 		this.type = type;
+		this.termNumber = termNumber;
 		this.globalOffset = globalOffset;
 		this.clientId = clientId;
 		this.clientNonce = clientNonce;
@@ -90,12 +94,13 @@ public class MutationRecord {
 
 
 	private int _serializedSize() {
-		return Byte.BYTES + Long.BYTES + (2 * Long.BYTES) + Long.BYTES + Short.BYTES + this.payload.length;
+		return Byte.BYTES + Long.BYTES + Long.BYTES + (2 * Long.BYTES) + Long.BYTES + Short.BYTES + this.payload.length;
 	}
 
 	private void _serializeInto(ByteBuffer buffer) {
 		buffer
 			.put((byte)this.type.ordinal())
+			.putLong(this.termNumber)
 			.putLong(this.globalOffset)
 			.putLong(this.clientId.getMostSignificantBits()).putLong(this.clientId.getLeastSignificantBits())
 			.putLong(this.clientNonce)

@@ -62,6 +62,7 @@ public class CaptureListener extends Thread {
 			Map<UUID, Long> expectedNonceByClient = new HashMap<>();
 			for (int i = 0; i < _captured.length; ++i) {
 				_captured[i] = _listener.pollForNextEvent();
+				Assert.assertEquals(1L, _captured[i].termNumber);
 				Assert.assertEquals(i + 1, _captured[i].localOffset);
 				long expectedNonce = 1L;
 				if (expectedNonceByClient.containsKey(_captured[i].clientId)) {
