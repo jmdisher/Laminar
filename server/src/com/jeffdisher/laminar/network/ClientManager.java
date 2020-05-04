@@ -13,9 +13,6 @@ import java.util.function.Consumer;
 
 import com.jeffdisher.laminar.components.INetworkManagerBackgroundCallbacks;
 import com.jeffdisher.laminar.components.NetworkManager;
-import com.jeffdisher.laminar.state.ClientState;
-import com.jeffdisher.laminar.state.ListenerState;
-import com.jeffdisher.laminar.state.ReconnectingClientState;
 import com.jeffdisher.laminar.state.StateSnapshot;
 import com.jeffdisher.laminar.types.ClientMessage;
 import com.jeffdisher.laminar.types.ClientMessagePayload_Handshake;

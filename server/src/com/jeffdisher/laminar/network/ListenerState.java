@@ -1,4 +1,4 @@
-package com.jeffdisher.laminar.state;
+package com.jeffdisher.laminar.network;
 
 import com.jeffdisher.laminar.types.EventRecord;
 

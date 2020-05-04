@@ -1,4 +1,4 @@
-package com.jeffdisher.laminar.state;
+package com.jeffdisher.laminar.network;
 
 import java.util.LinkedList;
 import java.util.List;
