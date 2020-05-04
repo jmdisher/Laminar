@@ -36,6 +36,10 @@ import com.jeffdisher.laminar.utils.UninterruptibleQueue;
  * runUntilShutdown() and MUST NOT call any background* methods (this is to verify re-entrance safety, etc).
  */
 public class NodeState implements IClientManagerCallbacks, IClusterManagerCallbacks, IDiskManagerBackgroundCallbacks, IConsoleManagerBackgroundCallbacks {
+	// Note that we treat the initial state of a node as LEADER of term 0 but switch this to 1 as soon as we receive our first mutation from the client.
+	// This avoids any special-case in the LEADER->FOLLOWER transition, which is more complicated, as it will follow the general rule of demoting when a higher term number is seen.
+	private static final long BOOTSTRAP_TERM = 0L;
+
 	// We keep the main thread for asserting no re-entrance bugs or invalid interface uses.
 	private final Thread _mainThread;
 
@@ -46,6 +50,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 
 	private RaftState _currentState;
 	private ConfigEntry _clusterLeader;
+	private long _currentTermNumber;
 	private long _clusterLeaderCommitOffset;
 	private final ConfigEntry _self;
 	// We keep an image of ourself as a downstream peer state to avoid special-cases in looking at clusters so we will need to update it with latest mutation offset as soon as we assign one.
@@ -80,6 +85,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		_mainThread = Thread.currentThread();
 		// Note that we default to the LEADER state (typically forced into a FOLLOWER state when an existing LEADER attempts to append entries).
 		_currentState = RaftState.LEADER;
+		_currentTermNumber = BOOTSTRAP_TERM;
 		
 		// We rely on the initial config just being "self".
 		Assert.assertTrue(1 == initialConfig.entries.length);
@@ -179,10 +185,14 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 	public long mainHandleValidClientMessage(UUID clientId, ClientMessage incoming) {
 		// Called on main thread.
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
+		// Handle the special-case of the initial mutation.
+		if (BOOTSTRAP_TERM == _currentTermNumber) {
+			_currentTermNumber += 1;
+		}
 		// All nonce accounting is done before we get here and acks are managed on response so just apply the message.
 		// (we return the globalMutationOffset it was assigned so the caller can generate correct acks).
 		long mutationOffsetToAssign = _getAndUpdateNextMutationOffset();
-		MutationRecord mutation = Helpers.convertClientMessageToMutation(incoming, 1L, clientId, mutationOffsetToAssign);
+		MutationRecord mutation = Helpers.convertClientMessageToMutation(incoming, _currentTermNumber, clientId, mutationOffsetToAssign);
 		EventRecord event = _processReceivedMutation(mutation);
 		if (ClientMessageType.POISON == incoming.type) {
 			// POISON is special in that it is just for testing so it maps to a TEMP, as a mutation, but we still want to preserve this.
@@ -236,22 +246,30 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 	@Override
 	public void mainAppendMutationFromUpstream(ConfigEntry peer, MutationRecord record) {
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
-		if (null == _clusterLeader) {
-			// Cluster leadership is only discovered when a peer starts acting like a leader.
-			_currentState = RaftState.FOLLOWER;
-			_clusterLeader = peer;
-			_clientManager.mainEnterFollowerState(_clusterLeader, _lastCommittedMutationOffset);
-			_clusterManager.mainEnterFollowerState();
+		
+		// We shouldn't receive this if we are the leader, unless the call is invalid or from a later term.
+		if (RaftState.LEADER == _currentState) {
+			// Check to see if the mutation is from a later term number.  If so, we need to update our term number and become follower.
+			if (record.termNumber > _currentTermNumber) {
+				_currentState = RaftState.FOLLOWER;
+				_currentTermNumber = record.termNumber;
+				_clusterLeader = peer;
+				_clientManager.mainEnterFollowerState(_clusterLeader, _lastCommittedMutationOffset);
+				_clusterManager.mainEnterFollowerState();
+			}
 		} else {
 			Assert.assertTrue(_clusterLeader == peer);
 		}
 		
-		// Make sure that this is the expected mutation (as they must arrive in-order).
-		Assert.assertTrue(_nextGlobalMutationOffset == record.globalOffset);
-		_nextGlobalMutationOffset = record.globalOffset + 1;
-		// Process the mutation into a local event.
-		EventRecord event = _processReceivedMutation(record);
-		_enqueueForCommit(record, event);
+		// We can only append mutations if we are a follower.
+		if (RaftState.FOLLOWER == _currentState) {
+			// Make sure that this is the expected mutation (as they must arrive in-order).
+			Assert.assertTrue(_nextGlobalMutationOffset == record.globalOffset);
+			_nextGlobalMutationOffset = record.globalOffset + 1;
+			// Process the mutation into a local event.
+			EventRecord event = _processReceivedMutation(record);
+			_enqueueForCommit(record, event);
+		}
 	}
 
 	@Override
