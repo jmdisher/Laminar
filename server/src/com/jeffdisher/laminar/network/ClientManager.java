@@ -32,7 +32,7 @@ import com.jeffdisher.laminar.utils.Assert;
  * All interactions with it are asynchronous and CALLBACKS ARE SENT IN THE MANAGER'S THREAD.  This means that they must
  * only hand-off to the coordination thread, outside.
  */
-public class ClientManager implements INetworkManagerBackgroundCallbacks {
+public class ClientManager implements IClientManager, INetworkManagerBackgroundCallbacks {
 	private final Thread _mainThread;
 	private final NetworkManager _networkManager;
 	private final IClientManagerCallbacks _callbacks;
@@ -102,9 +102,7 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 		return ClientMessage.deserialize(serialized);
 	}
 
-	/**
-	 * This is currently just used to implement the POISON method, for testing.
-	 */
+	@Override
 	public void mainDisconnectAllClientsAndListeners() {
 		// Called on main thread.
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
@@ -123,6 +121,7 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 		_listenerClients.clear();
 	}
 
+	@Override
 	public void mainBroadcastConfigUpdate(StateSnapshot snapshot, ClusterConfig newConfig) {
 		// Called on main thread.
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
@@ -156,12 +155,7 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 		}
 	}
 
-	/**
-	 * Called when the mutation commit offset changes.
-	 * Any commit messages waiting on globalOffsetOfCommit must now be sent.
-	 * 
-	 * @param globalOffsetOfCommit The global mutation offset which is now committed.
-	 */
+	@Override
 	public void mainProcessingPendingMessageCommits(long globalOffsetOfCommit) {
 		// Called on main thread.
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
@@ -180,6 +174,7 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 		}
 	}
 
+	@Override
 	public void mainReplayCommittedMutationForReconnects(StateSnapshot snapshot, MutationRecord record) {
 		// Called on main thread.
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
@@ -194,6 +189,7 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 		}
 	}
 
+	@Override
 	public void mainSendRecordToListeners(EventRecord record) {
 		// Called on main thread.
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
@@ -215,14 +211,7 @@ public class ClientManager implements INetworkManagerBackgroundCallbacks {
 		return toReturn;
 	}
 
-	/**
-	 * Called when the node has entered a FOLLOWER state, in the cluster.
-	 * This means sending a redirect to all current and future clients.
-	 * We will leave listeners connected, though, as they will be able to listen to a FOLLOWER.
-	 * 
-	 * @param clusterLeader The new leader of the cluster.
-	 * @param lastCommittedMutationOffset The offset of the most recent mutation the server committed.
-	 */
+	@Override
 	public void mainEnterFollowerState(ConfigEntry clusterLeader, long lastCommittedMutationOffset) {
 		// Set the config entry for future connection redirects.
 		_clusterLeader = clusterLeader;

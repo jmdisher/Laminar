@@ -21,7 +21,7 @@ import com.jeffdisher.laminar.utils.Assert;
  * -STDOUT will be directly written by the calling thread
  * -we will stop the background thread by setting a flag to stop polling
  */
-public class ConsoleManager {
+public class ConsoleManager implements IConsoleManager {
 	private static final long POLL_DELAY_MILLIS = 100L;
 
 	private final PrintStream _out;

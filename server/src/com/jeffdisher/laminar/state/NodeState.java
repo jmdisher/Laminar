@@ -9,13 +9,13 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.function.Consumer;
 
-import com.jeffdisher.laminar.console.ConsoleManager;
+import com.jeffdisher.laminar.console.IConsoleManager;
 import com.jeffdisher.laminar.console.IConsoleManagerBackgroundCallbacks;
-import com.jeffdisher.laminar.disk.DiskManager;
+import com.jeffdisher.laminar.disk.IDiskManager;
 import com.jeffdisher.laminar.disk.IDiskManagerBackgroundCallbacks;
-import com.jeffdisher.laminar.network.ClientManager;
-import com.jeffdisher.laminar.network.ClusterManager;
+import com.jeffdisher.laminar.network.IClientManager;
 import com.jeffdisher.laminar.network.IClientManagerCallbacks;
+import com.jeffdisher.laminar.network.IClusterManager;
 import com.jeffdisher.laminar.network.IClusterManagerCallbacks;
 import com.jeffdisher.laminar.types.ClientMessage;
 import com.jeffdisher.laminar.types.ClientMessageType;
@@ -43,10 +43,10 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 	// We keep the main thread for asserting no re-entrance bugs or invalid interface uses.
 	private final Thread _mainThread;
 
-	private ClientManager _clientManager;
-	private ClusterManager _clusterManager;
-	private DiskManager _diskManager;
-	private ConsoleManager _consoleManager;
+	private IClientManager _clientManager;
+	private IClusterManager _clusterManager;
+	private IDiskManager _diskManager;
+	private IConsoleManager _consoleManager;
 
 	private RaftState _currentState;
 	private ConfigEntry _clusterLeader;
@@ -132,7 +132,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		}
 	}
 
-	public void registerClientManager(ClientManager clientManager) {
+	public void registerClientManager(IClientManager clientManager) {
 		// This MUST be called on the main thread.
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		// Input CANNOT be null.
@@ -142,7 +142,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		_clientManager = clientManager;
 	}
 
-	public void registerClusterManager(ClusterManager clusterManager) {
+	public void registerClusterManager(IClusterManager clusterManager) {
 		// This MUST be called on the main thread.
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		// Input CANNOT be null.
@@ -153,7 +153,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		
 	}
 
-	public void registerDiskManager(DiskManager diskManager) {
+	public void registerDiskManager(IDiskManager diskManager) {
 		// This MUST be called on the main thread.
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		// Input CANNOT be null.
@@ -163,7 +163,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		_diskManager = diskManager;
 	}
 
-	public void registerConsoleManager(ConsoleManager consoleManager) {
+	public void registerConsoleManager(IConsoleManager consoleManager) {
 		// This MUST be called on the main thread.
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		// Input CANNOT be null.

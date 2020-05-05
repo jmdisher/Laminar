@@ -28,7 +28,7 @@ import com.jeffdisher.laminar.utils.Assert;
 /**
  * Top-level abstraction of a collection of network connections related to interactions with other servers.
  */
-public class ClusterManager implements INetworkManagerBackgroundCallbacks {
+public class ClusterManager implements IClusterManager, INetworkManagerBackgroundCallbacks {
 	private static final long MILLIS_BETWEEN_CONNECTION_ATTEMPTS = 100L;
 	private static final long MILLIS_BETWEEN_HEARTBEATS = 100L;
 
@@ -80,17 +80,13 @@ public class ClusterManager implements INetworkManagerBackgroundCallbacks {
 		_networkManager.stopAndWaitForTermination();
 	}
 
+	@Override
 	public void mainOpenDownstreamConnection(ConfigEntry entry) {
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		_mainCreateNewConnectionToPeer(entry);
 	}
 
-	/**
-	 * Called by the NodeState when a mutation was received or made available.  It may be committed or not.
-	 * This means it came in directly from a client or was just fetched from disk.
-	 * 
-	 * @param mutation The mutation.
-	 */
+	@Override
 	public void mainMutationWasReceivedOrFetched(MutationRecord mutation) {
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		
@@ -108,12 +104,7 @@ public class ClusterManager implements INetworkManagerBackgroundCallbacks {
 		}
 	}
 
-	/**
-	 * Called by the NodeState when it has committed a mutation to disk.
-	 * This is just to update the commit offset we will send the peers, next time we send them a message.
-	 * 
-	 * @param mutationOffset The mutation offset of the mutation just committed.
-	 */
+	@Override
 	public void mainMutationWasCommitted(long mutationOffset) {
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		
@@ -122,21 +113,13 @@ public class ClusterManager implements INetworkManagerBackgroundCallbacks {
 		_lastCommittedMutationOffset = mutationOffset;
 	}
 
-	/**
-	 * Called to instruct the receiver that the node has entered the follower state so it should not attempt to sync
-	 * data to any other node.  This means no sending APPEND_MUTATIONS messages or requesting that the callbacks fetch
-	 * data for it to send.
-	 */
+	@Override
 	public void mainEnterFollowerState() {
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		_isLeader = false;
 	}
 
-	/**
-	 * Disconnects all outgoing and incoming peers, but also queues up reconnections to all outgoing peers which were
-	 * disconnected (since some reconnects might already be queued up).
-	 * Called by the NodeState as part of the POISON testing message.
-	 */
+	@Override
 	public void mainDisconnectAllPeers() {
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 

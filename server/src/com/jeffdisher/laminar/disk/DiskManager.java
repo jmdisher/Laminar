@@ -21,7 +21,7 @@ import com.jeffdisher.laminar.utils.Assert;
  *  own events, when they are invoked to handle a user-originating event.
  * -everything is currently kept in-memory.  There is not yet the concept of durability or restartability of a node.
  */
-public class DiskManager {
+public class DiskManager implements IDiskManager {
 	// Read-only fields setup during construction.
 	private final IDiskManagerBackgroundCallbacks _callbackTarget;
 	private final Thread _background;
@@ -96,24 +96,15 @@ public class DiskManager {
 		}
 	}
 
-	/**
-	 * Request that the given mutation be asynchronously committed.
-	 * 
-	 * @param event The mutation to commit.
-	 */
-	public synchronized void commitMutation(MutationRecord event) {
+	@Override
+	public synchronized void commitMutation(MutationRecord mutation) {
 		// Make sure this isn't reentrant.
 		Assert.assertTrue(Thread.currentThread() != _background);
-		_incomingCommitMutations.add(event);
+		_incomingCommitMutations.add(mutation);
 		this.notifyAll();
 	}
 
-	/**
-	 * Request that the given event be asynchronously committed.
-	 * NOTE:  This will be changed to per-topic commit, in the future.
-	 * 
-	 * @param event The event to commit.
-	 */
+	@Override
 	public synchronized void commitEvent(EventRecord event) {
 		// Make sure this isn't reentrant.
 		Assert.assertTrue(Thread.currentThread() != _background);
@@ -121,11 +112,7 @@ public class DiskManager {
 		this.notifyAll();
 	}
 
-	/**
-	 * Requests that the mutation with the associated global offset be asynchronously fetched.
-	 * 
-	 * @param globalOffset The offset of the mutation to load.
-	 */
+	@Override
 	public synchronized void fetchMutation(long globalOffset) {
 		// Make sure this isn't reentrant.
 		Assert.assertTrue(Thread.currentThread() != _background);
@@ -133,12 +120,7 @@ public class DiskManager {
 		this.notifyAll();
 	}
 
-	/**
-	 * Requests that the event with the associated localOffset offset be asynchronously fetched.
-	 * NOTE:  This will be changed to per-topic fetch, in the future.
-	 * 
-	 * @param localOffset The offset of the event to load.
-	 */
+	@Override
 	public synchronized void fetchEvent(long localOffset) {
 		// Make sure this isn't reentrant.
 		Assert.assertTrue(Thread.currentThread() != _background);
