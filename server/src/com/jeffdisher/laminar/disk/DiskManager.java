@@ -136,11 +136,13 @@ public class DiskManager implements IDiskManager {
 		while (null != work) {
 			if (null != work.commitMutation) {
 				_committedMutationVirtualDisk.add(work.commitMutation);
-				_callbackTarget.mutationWasCommitted(work.commitMutation);
+				MutationRecord record = work.commitMutation;
+				_callbackTarget.ioEnqueueDiskCommandForMainThread((snapshot) -> _callbackTarget.mainMutationWasCommitted(record));
 			}
 			else if (null != work.commitEvent) {
 				_committedEventVirtualDisk.add(work.commitEvent);
-				_callbackTarget.eventWasCommitted(work.commitEvent);
+				EventRecord record = work.commitEvent;
+				_callbackTarget.ioEnqueueDiskCommandForMainThread((snapshot) -> _callbackTarget.mainEventWasCommitted(record));
 			}
 			else if (0L != work.fetchMutation) {
 				// This design might change but we currently "push" the fetched data over the background callback instead
@@ -153,13 +155,13 @@ public class DiskManager implements IDiskManager {
 				// These indexing errors should be intercepted at a higher level, before we get to the disk.
 				Assert.assertTrue((int)work.fetchMutation < _committedMutationVirtualDisk.size());
 				MutationRecord record = _committedMutationVirtualDisk.get((int)work.fetchMutation);
-				_callbackTarget.mutationWasFetched(record);
+				_callbackTarget.ioEnqueueDiskCommandForMainThread((snapshot) -> _callbackTarget.mainMutationWasFetched(snapshot, record));
 			}
 			else if (0L != work.fetchEvent) {
 				// These indexing errors should be intercepted at a higher level, before we get to the disk.
 				Assert.assertTrue((int)work.fetchEvent < _committedEventVirtualDisk.size());
 				EventRecord record = _committedEventVirtualDisk.get((int)work.fetchEvent);
-				_callbackTarget.eventWasFetched(record);
+				_callbackTarget.ioEnqueueDiskCommandForMainThread((snapshot) -> _callbackTarget.mainEventWasFetched(record));
 			}
 			work = _backgroundWaitForWork();
 		}

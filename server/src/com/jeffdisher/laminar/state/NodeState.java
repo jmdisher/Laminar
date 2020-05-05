@@ -325,86 +325,68 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 
 	// <IDiskManagerBackgroundCallbacks>
 	@Override
-	public void mutationWasCommitted(MutationRecord completed) {
+	public void ioEnqueueDiskCommandForMainThread(Consumer<StateSnapshot> command) {
 		// Called on an IO thread.
 		Assert.assertTrue(Thread.currentThread() != _mainThread);
-		_commandQueue.put(new Consumer<StateSnapshot>() {
-			@Override
-			public void accept(StateSnapshot arg) {
-				Assert.assertTrue(Thread.currentThread() == _mainThread);
-				// Update our global commit offset (set this first since other methods we are calling might want to read for common state).
-				// We setup this commit so it must be sequential (this is a good check to make sure the commits aren't being re-ordered in the disk layer, too).
-				Assert.assertTrue((arg.lastCommittedMutationOffset + 1) == completed.globalOffset);
-				_lastCommittedMutationOffset = completed.globalOffset;
-				// Only notify clients if we are the LEADER.
-				if (RaftState.LEADER == _currentState) {
-					_clientManager.mainProcessingPendingMessageCommits(completed.globalOffset);
-				}
-				
-				// The mutation is only committed to disk when it is committed to the joint consensus so we can advance this now.
-				SyncProgress newConfigProgress = _configsPendingCommit.remove(completed.globalOffset);
-				if (null != newConfigProgress) {
-					// We need a new snapshot since we just changed state in this command, above.
-					StateSnapshot newSnapshot = new StateSnapshot(_currentConfig.config, _lastCommittedMutationOffset, _nextGlobalMutationOffset-1, _lastCommittedEventOffset);
-					// This requires that we broadcast the config update to the connected clients and listeners.
-					_clientManager.mainBroadcastConfigUpdate(newSnapshot, newConfigProgress.config);
-					// We change the config but this would render the snapshot stale so we do it last, to make that clear.
-					_currentConfig = newConfigProgress;
-					// Note that only the leader currently worries about maintaining the downstream peers (we explicitly avoid making those connections until implementing RAFT).
-					if (RaftState.LEADER == _currentState) {
-						_rebuildDownstreamUnionAfterConfigChange();
-					}
-				}
-				_clusterManager.mainMutationWasCommitted(completed.globalOffset);
-			}});
+		_commandQueue.put(command);
 	}
 
 	@Override
-	public void eventWasCommitted(EventRecord completed) {
-		// Called on an IO thread.
-		Assert.assertTrue(Thread.currentThread() != _mainThread);
-		_commandQueue.put(new Consumer<StateSnapshot>() {
-			@Override
-			public void accept(StateSnapshot arg) {
-				Assert.assertTrue(Thread.currentThread() == _mainThread);
-				// We will eventually need to recor
-				// Update our global commit offset (set this first since other methods we are calling might want to read for common state).
-				// We setup this commit so it must be sequential (this is a good check to make sure the commits aren't being re-ordered in the disk layer, too).
-				Assert.assertTrue((arg.lastCommittedEventOffset + 1) == completed.localOffset);
-				_lastCommittedEventOffset = completed.localOffset;
-				// See if any listeners want this.
-				_clientManager.mainSendRecordToListeners(completed);
-			}});
+	public void mainMutationWasCommitted(MutationRecord completed) {
+		Assert.assertTrue(Thread.currentThread() == _mainThread);
+		// Update our global commit offset (set this first since other methods we are calling might want to read for common state).
+		// We setup this commit so it must be sequential (this is a good check to make sure the commits aren't being re-ordered in the disk layer, too).
+		Assert.assertTrue((_lastCommittedMutationOffset + 1) == completed.globalOffset);
+		_lastCommittedMutationOffset = completed.globalOffset;
+		// Only notify clients if we are the LEADER.
+		if (RaftState.LEADER == _currentState) {
+			_clientManager.mainProcessingPendingMessageCommits(completed.globalOffset);
+		}
+		
+		// The mutation is only committed to disk when it is committed to the joint consensus so we can advance this now.
+		SyncProgress newConfigProgress = _configsPendingCommit.remove(completed.globalOffset);
+		if (null != newConfigProgress) {
+			// We need a new snapshot since we just changed state in this command, above.
+			StateSnapshot newSnapshot = new StateSnapshot(_currentConfig.config, _lastCommittedMutationOffset, _nextGlobalMutationOffset-1, _lastCommittedEventOffset);
+			// This requires that we broadcast the config update to the connected clients and listeners.
+			_clientManager.mainBroadcastConfigUpdate(newSnapshot, newConfigProgress.config);
+			// We change the config but this would render the snapshot stale so we do it last, to make that clear.
+			_currentConfig = newConfigProgress;
+			// Note that only the leader currently worries about maintaining the downstream peers (we explicitly avoid making those connections until implementing RAFT).
+			if (RaftState.LEADER == _currentState) {
+				_rebuildDownstreamUnionAfterConfigChange();
+			}
+		}
+		_clusterManager.mainMutationWasCommitted(completed.globalOffset);
 	}
 
 	@Override
-	public void mutationWasFetched(MutationRecord record) {
-		// Called on an IO thread.
-		Assert.assertTrue(Thread.currentThread() != _mainThread);
-		_commandQueue.put(new Consumer<StateSnapshot>() {
-			@Override
-			public void accept(StateSnapshot arg) {
-				Assert.assertTrue(Thread.currentThread() == _mainThread);
-				
-				// Check to see if a client needs this
-				_clientManager.mainReplayCommittedMutationForReconnects(arg, record);
-				
-				// Check to see if a downstream peer needs this.
-				_clusterManager.mainMutationWasReceivedOrFetched(record);
-			}});
+	public void mainEventWasCommitted(EventRecord completed) {
+		Assert.assertTrue(Thread.currentThread() == _mainThread);
+		// Update our global commit offset (set this first since other methods we are calling might want to read for common state).
+		// We setup this commit so it must be sequential (this is a good check to make sure the commits aren't being re-ordered in the disk layer, too).
+		Assert.assertTrue((_lastCommittedEventOffset + 1) == completed.localOffset);
+		_lastCommittedEventOffset = completed.localOffset;
+		// See if any listeners want this.
+		_clientManager.mainSendRecordToListeners(completed);
 	}
 
 	@Override
-	public void eventWasFetched(EventRecord record) {
-		// Called on an IO thread.
-		Assert.assertTrue(Thread.currentThread() != _mainThread);
-		_commandQueue.put(new Consumer<StateSnapshot>() {
-			@Override
-			public void accept(StateSnapshot arg) {
-				Assert.assertTrue(Thread.currentThread() == _mainThread);
-				// See what listeners requested this.
-				_clientManager.mainSendRecordToListeners(record);
-			}});
+	public void mainMutationWasFetched(StateSnapshot snapshot, MutationRecord record) {
+		Assert.assertTrue(Thread.currentThread() == _mainThread);
+		
+		// Check to see if a client needs this
+		_clientManager.mainReplayCommittedMutationForReconnects(snapshot, record);
+		
+		// Check to see if a downstream peer needs this.
+		_clusterManager.mainMutationWasReceivedOrFetched(record);
+	}
+
+	@Override
+	public void mainEventWasFetched(EventRecord record) {
+		Assert.assertTrue(Thread.currentThread() == _mainThread);
+		// See what listeners requested this.
+		_clientManager.mainSendRecordToListeners(record);
 	}
 	// </IDiskManagerBackgroundCallbacks>
 

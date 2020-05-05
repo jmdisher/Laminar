@@ -62,7 +62,7 @@ public class TestNodeState {
 		// Say the corresponding mutation was committed.
 		F<Long> toClient = test.clientManager.get_mainProcessingPendingMessageCommits();
 		F<Long> toCluster = test.clusterManager.get_mainMutationWasCommitted();
-		test.nodeState.mutationWasCommitted(mutation.get());
+		runner.run((snapshot) -> {test.nodeState.mainMutationWasCommitted(mutation.get()); return null;});
 		Assert.assertEquals(mutationNumber, toClient.get().longValue());
 		Assert.assertEquals(mutationNumber, toCluster.get().longValue());
 		

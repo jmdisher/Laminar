@@ -1,11 +1,12 @@
 package com.jeffdisher.laminar.disk;
 
 import java.util.UUID;
-import java.util.concurrent.CountDownLatch;
+import java.util.function.Consumer;
 
 import org.junit.Assert;
 import org.junit.Test;
 
+import com.jeffdisher.laminar.state.StateSnapshot;
 import com.jeffdisher.laminar.types.EventRecord;
 import com.jeffdisher.laminar.types.EventRecordType;
 import com.jeffdisher.laminar.types.MutationRecord;
@@ -29,17 +30,16 @@ public class TestDiskManager {
 		EventRecord event1 = EventRecord.generateRecord(EventRecordType.TEMP, 1L, 1L, 1L, UUID.randomUUID(), 1L, new byte[] {1});
 		EventRecord event2 = EventRecord.generateRecord(EventRecordType.TEMP, 1L, 2L, 2L, UUID.randomUUID(), 2L, new byte[] {1});
 		LatchedCallbacks callbacks = new LatchedCallbacks();
-		callbacks.commitEventLatch = new CountDownLatch(2);
-		callbacks.fetchEventLatch = new CountDownLatch(1);
 		DiskManager manager = new DiskManager(null, callbacks);
 		manager.startAndWaitForReady();
 		
 		manager.commitEvent(event1);
+		while (callbacks.commitEventCount < 1) { callbacks.runOneCommand(); }
 		manager.commitEvent(event2);
+		while (callbacks.commitEventCount < 2) { callbacks.runOneCommand(); }
 		callbacks.expectedEvent = event2;
 		manager.fetchEvent(2L);
-		callbacks.commitEventLatch.await();
-		callbacks.fetchEventLatch.await();
+		while (callbacks.fetchEventCount < 1) { callbacks.runOneCommand(); }
 		
 		manager.stopAndWaitForTermination();
 	}
@@ -55,27 +55,25 @@ public class TestDiskManager {
 		EventRecord event2 = EventRecord.generateRecord(EventRecordType.TEMP, 1L, 2L, 2L, UUID.randomUUID(), 2L, new byte[] {1});
 		
 		LatchedCallbacks callbacks = new LatchedCallbacks();
-		callbacks.commitMutationLatch = new CountDownLatch(2);
-		callbacks.commitEventLatch = new CountDownLatch(2);
 		DiskManager manager = new DiskManager(null, callbacks);
 		manager.startAndWaitForReady();
 		
 		manager.commitMutation(mutation1);
+		while (callbacks.commitMutationCount < 1) { callbacks.runOneCommand(); }
 		manager.commitMutation(mutation2);
+		while (callbacks.commitMutationCount < 2) { callbacks.runOneCommand(); }
 		manager.commitEvent(event1);
+		while (callbacks.commitEventCount < 1) { callbacks.runOneCommand(); }
 		manager.commitEvent(event2);
+		while (callbacks.commitEventCount < 2) { callbacks.runOneCommand(); }
 		
 		callbacks.expectedMutation = mutation1;
 		callbacks.expectedEvent = event2;
-		callbacks.fetchMutationLatch = new CountDownLatch(1);
-		callbacks.fetchEventLatch = new CountDownLatch(1);
 		
 		manager.fetchMutation(1L);
 		manager.fetchEvent(2L);
-		callbacks.commitEventLatch.await();
-		callbacks.commitMutationLatch.await();
-		callbacks.fetchEventLatch.await();
-		callbacks.fetchMutationLatch.await();
+		while (callbacks.fetchMutationCount < 1) { callbacks.runOneCommand(); }
+		while (callbacks.fetchEventCount < 1) { callbacks.runOneCommand(); }
 		
 		manager.stopAndWaitForTermination();
 	}
@@ -85,35 +83,67 @@ public class TestDiskManager {
 	 * Used for simple cases where the external test only wants to verify that a call was made when expected.
 	 */
 	private static class LatchedCallbacks implements IDiskManagerBackgroundCallbacks {
-		public volatile MutationRecord expectedMutation;
-		private CountDownLatch commitMutationLatch;
-		private CountDownLatch fetchMutationLatch;
-		public volatile EventRecord expectedEvent;
-		private CountDownLatch commitEventLatch;
-		private CountDownLatch fetchEventLatch;
+		public MutationRecord expectedMutation;
+		public EventRecord expectedEvent;
+		public int commitMutationCount;
+		public int fetchMutationCount;
+		public int commitEventCount;
+		public int fetchEventCount;
+		private Consumer<StateSnapshot> _nextCommand;
 		
-		@Override
-		public void mutationWasCommitted(MutationRecord completed) {
-			this.commitMutationLatch.countDown();
+		public synchronized void runOneCommand() {
+			Consumer<StateSnapshot> command = _nextCommand;
+			synchronized(this) {
+				while (null == _nextCommand) {
+					try {
+						this.wait();
+					} catch (InterruptedException e) {
+						Assert.fail("Not used in test");
+					}
+				}
+				command = _nextCommand;
+				_nextCommand = null;
+				this.notifyAll();
+			}
+			// We don't use the snapshot in these tests so just pass null.
+			command.accept(null);
 		}
 		
 		@Override
-		public void eventWasCommitted(EventRecord completed) {
-			this.commitEventLatch.countDown();
+		public synchronized void ioEnqueueDiskCommandForMainThread(Consumer<StateSnapshot> command) {
+			while (null != _nextCommand) {
+				try {
+					this.wait();
+				} catch (InterruptedException e) {
+					Assert.fail("Not used in test");
+				}
+			}
+			_nextCommand = command;
+			this.notifyAll();
 		}
 		
 		@Override
-		public void mutationWasFetched(MutationRecord record) {
+		public void mainMutationWasCommitted(MutationRecord completed) {
+			this.commitMutationCount += 1;
+		}
+		
+		@Override
+		public void mainEventWasCommitted(EventRecord completed) {
+			this.commitEventCount += 1;
+		}
+		
+		@Override
+		public void mainMutationWasFetched(StateSnapshot snapshot, MutationRecord record) {
 			// We currently just support a single match.
 			Assert.assertTrue(record == this.expectedMutation);
-			this.fetchMutationLatch.countDown();
+			this.fetchMutationCount += 1;
 		}
 		
 		@Override
-		public void eventWasFetched(EventRecord record) {
+		public void mainEventWasFetched(EventRecord record) {
 			// We currently just support a single match.
 			Assert.assertTrue(record == this.expectedEvent);
-			this.fetchEventLatch.countDown();
+			this.fetchEventCount += 1;
 		}
 	}
 }
