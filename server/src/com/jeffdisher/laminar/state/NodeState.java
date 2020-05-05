@@ -173,6 +173,19 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		_consoleManager = consoleManager;
 	}
 
+	/**
+	 * A mechanism extended for test-cases to directly add a command to the command queue.  It is expected that this is
+	 * only to be used in cases where the call can't be directly issued by the test on the thread which is running the
+	 * receiver.
+	 * 
+	 * @param command The command to add to the end of the command queue.
+	 */
+	public void testEnqueueMessage(Consumer<StateSnapshot> command) {
+		// Called from a non-main thread (or they should just call, directly).
+		Assert.assertTrue(Thread.currentThread() != _mainThread);
+		this._commandQueue.put(command);
+	}
+
 	// <IClientManagerCallbacks>
 	@Override
 	public void ioEnqueueClientCommandForMainThread(Consumer<StateSnapshot> command) {
