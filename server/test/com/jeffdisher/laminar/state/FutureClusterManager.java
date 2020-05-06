@@ -12,12 +12,26 @@ import com.jeffdisher.laminar.types.MutationRecord;
  * given.
  */
 public class FutureClusterManager implements IClusterManager {
+	private F<Void> f_mainEnterFollowerState;
 	private F<Long> f_mainMutationWasCommitted;
+	private F<MutationRecord> f_mainMutationWasReceivedOrFetched;
+
+	public F<Void> get_mainEnterFollowerState() {
+		Assert.assertNull(f_mainEnterFollowerState);
+		f_mainEnterFollowerState = new F<Void>();
+		return f_mainEnterFollowerState;
+	}
 
 	public F<Long> get_mainMutationWasCommitted() {
 		Assert.assertNull(f_mainMutationWasCommitted);
 		f_mainMutationWasCommitted = new F<Long>();
 		return f_mainMutationWasCommitted;
+	}
+
+	public F<MutationRecord> get_mainMutationWasReceivedOrFetched() {
+		Assert.assertNull(f_mainMutationWasReceivedOrFetched);
+		f_mainMutationWasReceivedOrFetched = new F<MutationRecord>();
+		return f_mainMutationWasReceivedOrFetched;
 	}
 
 	@Override
@@ -26,7 +40,12 @@ public class FutureClusterManager implements IClusterManager {
 	}
 	@Override
 	public void mainEnterFollowerState() {
-		System.out.println("IClusterManager - mainEnterFollowerState");
+		if (null != f_mainEnterFollowerState) {
+			f_mainEnterFollowerState.put(null);
+			f_mainEnterFollowerState = null;
+		} else {
+			System.out.println("IClusterManager - mainEnterFollowerState");
+		}
 	}
 	@Override
 	public void mainMutationWasCommitted(long globalOffset) {
@@ -39,7 +58,12 @@ public class FutureClusterManager implements IClusterManager {
 	}
 	@Override
 	public void mainMutationWasReceivedOrFetched(long previousMutationTermNumber, MutationRecord record) {
-		System.out.println("IClusterManager - mainMutationWasReceivedOrFetched");
+		if (null != f_mainMutationWasReceivedOrFetched) {
+			f_mainMutationWasReceivedOrFetched.put(record);
+			f_mainMutationWasReceivedOrFetched = null;
+		} else {
+			System.out.println("IClusterManager - mainMutationWasReceivedOrFetched");
+		}
 	}
 	@Override
 	public void mainOpenDownstreamConnection(ConfigEntry entry) {

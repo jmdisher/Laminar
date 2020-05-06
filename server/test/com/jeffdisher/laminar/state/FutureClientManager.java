@@ -14,7 +14,14 @@ import com.jeffdisher.laminar.types.MutationRecord;
  * given.
  */
 public class FutureClientManager implements IClientManager {
+	private F<Long> f_mainEnterFollowerState;
 	private F<Long> f_mainProcessingPendingMessageCommits;
+
+	public F<Long> get_mainEnterFollowerState() {
+		Assert.assertNull(f_mainEnterFollowerState);
+		f_mainEnterFollowerState = new F<Long>();
+		return f_mainEnterFollowerState;
+	}
 
 	public F<Long> get_mainProcessingPendingMessageCommits() {
 		Assert.assertNull(f_mainProcessingPendingMessageCommits);
@@ -28,7 +35,12 @@ public class FutureClientManager implements IClientManager {
 	}
 	@Override
 	public void mainEnterFollowerState(ConfigEntry clusterLeader, long lastCommittedMutationOffset) {
-		System.out.println("IClientManager - mainEnterFollowerState");
+		if (null != f_mainEnterFollowerState) {
+			f_mainEnterFollowerState.put(lastCommittedMutationOffset);
+			f_mainEnterFollowerState = null;
+		} else {
+			System.out.println("IClientManager - mainEnterFollowerState");
+		}
 	}
 	@Override
 	public void mainProcessingPendingMessageCommits(long globalOffset) {
