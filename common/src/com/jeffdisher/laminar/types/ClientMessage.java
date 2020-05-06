@@ -63,6 +63,18 @@ public class ClientMessage {
 	}
 
 	/**
+	 * Creates a message to force the receiving node to immediately become the leader of the cluster.  This is only to
+	 * make testing easier until leadership elections are implemented.
+	 * Note that this message is sent on a fresh connection, not an established one (to avoid redirects).
+	 * Care must be taken to ensure that this doesn't cause a split-brain in the cluster.
+	 * 
+	 * @return A new ClientMessage instance.
+	 */
+	public static ClientMessage forceLeader() {
+		return new ClientMessage(ClientMessageType.FORCE_LEADER, -1L, ClientMessagePayload_Temp.create(new byte[0]));
+	}
+
+	/**
 	 * Creates a temp message.
 	 * Note that, as the name implies, this only exists for temporary testing of the flow and will be removed, later.
 	 * 
@@ -131,6 +143,9 @@ public class ClientMessage {
 			break;
 		case LISTEN:
 			payload = ClientMessagePayload_Listen.deserialize(buffer);
+			break;
+		case FORCE_LEADER:
+			payload = ClientMessagePayload_Temp.deserialize(buffer);
 			break;
 		case TEMP:
 			payload = ClientMessagePayload_Temp.deserialize(buffer);

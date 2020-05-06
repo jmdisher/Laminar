@@ -490,6 +490,14 @@ public class ClientManager implements IClientManager, INetworkManagerBackgroundC
 			_sendEventToListener(client, initialConfig);
 			break;
 		}
+		case FORCE_LEADER: {
+			// Message only exists to tell this node to become leader.
+			boolean didRemove = _newClients.remove(client);
+			Assert.assertTrue(didRemove);
+			_networkManager.closeConnection(client);
+			// TODO:  Add support for changing the node state.
+			break;
+		}
 		default:
 			Assert.unimplemented("This is an invalid message for this client type and should be disconnected");
 			break;

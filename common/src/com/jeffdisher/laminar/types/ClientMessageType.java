@@ -24,6 +24,11 @@ public enum ClientMessageType {
 	 */
 	LISTEN,
 	/**
+	 * This message type is only for testing.
+	 * It immediately forces the target node to become leader of the cluster and disconnect the caller.
+	 */
+	FORCE_LEADER,
+	/**
 	 * This message is purely temporary to verify the client-server communication.
 	 */
 	TEMP,
