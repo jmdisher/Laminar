@@ -398,7 +398,9 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 			boolean didFind =false;
 			for (ConfigEntry entry : currentConfig.entries) {
 				didFind = _serverAddress.equals(entry.client);
-				break;
+				if (didFind) {
+					break;
+				}
 			}
 			Assert.assertTrue(didFind);
 			// Whether this was null (start-up) or something else (if the config change mid-run), we want to set this as our active config in case of a reconnect.

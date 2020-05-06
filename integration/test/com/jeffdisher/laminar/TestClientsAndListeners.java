@@ -18,6 +18,8 @@ import com.jeffdisher.laminar.client.ListenerConnection;
 import com.jeffdisher.laminar.types.ClientMessage;
 import com.jeffdisher.laminar.types.ClientResponse;
 import com.jeffdisher.laminar.types.ClientResponseType;
+import com.jeffdisher.laminar.types.ClusterConfig;
+import com.jeffdisher.laminar.types.ConfigEntry;
 import com.jeffdisher.laminar.types.EventRecord;
 
 
@@ -290,6 +292,37 @@ public class TestClientsAndListeners {
 		
 		// Shut down.
 		Assert.assertEquals(0, wrapper.stop());
+	}
+
+	@Test
+	public void testConfigProcessing() throws Throwable {
+		// Here, we start up, connect a client, send one message, wait for it to commit, observe listener behaviour, then shut everything down.
+		ServerWrapper leader = ServerWrapper.startedServerWrapper("testConfigProcessing-leader", 2003, 2002, new File("/tmp/laminar"));
+		ServerWrapper follower = ServerWrapper.startedServerWrapper("testConfigProcessing-follower", 2005, 2004, new File("/tmp/laminar2"));
+		InetSocketAddress address = new InetSocketAddress(InetAddress.getLocalHost(), 2002);
+		
+		ClusterConfig newConfig = null;
+		
+		try (ClientConnection client = ClientConnection.open(address)) {
+			client.waitForConnection();
+			ConfigEntry start = client.getCurrentConfig().entries[0];
+			newConfig = ClusterConfig.configFromEntries(new ConfigEntry[] {
+					new ConfigEntry(new InetSocketAddress(start.cluster.getAddress(), 2005), new InetSocketAddress(start.client.getAddress(), 2004)),
+					start,
+			});
+			client.sendUpdateConfig(newConfig).waitForCommitted();
+		}
+		try (ClientConnection client = ClientConnection.open(address)) {
+			client.waitForConnection();
+			ClusterConfig config = client.getCurrentConfig();
+			Assert.assertEquals(2, config.entries.length);
+			Assert.assertEquals(newConfig.entries[0], config.entries[0]);
+			Assert.assertEquals(newConfig.entries[1], config.entries[1]);
+		}
+		
+		// Shut down.
+		Assert.assertEquals(0, leader.stop());
+		Assert.assertEquals(0, follower.stop());
 	}
 
 
