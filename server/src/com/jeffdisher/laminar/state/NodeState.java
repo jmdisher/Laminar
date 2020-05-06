@@ -326,7 +326,9 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		Assert.assertTrue(lastCommittedMutationOffset >= _clusterLeaderCommitOffset);
 		_clusterLeaderCommitOffset = lastCommittedMutationOffset;
 		// This changes our consensus offset so re-run any commits.
-		_mainCommitValidInFlightTuples();
+		// (we don't do a term check when the leader tells us to commit).
+		boolean requireTermCheck = false;
+		_mainCommitValidInFlightTuples(requireTermCheck);
 	}
 
 	@Override
@@ -345,7 +347,9 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		_unionOfDownstreamNodes.get(peer).lastMutationOffsetReceived = mutationOffset;
 		
 		// See if this changed the consensus offset.
-		_mainCommitValidInFlightTuples();
+		// (we are the leader so we need to do a term check).
+		boolean requireTermCheck = true;
+		_mainCommitValidInFlightTuples(requireTermCheck);
 	}
 	// </IClusterManagerCallbacks>
 
@@ -552,11 +556,33 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		}
 	}
 
-	private void _mainCommitValidInFlightTuples() {
+	private void _mainCommitValidInFlightTuples(boolean requireTermCheck) {
 		long consensusOffset = _checkConsesusMutationOffset();
-		while ((_inFlightMutationOffsetBias <= consensusOffset) && !_inFlightMutations.isEmpty()) {
-			InFlightTuple record = _inFlightMutations.remove();
-			_commitAndUpdateBias(record.mutation, record.event);
+		
+		boolean canCommit = false;
+		if (requireTermCheck) {
+			// The term check is done in the case of a leader, to make sure we don't commit mutations from previous terms
+			// until we can commit something from our own term (Section 5.4.2 of the Raft paper).
+			// See if we encounter our current term before we need to stop.
+			for (InFlightTuple tuple : _inFlightMutations) {
+				if (tuple.mutation.globalOffset <= consensusOffset) {
+					if (_currentTermNumber == tuple.mutation.termNumber) {
+						canCommit = true;
+						break;
+					}
+				} else {
+					break;
+				}
+			}
+		} else {
+			// The follower always blindly does what it was told.
+			canCommit = true;
+		}
+		if (canCommit) {
+			while ((_inFlightMutationOffsetBias <= consensusOffset) && !_inFlightMutations.isEmpty()) {
+				InFlightTuple record = _inFlightMutations.remove();
+				_commitAndUpdateBias(record.mutation, record.event);
+			}
 		}
 	}
 

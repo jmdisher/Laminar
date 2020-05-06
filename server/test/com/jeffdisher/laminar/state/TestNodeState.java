@@ -8,6 +8,7 @@ import org.junit.Assert;
 import org.junit.Test;
 
 import com.jeffdisher.laminar.console.IConsoleManager;
+import com.jeffdisher.laminar.network.IClusterManagerCallbacks;
 import com.jeffdisher.laminar.types.ClientMessage;
 import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.types.ConfigEntry;
@@ -110,6 +111,65 @@ public class TestNodeState {
 		didApply = runner.run((snapshot) -> test.nodeState.mainAppendMutationFromUpstream(upstream, 2L, record2));
 		Assert.assertTrue(didApply);
 		Assert.assertEquals(record2, mainMutationWasReceivedOrFetched.get());
+		
+		// Stop.
+		test.nodeState.handleStopCommand();
+		test.join();
+	}
+
+	/**
+	 * Tests that a leader will not commit mutations from a previous term until it can commit something from its current
+	 * term.
+	 * This is essentially a test of the behaviour described in section 5.4.2 of the Raft paper.
+	 * This means populating a node with mutations from upstream, only committing some of them, forcing the node to
+	 * become the leader, asking it to send the received mutations in its cache downstream, sending it all the acks,
+	 * verifying that none of them have committed yet, creating a new mutation on that node, sending it downstream,
+	 * receiving the acks, and then committing all the mutations at that time.
+	 */
+	@Test
+	public void testWaitingForNewTermCommit() throws Throwable {
+		// Create the node.
+		MainThread test = new MainThread();
+		test.start();
+		test.startLatch.await();
+		NodeState nodeState = test.nodeState;
+		Runner runner = new Runner(nodeState);
+		ConfigEntry originalEntry = _createConfig().entries[0];
+		ConfigEntry upstreamEntry = new ConfigEntry(new InetSocketAddress(3), new InetSocketAddress(4));
+		ClusterConfig newConfig = ClusterConfig.configFromEntries(new ConfigEntry[] {originalEntry, upstreamEntry});
+		// Send it 2 mutations (first one is 2-node config).
+		MutationRecord configChangeRecord = MutationRecord.generateRecord(MutationRecordType.UPDATE_CONFIG, 1L, 1L, UUID.randomUUID(), 1L, newConfig.serialize());
+		boolean didApply = runner.run((snapshot) -> nodeState.mainAppendMutationFromUpstream(upstreamEntry, 0L, configChangeRecord));
+		Assert.assertTrue(didApply);
+		MutationRecord tempRecord = MutationRecord.generateRecord(MutationRecordType.TEMP, 1L, 2L, UUID.randomUUID(), 1L, new byte[] {1});
+		didApply = runner.run((snapshot) -> nodeState.mainAppendMutationFromUpstream(upstreamEntry, 1L, tempRecord));
+		Assert.assertTrue(didApply);
+		// Tell it the first mutation committed (meaning that config will be active).
+		runner.runVoid((snapshot) -> nodeState.mainCommittedMutationOffsetFromUpstream(upstreamEntry, 1L));
+		// Force it to become leader.
+		runner.runVoid((snapshot) -> nodeState.mainForceLeader());
+		// Ask it to send the remaining mutation downstream.
+		IClusterManagerCallbacks.MutationWrapper wrapper = runner.run((snapshot) -> nodeState.mainClusterFetchMutationIfAvailable(2L));
+		Assert.assertNotNull(wrapper);
+		// Send it the ack for the mutation.
+		runner.runVoid((snapshot) -> nodeState.mainReceivedAckFromDownstream(upstreamEntry, 2L));
+		// Verify that mutation 2 still hasn't committed (we do that by trying to fetch it, inline - committed mutations need to be fetched).
+		MutationRecord mutation = runner.run((snapshot) -> nodeState.mainClientFetchMutationIfAvailable(2L));
+		Assert.assertEquals(tempRecord, mutation);
+		// Create new mutation (3).
+		ClientMessage newTemp = ClientMessage.temp(1L, new byte[]{2});
+		long mutationOffset = runner.run((snapshot) -> nodeState.mainHandleValidClientMessage(UUID.randomUUID(), newTemp));
+		Assert.assertEquals(3L, mutationOffset);
+		// Ask it to send the new mutation downstream.
+		wrapper = runner.run((snapshot) -> nodeState.mainClusterFetchMutationIfAvailable(3L));
+		Assert.assertEquals(1L, wrapper.previousMutationTermNumber);
+		Assert.assertEquals(2L, wrapper.record.termNumber);
+		// Send it the ack for the new mutation.
+		runner.runVoid((snapshot) -> nodeState.mainReceivedAckFromDownstream(upstreamEntry, 3L));
+		// Verify all mutations are committed.
+		Assert.assertNull(runner.run((snapshot) -> nodeState.mainClusterFetchMutationIfAvailable(1L)));
+		Assert.assertNull(runner.run((snapshot) -> nodeState.mainClusterFetchMutationIfAvailable(2L)));
+		Assert.assertNull(runner.run((snapshot) -> nodeState.mainClusterFetchMutationIfAvailable(3L)));
 		
 		// Stop.
 		test.nodeState.handleStopCommand();
