@@ -87,7 +87,7 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 	}
 
 	@Override
-	public void mainMutationWasReceivedOrFetched(MutationRecord mutation) {
+	public void mainMutationWasReceivedOrFetched(long previousMutationTermNumber, MutationRecord mutation) {
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		
 		// See if any of our downstream peers were waiting for this mutation and are writable.
@@ -99,7 +99,7 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 					&& state.didHandshake
 					&& (state.nextMutationOffsetToSend == mutationOffset)
 			) {
-				_sendMutationToPeer(state, mutation, nowMillis);
+				_sendMutationToPeer(state, previousMutationTermNumber, mutation, nowMillis);
 			}
 		}
 	}
@@ -275,7 +275,7 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 						// Update our last offset received and notify the callbacks of this mutation.
 						Assert.assertTrue((_lastMutationOffsetReceived + 1) == record.globalOffset);
 						_lastMutationOffsetReceived = record.globalOffset;
-						_callbacks.mainAppendMutationFromUpstream(peer.entry, record);
+						_callbacks.mainAppendMutationFromUpstream(peer.entry, 0L, record);
 					}
 					_callbacks.mainCommittedMutationOffsetFromUpstream(peer.entry, payload.lastCommittedMutationOffset);
 					
@@ -358,10 +358,10 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 				&& peer.didHandshake
 				&& peer.isWritable
 		) {
-			MutationRecord mutation = _callbacks.mainClusterFetchMutationIfAvailable(peer.nextMutationOffsetToSend);
-			if (null != mutation) {
+			IClusterManagerCallbacks.MutationWrapper wrapper = _callbacks.mainClusterFetchMutationIfAvailable(peer.nextMutationOffsetToSend);
+			if (null != wrapper) {
 				long nowMillis = System.currentTimeMillis();
-				_sendMutationToPeer(peer, mutation, nowMillis);
+				_sendMutationToPeer(peer, wrapper.previousMutationTermNumber, wrapper.record, nowMillis);
 			} else {
 				// We will wait for this to come in, later.
 			}
@@ -396,11 +396,11 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 		}
 	}
 
-	private void _sendMutationToPeer(DownstreamPeerState peer, MutationRecord mutation, long nowMillis) {
+	private void _sendMutationToPeer(DownstreamPeerState peer, long previousMutationTermNumber, MutationRecord mutation, long nowMillis) {
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		
 		if (_isLeader) {
-			DownstreamMessage message = DownstreamMessage.appendMutations(0L, mutation, _lastCommittedMutationOffset);
+			DownstreamMessage message = DownstreamMessage.appendMutations(previousMutationTermNumber, mutation, _lastCommittedMutationOffset);
 			_sendDownstreamMessage(peer, message, nowMillis);
 			peer.nextMutationOffsetToSend += 1;
 		}

@@ -133,7 +133,7 @@ public class TestDiskManager {
 		}
 		
 		@Override
-		public void mainMutationWasFetched(StateSnapshot snapshot, MutationRecord record) {
+		public void mainMutationWasFetched(StateSnapshot snapshot, long previousMutationTermNumber, MutationRecord record) {
 			// We currently just support a single match.
 			Assert.assertTrue(record == this.expectedMutation);
 			this.fetchMutationCount += 1;

@@ -38,7 +38,7 @@ public class FutureClusterManager implements IClusterManager {
 		}
 	}
 	@Override
-	public void mainMutationWasReceivedOrFetched(MutationRecord record) {
+	public void mainMutationWasReceivedOrFetched(long previousMutationTermNumber, MutationRecord record) {
 		System.out.println("IClusterManager - mainMutationWasReceivedOrFetched");
 	}
 	@Override

@@ -155,7 +155,7 @@ public class DiskManager implements IDiskManager {
 				// These indexing errors should be intercepted at a higher level, before we get to the disk.
 				Assert.assertTrue((int)work.fetchMutation < _committedMutationVirtualDisk.size());
 				MutationRecord record = _committedMutationVirtualDisk.get((int)work.fetchMutation);
-				_callbackTarget.ioEnqueueDiskCommandForMainThread((snapshot) -> _callbackTarget.mainMutationWasFetched(snapshot, record));
+				_callbackTarget.ioEnqueueDiskCommandForMainThread((snapshot) -> _callbackTarget.mainMutationWasFetched(snapshot, 0L, record));
 			}
 			else if (0L != work.fetchEvent) {
 				// These indexing errors should be intercepted at a higher level, before we get to the disk.

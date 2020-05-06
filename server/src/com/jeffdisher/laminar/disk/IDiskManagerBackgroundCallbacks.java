@@ -31,9 +31,10 @@ public interface IDiskManagerBackgroundCallbacks {
 	 * A previously requested mutation record has been fetched.
 	 * 
 	 * @param snapshot The state created when this event started.
+	 * @param previousMutationTermNumber The term number of the mutation before this one (0 if it is the first mutation).
 	 * @param record The record which was fetched from storage.
 	 */
-	void mainMutationWasFetched(StateSnapshot snapshot, MutationRecord record);
+	void mainMutationWasFetched(StateSnapshot snapshot, long previousMutationTermNumber, MutationRecord record);
 
 	/**
 	 * A previously requested event record has been fetched.

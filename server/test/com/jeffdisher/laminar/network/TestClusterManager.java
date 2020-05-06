@@ -228,7 +228,7 @@ public class TestClusterManager {
 		}
 		
 		@Override
-		public void mainAppendMutationFromUpstream(ConfigEntry peer, MutationRecord mutation) {
+		public boolean mainAppendMutationFromUpstream(ConfigEntry peer, long previousMutationTermNumber, MutationRecord mutation) {
 			if (null == this.upstreamPeer) {
 				this.upstreamPeer = peer;
 			} else {
@@ -237,6 +237,8 @@ public class TestClusterManager {
 			Assert.assertNull(this.upstreamMutation);
 			Assert.assertEquals(0L,  this.upstreamCommitOffset);
 			this.upstreamMutation = mutation;
+			// For now, just return true.
+			return true;
 		}
 		
 		@Override
@@ -245,14 +247,14 @@ public class TestClusterManager {
 		}
 		
 		@Override
-		public MutationRecord mainClusterFetchMutationIfAvailable(long mutationOffset) {
-			MutationRecord mutationToReturn = null;
+		public IClusterManagerCallbacks.MutationWrapper mainClusterFetchMutationIfAvailable(long mutationOffset) {
+			IClusterManagerCallbacks.MutationWrapper wrapperToReturn = null;
 			if (null != this.nextMutationToReturn) {
 				Assert.assertEquals(this.nextMutationToReturn.globalOffset, mutationOffset);
-				mutationToReturn = this.nextMutationToReturn;
+				wrapperToReturn = new IClusterManagerCallbacks.MutationWrapper(0L, this.nextMutationToReturn);
 				this.nextMutationToReturn = null;
 			}
-			return mutationToReturn;
+			return wrapperToReturn;
 		}
 		
 		@Override

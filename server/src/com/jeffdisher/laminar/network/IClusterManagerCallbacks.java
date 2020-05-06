@@ -42,14 +42,20 @@ public interface IClusterManagerCallbacks {
 	 * as the leader, for redirects.
 	 * 
 	 * @param peer The peer which sent the mutation.
+	 * @param previousMutationTermNumber The term number of the mutation before this one.
 	 * @param mutation The mutation.
+	 * @return True if this was appended, false if there was a term mismatch and the mutation was not appended.
 	 */
-	void mainAppendMutationFromUpstream(ConfigEntry peer, MutationRecord mutation);
+	boolean mainAppendMutationFromUpstream(ConfigEntry peer, long previousMutationTermNumber, MutationRecord mutation);
 
 	/**
 	 * Called after processing a list of incoming mutations or a heartbeat from an upstream peer.
 	 * The ClusterManager doesn't expose upstream nodes so the peer is only provided so the receiver can capture this
 	 * as the leader, for redirects.
+	 * Note that there is no chance of term number conflict leading up to this mutation since the leader only commits
+	 * when one of their own messages has been replicated to the cluster.  That replication will do the term number
+	 * check, causing a resync of the inconsistent messages before the leader uses this follower's offset to determine
+	 * whether it can commit a message from its term (this safety is a consequence of section 5.4.2 in the Raft paper).
 	 * 
 	 * @param peer The peer which sent the update.
 	 * @param lastCommittedMutationOffset The leader has committed mutations up to this point.
@@ -64,9 +70,9 @@ public interface IClusterManagerCallbacks {
 	 * 3) wait until a client sends this mutation.
 	 * 
 	 * @param mutationOffset The offset to fetch/return/await.
-	 * @return The mutation, only if it was immediately available, in-memory (typically not committed).
+	 * @return The mutation wrapper, only if it was immediately available, in-memory (not yet committed).
 	 */
-	MutationRecord mainClusterFetchMutationIfAvailable(long mutationOffset);
+	MutationWrapper mainClusterFetchMutationIfAvailable(long mutationOffset);
 
 	/**
 	 * Sent by the ClusterManager whenever a new acknowledgement arrives from a downstream peer.
@@ -78,4 +84,19 @@ public interface IClusterManagerCallbacks {
 	 * @param mutationOffset The mutation offset most recently acknowledged.
 	 */
 	void mainReceivedAckFromDownstream(ConfigEntry peer, long mutationOffset);
+
+
+	/**
+	 * Just a container for returning a tuple in this interface.
+	 * This contains the MutationRecord requested but also the term number of the mutation immediately before it (0 if
+	 * this mutation is the first mutation).
+	 */
+	public static class MutationWrapper {
+		public final long previousMutationTermNumber;
+		public final MutationRecord record;
+		public MutationWrapper(long previousMutationTermNumber, MutationRecord record) {
+			this.previousMutationTermNumber = previousMutationTermNumber;
+			this.record = record;
+		}
+	}
 }

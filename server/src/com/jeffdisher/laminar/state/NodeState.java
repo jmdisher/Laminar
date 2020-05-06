@@ -257,7 +257,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 	}
 
 	@Override
-	public void mainAppendMutationFromUpstream(ConfigEntry peer, MutationRecord record) {
+	public boolean mainAppendMutationFromUpstream(ConfigEntry peer, long previousMutationTermNumber, MutationRecord record) {
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		
 		// We shouldn't receive this if we are the leader, unless the call is invalid or from a later term.
@@ -283,6 +283,8 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 			EventRecord event = _processReceivedMutation(record);
 			_enqueueForCommit(record, event);
 		}
+		// Until we check term number, this always returns true.
+		return true;
 	}
 
 	@Override
@@ -306,9 +308,9 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 	}
 
 	@Override
-	public MutationRecord mainClusterFetchMutationIfAvailable(long mutationOffset) {
+	public IClusterManagerCallbacks.MutationWrapper mainClusterFetchMutationIfAvailable(long mutationOffset) {
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
-		return _mainFetchMutationIfAvailable(mutationOffset);
+		return _mainFetchMutationWrapperIfAvailable(mutationOffset);
 	}
 
 	@Override
@@ -372,14 +374,14 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 	}
 
 	@Override
-	public void mainMutationWasFetched(StateSnapshot snapshot, MutationRecord record) {
+	public void mainMutationWasFetched(StateSnapshot snapshot, long previousMutationTermNumber, MutationRecord record) {
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		
 		// Check to see if a client needs this
 		_clientManager.mainReplayCommittedMutationForReconnects(snapshot, record);
 		
 		// Check to see if a downstream peer needs this.
-		_clusterManager.mainMutationWasReceivedOrFetched(record);
+		_clusterManager.mainMutationWasReceivedOrFetched(previousMutationTermNumber, record);
 	}
 
 	@Override
@@ -473,7 +475,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 			// Store in list for later commit.
 			_inFlightMutations.add(new InFlightTuple(mutation, event));
 			// Notify anyone downstream about this.
-			_clusterManager.mainMutationWasReceivedOrFetched(mutation);
+			_clusterManager.mainMutationWasReceivedOrFetched(0L, mutation);
 		}
 	}
 
@@ -564,6 +566,18 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 			Assert.assertTrue(mutationOffset == _nextGlobalMutationOffset);
 		}
 		return inlineResponse;
+	}
+
+	private IClusterManagerCallbacks.MutationWrapper _mainFetchMutationWrapperIfAvailable(long mutationOffset) {
+		Assert.assertTrue(Thread.currentThread() == _mainThread);
+		// The mutations are 1-indexed so this must be a positive number.
+		Assert.assertTrue(mutationOffset > 0L);
+		
+		// For now, just wrap with 0L.
+		MutationRecord record = _mainFetchMutationIfAvailable(mutationOffset);
+		return (null != record)
+				? new IClusterManagerCallbacks.MutationWrapper(0L, record)
+				: null;
 	}
 
 
