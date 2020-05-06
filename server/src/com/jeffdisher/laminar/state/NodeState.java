@@ -338,6 +338,8 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 	@Override
 	public void mainReceivedAckFromDownstream(ConfigEntry peer, long mutationOffset) {
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
+		// We can only receive acks if we are leader (the ClusterManager should filter out any stale acks when we switch modes).
+		Assert.assertTrue(RaftState.LEADER == _currentState);
 		
 		// Update the offset in our sync tracking.
 		_unionOfDownstreamNodes.get(peer).lastMutationOffsetReceived = mutationOffset;

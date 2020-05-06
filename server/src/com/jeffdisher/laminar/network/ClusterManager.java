@@ -412,7 +412,7 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 				// Send the PEER_STATE.
 				messageToSend = UpstreamResponse.peerState(peer.pendingPeerStateMutationOffsetReceived);
 				peer.pendingPeerStateMutationOffsetReceived = -1L;
-			} else if (peer.lastMutationOffsetAcknowledged < _lastMutationOffsetReceived) {
+			} else if (!_isLeader && (peer.lastMutationOffsetAcknowledged < _lastMutationOffsetReceived)) {
 				// Send the ack.
 				messageToSend = UpstreamResponse.receivedMutations(_lastMutationOffsetReceived);
 				peer.lastMutationOffsetAcknowledged = _lastMutationOffsetReceived;

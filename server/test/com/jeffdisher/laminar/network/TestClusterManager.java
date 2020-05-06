@@ -154,6 +154,9 @@ public class TestClusterManager {
 		upstreamCallbacks.runOneCommand();
 		Assert.assertNull(upstreamCallbacks.nextMutationToReturn);
 		
+		// We need to set the downstream to FOLLOWER state so that it can send acks - this normally happens in inside
+		// the processing of the first message but we need to do it before it tries to ack so do it before.
+		downstreamManager.mainEnterFollowerState();
 		// Running readReady on downstream callbacks will give us the mutation so we will see who this is.
 		// -2 nodeReadReady (reads APPEND - provides callback - sends ACK).
 		Assert.assertNull(downstreamCallbacks.upstreamPeer);
@@ -213,12 +216,17 @@ public class TestClusterManager {
 		// -2 nodeWriteReady
 		downstreamCallbacks.runOneCommand();
 		
+		// We need to set the downstream to FOLLOWER state so that it can send acks - this normally happens in inside
+		// the processing of the first message but we need to do it before it tries to ack so do it before.
+		downstreamManager.mainEnterFollowerState();
 		// When we run the readReady on upstreamCallbacks, it will try to fetch the mutation to send.
 		MutationRecord record1 = MutationRecord.generateRecord(MutationRecordType.TEMP, 1L, 1L, UUID.randomUUID(), 1L, new byte[] {1,2,3});
 		upstreamCallbacks.nextMutationToReturn = record1;
 		// -1 nodeReadReady (reads PEER_STATE - picks up mutation - sends APPEND).
 		upstreamCallbacks.runOneCommand();
 		Assert.assertNull(upstreamCallbacks.nextMutationToReturn);
+		// -1 nodeWriteReady
+		upstreamCallbacks.runOneCommand();
 		
 		// Running readReady on downstream callbacks will give us the mutation so we will see who this is.
 		// -2 nodeReadReady (reads APPEND - provides callback - sends ACK).
@@ -229,8 +237,6 @@ public class TestClusterManager {
 		Assert.assertEquals(upstreamEntry, downstreamCallbacks.upstreamPeer);
 		Assert.assertNotNull(downstreamCallbacks.upstreamMutation);
 		downstreamCallbacks.upstreamMutation = null;
-		// -1 nodeWriteReady
-		upstreamCallbacks.runOneCommand();
 		
 		// Running the readReady on upstream will observe the ack so we will see the callback.
 		Assert.assertNull(upstreamCallbacks.downstreamPeer);
