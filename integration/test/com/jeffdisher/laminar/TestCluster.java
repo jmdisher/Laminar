@@ -1,8 +1,10 @@
 package com.jeffdisher.laminar;
 
 import java.io.File;
+import java.io.OutputStream;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.net.Socket;
 import java.util.UUID;
 
 import org.junit.Assert;
@@ -10,9 +12,11 @@ import org.junit.Test;
 
 import com.jeffdisher.laminar.client.ClientConnection;
 import com.jeffdisher.laminar.client.ClientResult;
+import com.jeffdisher.laminar.types.ClientMessage;
 import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.types.ConfigEntry;
 import com.jeffdisher.laminar.types.EventRecord;
+import com.jeffdisher.laminar.utils.TestingHelpers;
 
 
 /**
@@ -396,6 +400,82 @@ public class TestCluster {
 			if (null != follower2) {
 				Assert.assertEquals(0, follower2.stop());
 			}
+		}
+	}
+
+	/**
+	 * Tests that we can force the leader to switch and verify that things still work.
+	 * We use 1 client, 2 listeners, and 1 ad-hoc connection.  The client should redirect to the new leader after the
+	 * force call is sent over the ad-hoc connection and the listeners should each continue listening to their
+	 * respective servers.
+	 */
+	@Test
+	public void testForceLeader() throws Throwable {
+		ServerWrapper server1 = ServerWrapper.startedServerWrapper("testForceLeader-1", 2003, 2002, new File("/tmp/laminar"));
+		InetSocketAddress server1Address = new InetSocketAddress(InetAddress.getLocalHost(), 2002);
+		ServerWrapper server2 = ServerWrapper.startedServerWrapper("testForceLeader-2", 2005, 2004, new File("/tmp/laminar2"));
+		InetSocketAddress server2Address= new InetSocketAddress(InetAddress.getLocalHost(), 2004);
+		
+		// Start the listeners.
+		CaptureListener listener1 = new CaptureListener(server1Address, 3);
+		CaptureListener listener2 = new CaptureListener(server2Address, 3);
+		listener1.setName("1");
+		listener2.setName("2");
+		listener1.start();
+		listener2.start();
+		CaptureListener timingListener = new CaptureListener(server2Address, 1);
+		timingListener.setName("timing");
+		timingListener.start();
+		
+		ClientConnection client = ClientConnection.open(server1Address);
+		ClusterConfig config = ClusterConfig.configFromEntries(new ConfigEntry[] {
+				new ConfigEntry(new InetSocketAddress(InetAddress.getLocalHost(), 2003), server1Address),
+				new ConfigEntry(new InetSocketAddress(InetAddress.getLocalHost(), 2005), server2Address),
+		});
+		
+		try {
+			// Send the initial config to create the initial leader and wait for it to commit.
+			listener1.skipNonceCheck(client.getClientId(), 1L);
+			listener2.skipNonceCheck(client.getClientId(), 1L);
+			timingListener.skipNonceCheck(client.getClientId(), 1L);
+			ClientResult configResult = client.sendUpdateConfig(config);
+			configResult.waitForCommitted();
+			
+			// Send the initial message and wait for it to commit (which means it has made it to both nodes).
+			ClientResult result1 = client.sendTemp(new byte[] {1});
+			result1.waitForCommitted();
+			// Wait until it commits on the other, too.
+			timingListener.waitForTerminate();
+			
+			// Now, create the ad-hoc message to send the FORCE_LEADER.
+			try (Socket adhoc = new Socket(server1Address.getAddress(), server2Address.getPort())) {
+				OutputStream toServer = adhoc.getOutputStream();
+				TestingHelpers.writeMessageInFrame(toServer, ClientMessage.forceLeader().serialize());
+				// Read until disconnect.
+				adhoc.getInputStream().read();
+			}
+			
+			ClientConnection client2 = ClientConnection.open(server2Address);
+			client2.sendTemp(new byte[] {2}).waitForCommitted();
+			client2.close();
+			
+			// Send the other message
+			ClientResult result2 = client.sendTemp(new byte[] {3});
+			result2.waitForCommitted();
+			
+			// Finally, check that the listeners saw all the results.
+			EventRecord[] records1 = listener1.waitForTerminate();
+			EventRecord[] records2 = listener2.waitForTerminate();
+			Assert.assertEquals(records1[0].globalOffset, records2[0].globalOffset);
+			Assert.assertEquals(records1[1].globalOffset, records2[1].globalOffset);
+			Assert.assertEquals(records1[1].globalOffset, records2[0].globalOffset + 1);
+			Assert.assertEquals(records1[2].globalOffset, records2[2].globalOffset);
+			Assert.assertEquals(records1[2].globalOffset, records2[1].globalOffset + 1);
+		} finally {
+			// Shut down.
+			client.close();
+			Assert.assertEquals(0, server1.stop());
+			Assert.assertEquals(0, server2.stop());
 		}
 	}
 }

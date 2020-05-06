@@ -237,7 +237,11 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 
 	@Override
 	public void mainForceLeader() {
-		// TODO:  Implement.
+		_currentState = RaftState.LEADER;
+		_currentTermNumber += 1;
+		_clusterLeader = null;
+		_clientManager.mainEnterLeaderState();
+		_clusterManager.mainEnterLeaderState();
 	}
 	// </IClientManagerCallbacks>
 

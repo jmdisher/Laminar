@@ -199,7 +199,7 @@ public class ClientManager implements IClientManager, INetworkManagerBackgroundC
 	@Override
 	public void mainEnterLeaderState() {
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
-		// TODO:  Implement.
+		_clusterLeader = null;
 	}
 
 	/**
@@ -501,7 +501,7 @@ public class ClientManager implements IClientManager, INetworkManagerBackgroundC
 			boolean didRemove = _newClients.remove(client);
 			Assert.assertTrue(didRemove);
 			_networkManager.closeConnection(client);
-			// TODO:  Add support for changing the node state.
+			_callbacks.mainForceLeader();
 			break;
 		}
 		default:

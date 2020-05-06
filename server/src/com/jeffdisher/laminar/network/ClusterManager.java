@@ -111,6 +111,10 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 		// This should never skip a value.
 		Assert.assertTrue((_lastCommittedMutationOffset + 1) == mutationOffset);
 		_lastCommittedMutationOffset = mutationOffset;
+		if (_isLeader) {
+			// We need to eventually change how this is done to be more permissive but this approach allows us to keep the logic as strict as it is, for the near-term.
+			_lastMutationOffsetReceived = mutationOffset;
+		}
 	}
 
 	@Override
@@ -145,7 +149,11 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 	@Override
 	public void mainEnterLeaderState() {
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
-		// TODO:  Implement.
+		_isLeader = true;
+		for (DownstreamPeerState peer : _downstreamPeerByNode.values()) {
+			peer.nextMutationOffsetToSend = _lastCommittedMutationOffset + 1;
+		}
+		_mainRegisterHeartbeat(System.currentTimeMillis());
 	}
 
 	@Override
