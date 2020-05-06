@@ -61,4 +61,10 @@ public interface IClientManager {
 	 * @param record The committed MutationRecord.
 	 */
 	void mainReplayCommittedMutationForReconnects(StateSnapshot snapshot, MutationRecord record);
+
+	/**
+	 * Called when the node has entered a LEADER state.  This means that the receiver should stop sending REDIRECTs and
+	 * allow normal client connections, again.
+	 */
+	void mainEnterLeaderState();
 }

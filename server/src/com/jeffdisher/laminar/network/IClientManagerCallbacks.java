@@ -35,4 +35,9 @@ public interface IClientManagerCallbacks {
 	MutationRecord mainClientFetchMutationIfAvailable(long mutationOffset);
 
 	void mainRequestEventFetch(long nextLocalEventToFetch);
+
+	/**
+	 * A testing method to force the node into a LEADER state in response to a testing message.
+	 */
+	void mainForceLeader();
 }

@@ -234,6 +234,11 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		Assert.assertTrue(nextLocalEventToFetch > 0L);
 		_diskManager.fetchEvent(nextLocalEventToFetch);
 	}
+
+	@Override
+	public void mainForceLeader() {
+		// TODO:  Implement.
+	}
 	// </IClientManagerCallbacks>
 
 	// <IClusterManagerCallbacks>

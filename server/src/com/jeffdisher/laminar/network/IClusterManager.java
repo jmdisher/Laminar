@@ -48,4 +48,9 @@ public interface IClusterManager {
 	 */
 	void mainOpenDownstreamConnection(ConfigEntry entry);
 
+	/**
+	 * Called to instruct the receiver that the node has entered the LEADER state so it should start syncing to
+	 * downstream nodes.
+	 */
+	void mainEnterLeaderState();
 }

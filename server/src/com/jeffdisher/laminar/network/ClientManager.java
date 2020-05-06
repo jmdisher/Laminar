@@ -196,6 +196,12 @@ public class ClientManager implements IClientManager, INetworkManagerBackgroundC
 		_mainSendRecordToListeners(record);
 	}
 
+	@Override
+	public void mainEnterLeaderState() {
+		Assert.assertTrue(Thread.currentThread() == _mainThread);
+		// TODO:  Implement.
+	}
+
 	/**
 	 * This helper exists purely for testing purposes.  It will assert if there are more than 1 connected clients in new
 	 * state.

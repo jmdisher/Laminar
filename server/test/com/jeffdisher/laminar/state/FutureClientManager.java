@@ -63,4 +63,8 @@ public class FutureClientManager implements IClientManager {
 	public void mainReplayCommittedMutationForReconnects(StateSnapshot arg, MutationRecord record) {
 		System.out.println("IClientManager - mainReplayCommittedMutationForReconnects");
 	}
+	@Override
+	public void mainEnterLeaderState() {
+		System.out.println("IClientManager - mainEnterLeaderState");
+	}
 }

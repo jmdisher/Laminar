@@ -343,6 +343,11 @@ public class TestClientManager {
 			Assert.fail("Not used in test");
 		}
 
+		@Override
+		public void mainForceLeader() {
+			Assert.fail("Not used in test");
+		}
+
 		private void _lockedRunOnce() throws InterruptedException {
 			while (null == _pendingConsumer) {
 				this.wait();
