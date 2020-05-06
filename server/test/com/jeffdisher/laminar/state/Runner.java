@@ -25,6 +25,12 @@ public class Runner {
 		return test.result();
 	}
 
+	public void runVoid(Consumer<StateSnapshot> command) {
+		TestCommand<Void> test = new TestCommand<>((snapshot) -> { command.accept(snapshot); return null;});
+		_nodeState.testEnqueueMessage(test);
+		test.result();
+	}
+
 
 	private static class TestCommand<T> implements Consumer<StateSnapshot> {
 		private final CountDownLatch _latch;
