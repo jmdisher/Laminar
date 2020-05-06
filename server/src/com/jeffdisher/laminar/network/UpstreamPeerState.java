@@ -30,6 +30,15 @@ public class UpstreamPeerState {
 	 * This value starts at 0L since we haven't received a mutation from them.
 	 */
 	public long lastMutationOffsetAcknowledged = 0L;
+	/**
+	 * Defaults to -1 when nothing needs to happen but set to a different value when we need to send a PEER_STATE
+	 * message to the upstream peer.  Usually, this is only set for a moment during start-up, directly in response to an
+	 * IDENTITY message _from_ the upstream peer (at which point the connection is writable so it is sent, immediately).
+	 * However, this is also used to re-send the PEER_STATE when there is an inconsistency in the synced mutations from
+	 * the upstream leader and we need to tell them to restart from an earlier base mutation.
+	 * (0L is a valid starting point so -1L is the default).
+	 */
+	public long pendingPeerStateMutationOffsetReceived = -1L;
 
 	public UpstreamPeerState(ConfigEntry entry, NetworkManager.NodeToken token) {
 		this.entry = entry;

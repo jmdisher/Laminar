@@ -201,7 +201,7 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 					UpstreamPeerState peer = _upstreamPeerByNode.get(node);
 					Assert.assertTrue(!peer.isWritable);
 					peer.isWritable = true;
-					_tryAck(peer);
+					_trySendUpstream(peer);
 				}
 			}});
 	}
@@ -254,8 +254,8 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 					_upstreamPeerByNode.put(node, state);
 					
 					// Send back our PEER_STATE.
-					UpstreamResponse response = UpstreamResponse.peerState(_lastMutationOffsetReceived);
-					_sendUpstreamResponse(state, response);
+					state.pendingPeerStateMutationOffsetReceived = _lastMutationOffsetReceived;
+					_trySendUpstream(state);
 					
 					// We don't tell the NodeState about this unless they upstream starts acting like a LEADER and sending mutations.
 				} else {
@@ -277,7 +277,7 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 					_callbacks.mainCommittedMutationOffsetFromUpstream(peer.entry, payload.lastCommittedMutationOffset);
 					
 					// See if we can ack this, immediately.
-					_tryAck(peer);
+					_trySendUpstream(peer);
 				}
 			}});
 	}
@@ -365,22 +365,31 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 		}
 	}
 
-	private void _tryAck(UpstreamPeerState peer) {
+	private void _trySendUpstream(UpstreamPeerState peer) {
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		
-		if (peer.isWritable
-				&& (peer.lastMutationOffsetAcknowledged < _lastMutationOffsetReceived)
-		) {
-			UpstreamResponse ack = UpstreamResponse.receivedMutations(_lastMutationOffsetReceived);
-			ByteBuffer buffer = ByteBuffer.allocate(ack.serializedSize());
-			ack.serializeInto(buffer);
-			boolean didSend = _networkManager.trySendMessage(peer.token, buffer.array());
-			// This path is only taken when they are writable.
-			Assert.assertTrue(didSend);
+		if (peer.isWritable) {
+			UpstreamResponse messageToSend = null;
+			if (peer.pendingPeerStateMutationOffsetReceived > -1L) {
+				// Send the PEER_STATE.
+				messageToSend = UpstreamResponse.peerState(peer.pendingPeerStateMutationOffsetReceived);
+				peer.pendingPeerStateMutationOffsetReceived = -1L;
+			} else if (peer.lastMutationOffsetAcknowledged < _lastMutationOffsetReceived) {
+				// Send the ack.
+				messageToSend = UpstreamResponse.receivedMutations(_lastMutationOffsetReceived);
+				peer.lastMutationOffsetAcknowledged = _lastMutationOffsetReceived;
+			}
 			
-			// Update state for the next.
-			peer.lastMutationOffsetAcknowledged = _lastMutationOffsetReceived;
-			peer.isWritable = false;
+			if (null != messageToSend) {
+				ByteBuffer buffer = ByteBuffer.allocate(messageToSend.serializedSize());
+				messageToSend.serializeInto(buffer);
+				boolean didSend = _networkManager.trySendMessage(peer.token, buffer.array());
+				// This path is only taken when they are writable.
+				Assert.assertTrue(didSend);
+				
+				// Update state for the next.
+				peer.isWritable = false;
+			}
 		}
 	}
 
@@ -407,15 +416,6 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 		// Update state for the next.
 		peer.isWritable = false;
 		peer.lastSentMessageMillis = nowMillis;
-	}
-
-	private void _sendUpstreamResponse(UpstreamPeerState state, UpstreamResponse response) {
-		Assert.assertTrue(state.isWritable);
-		ByteBuffer buffer = ByteBuffer.allocate(response.serializedSize());
-		response.serializeInto(buffer);
-		boolean didSend = _networkManager.trySendMessage(state.token, buffer.array());
-		Assert.assertTrue(didSend);
-		state.isWritable = false;
 	}
 
 	private void _mainRegisterHeartbeat(long nowMillis) {
