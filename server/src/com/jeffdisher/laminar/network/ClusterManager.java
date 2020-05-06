@@ -271,15 +271,36 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 					Assert.assertTrue(DownstreamMessage.Type.APPEND_MUTATIONS == message.type);
 					DownstreamPayload_AppendMutations payload = (DownstreamPayload_AppendMutations)message.payload;
 					
+					boolean didFailToApply = false;
+					long previousMutationTermNumber = payload.previousMutationTermNumber;
 					for (MutationRecord record : payload.records) {
 						// Update our last offset received and notify the callbacks of this mutation.
+						// NOTE:  This assertion is only valid while we are maintaining a lock-step state.
 						Assert.assertTrue((_lastMutationOffsetReceived + 1) == record.globalOffset);
-						_lastMutationOffsetReceived = record.globalOffset;
-						_callbacks.mainAppendMutationFromUpstream(peer.entry, 0L, record);
+						boolean didApply = _callbacks.mainAppendMutationFromUpstream(peer.entry, previousMutationTermNumber, record);
+						if (didApply) {
+							// Advance to the next mutation (and make sure this isn't a rewind since we may need to re-ack).
+							_lastMutationOffsetReceived = record.globalOffset;
+							if (record.globalOffset <= peer.lastMutationOffsetAcknowledged) {
+								// We want to ack this.
+								peer.lastMutationOffsetAcknowledged = record.globalOffset - 1L;
+							}
+							previousMutationTermNumber = record.termNumber;
+						} else {
+							didFailToApply = true;
+							break;
+						}
 					}
-					_callbacks.mainCommittedMutationOffsetFromUpstream(peer.entry, payload.lastCommittedMutationOffset);
-					
-					// See if we can ack this, immediately.
+					if (didFailToApply) {
+						// There was a mismatch so revert to the previous message and reset our state with the upstream.
+						// Set us up to revert our most recent mutation (since it is the one which doesn't agree).
+						_lastMutationOffsetReceived -= 1;
+						peer.pendingPeerStateMutationOffsetReceived = _lastMutationOffsetReceived;
+					} else {
+						// This is normal operation so proceed with committing.
+						_callbacks.mainCommittedMutationOffsetFromUpstream(peer.entry, payload.lastCommittedMutationOffset);
+					}
+					// We either want to ack or send back the reset.
 					_trySendUpstream(peer);
 				}
 			}});

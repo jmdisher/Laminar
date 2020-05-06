@@ -111,7 +111,6 @@ public class TestClusterManager {
 		socket.close();
 	}
 
-
 	/**
 	 * Creates 2 ClusterManagers and verifies the messages being sent between them during and after an initial
 	 * handshake which describes the need for 1 element to be synchronized from upstream to downstream.
@@ -181,6 +180,119 @@ public class TestClusterManager {
 		upstreamSocket.close();
 	}
 
+	/**
+	 * Creates 2 ClusterManagers and sends messages to 1 of them to force a term mismatch to verify that it acts as
+	 * expected and properly continues running.
+	 */
+	@Test
+	public void testTermMismatchInSync() throws Throwable {
+		int upstreamPort = PORT_BASE + 8;
+		int downstreamPort = PORT_BASE + 9;
+		ServerSocketChannel upstreamSocket = TestingHelpers.createServerSocket(upstreamPort);
+		ServerSocketChannel downstreamSocket = TestingHelpers.createServerSocket(downstreamPort);
+		ConfigEntry upstreamEntry = new ConfigEntry(new InetSocketAddress(upstreamPort), new InetSocketAddress(9999));
+		ConfigEntry downstreamEntry = new ConfigEntry(new InetSocketAddress(downstreamPort), new InetSocketAddress(9999));
+		TestClusterCallbacks upstreamCallbacks = new TestClusterCallbacks();
+		TestClusterCallbacks downstreamCallbacks = new TestClusterCallbacks();
+		ClusterManager upstreamManager = new ClusterManager(upstreamEntry, upstreamSocket, upstreamCallbacks);
+		ClusterManager downstreamManager = new ClusterManager(downstreamEntry, downstreamSocket, downstreamCallbacks);
+		upstreamManager.startAndWaitForReady();
+		downstreamManager.startAndWaitForReady();
+		
+		// Initial handshake.
+		// Open the connection and run commands:
+		upstreamManager.mainOpenDownstreamConnection(downstreamEntry);
+		// -1 outboundNodeConnected (triggers send of IDENTITY)
+		upstreamCallbacks.runOneCommand();
+		// -2 nodeDidConnect
+		downstreamCallbacks.runOneCommand();
+		// -2 nodeReadReady (reads IDENTITY and sends PEER_STATE)
+		downstreamCallbacks.runOneCommand();
+		// -1 nodeWriteReady
+		upstreamCallbacks.runOneCommand();
+		// -2 nodeWriteReady
+		downstreamCallbacks.runOneCommand();
+		
+		// When we run the readReady on upstreamCallbacks, it will try to fetch the mutation to send.
+		MutationRecord record1 = MutationRecord.generateRecord(MutationRecordType.TEMP, 1L, 1L, UUID.randomUUID(), 1L, new byte[] {1,2,3});
+		upstreamCallbacks.nextMutationToReturn = record1;
+		// -1 nodeReadReady (reads PEER_STATE - picks up mutation - sends APPEND).
+		upstreamCallbacks.runOneCommand();
+		Assert.assertNull(upstreamCallbacks.nextMutationToReturn);
+		
+		// Running readReady on downstream callbacks will give us the mutation so we will see who this is.
+		// -2 nodeReadReady (reads APPEND - provides callback - sends ACK).
+		Assert.assertNull(downstreamCallbacks.upstreamPeer);
+		Assert.assertNull(downstreamCallbacks.upstreamMutation);
+		Assert.assertEquals(0L, downstreamCallbacks.upstreamCommitOffset);
+		downstreamCallbacks.runOneCommand();
+		Assert.assertEquals(upstreamEntry, downstreamCallbacks.upstreamPeer);
+		Assert.assertNotNull(downstreamCallbacks.upstreamMutation);
+		downstreamCallbacks.upstreamMutation = null;
+		// -1 nodeWriteReady
+		upstreamCallbacks.runOneCommand();
+		
+		// Running the readReady on upstream will observe the ack so we will see the callback.
+		Assert.assertNull(upstreamCallbacks.downstreamPeer);
+		Assert.assertEquals(0L, upstreamCallbacks.downstreamReceivedMutation);
+		// -1 nodeReadReady (provides callback).
+		upstreamCallbacks.runOneCommand();
+		Assert.assertEquals(downstreamEntry, upstreamCallbacks.downstreamPeer);
+		Assert.assertEquals(1L, upstreamCallbacks.downstreamReceivedMutation);
+		// -2 nodeWriteReady
+		downstreamCallbacks.runOneCommand();
+		
+		// Now, send another message which will invalidate the term number of the last one we sent.
+		MutationRecord record2 = MutationRecord.generateRecord(MutationRecordType.TEMP, 2L, 2L, record1.clientId, 2L, new byte[] {2});
+		// (this 2L is what should cause the downstream to drop record1).
+		upstreamManager.mainMutationWasReceivedOrFetched(2L, record2);
+		// -1 nodeWriteReady
+		upstreamCallbacks.runOneCommand();
+		// -2 nodeReadReady (this will cause them to send a new PEER_STATE to the upstream).
+		downstreamCallbacks.runOneCommand();
+		// -2 nodeWriteReady
+		downstreamCallbacks.runOneCommand();
+		
+		// Upstream now receives the PEER_STATE and tries to restart so set up the corrected mutation (term is still 0).
+		MutationRecord record1_fix = MutationRecord.generateRecord(record1.type, 2L, record1.globalOffset, record1.clientId, record1.clientNonce, new byte[] {1,2,3, 4, 5, 6});
+		upstreamCallbacks.nextMutationToReturn = record1_fix;
+		// -1 nodeReadReady (the receive PEER_STATE and send the new mutation).
+		upstreamCallbacks.runOneCommand();
+		// -1 nodeWriteReady.
+		upstreamCallbacks.runOneCommand();
+		// -2 nodeReadReady (this will cause them to revert and ack).
+		downstreamCallbacks.runOneCommand();
+		Assert.assertArrayEquals(record1_fix.payload, downstreamCallbacks.upstreamMutation.payload);
+		downstreamCallbacks.upstreamMutation = null;
+		// -2 nodeWriteReady.
+		downstreamCallbacks.runOneCommand();
+		
+		// Upstream receives the ack and tries to send the next mutation so give them the last one we sent, new term.
+		upstreamCallbacks.nextMutationToReturn = record2;
+		upstreamCallbacks.nextPreviousTermNumberToReturn = record1_fix.termNumber;
+		// -1 nodeReadReady (the receive ack and send the new mutation).
+		upstreamCallbacks.downstreamReceivedMutation = 0L;
+		upstreamCallbacks.runOneCommand();
+		Assert.assertEquals(record1_fix.globalOffset, upstreamCallbacks.downstreamReceivedMutation);
+		// -1 nodeWriteReady.
+		upstreamCallbacks.runOneCommand();
+		// -2 nodeReadReady (this will cause them to accept and ack).
+		downstreamCallbacks.runOneCommand();
+		// -2 nodeWriteReady.
+		downstreamCallbacks.runOneCommand();
+		Assert.assertArrayEquals(record2.payload, downstreamCallbacks.upstreamMutation.payload);
+		downstreamCallbacks.upstreamMutation = null;
+		// -1 nodeReadReady (receive ack).
+		upstreamCallbacks.downstreamReceivedMutation = 0L;
+		upstreamCallbacks.runOneCommand();
+		Assert.assertEquals(record2.globalOffset, upstreamCallbacks.downstreamReceivedMutation);
+		
+		downstreamManager.stopAndWaitForTermination();
+		upstreamManager.stopAndWaitForTermination();
+		downstreamSocket.close();
+		upstreamSocket.close();
+	}
+
 
 	private static ConfigEntry _buildSelf() throws UnknownHostException {
 		InetAddress localhost = InetAddress.getLocalHost();
@@ -197,7 +309,9 @@ public class TestClusterManager {
 		public MutationRecord upstreamMutation;
 		public long upstreamCommitOffset;
 		public long downstreamReceivedMutation;
+		public long nextPreviousTermNumberToReturn;
 		public MutationRecord nextMutationToReturn;
+		private long _previousTermNumber;
 		
 		public synchronized void runOneCommand() throws InterruptedException {
 			while (null == _command) {
@@ -234,11 +348,19 @@ public class TestClusterManager {
 			} else {
 				Assert.assertTrue(this.upstreamPeer == peer);
 			}
-			Assert.assertNull(this.upstreamMutation);
-			Assert.assertEquals(0L,  this.upstreamCommitOffset);
-			this.upstreamMutation = mutation;
-			// For now, just return true.
-			return true;
+			boolean didAppend = false;
+			// For now, to make the revert on term number mismatch test pass, we will revert to previous term 0 whenever we see offset 1.
+			if (1L == mutation.globalOffset) {
+				_previousTermNumber = 0L;
+			}
+			if (_previousTermNumber == previousMutationTermNumber) {
+				Assert.assertNull(this.upstreamMutation);
+				Assert.assertEquals(0L,  this.upstreamCommitOffset);
+				this.upstreamMutation = mutation;
+				_previousTermNumber = mutation.termNumber;
+				didAppend = true;
+			}
+			return didAppend;
 		}
 		
 		@Override
@@ -251,7 +373,7 @@ public class TestClusterManager {
 			IClusterManagerCallbacks.MutationWrapper wrapperToReturn = null;
 			if (null != this.nextMutationToReturn) {
 				Assert.assertEquals(this.nextMutationToReturn.globalOffset, mutationOffset);
-				wrapperToReturn = new IClusterManagerCallbacks.MutationWrapper(0L, this.nextMutationToReturn);
+				wrapperToReturn = new IClusterManagerCallbacks.MutationWrapper(this.nextPreviousTermNumberToReturn, this.nextMutationToReturn);
 				this.nextMutationToReturn = null;
 			}
 			return wrapperToReturn;

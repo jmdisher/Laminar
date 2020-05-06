@@ -276,17 +276,28 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 			Assert.assertTrue(_clusterLeader == peer);
 		}
 		
+		boolean didApply = false;
 		// We can only append mutations if we are a follower.
 		if (RaftState.FOLLOWER == _currentState) {
-			// Make sure that this is the expected mutation (as they must arrive in-order).
+			// We will never receive data from before our commit level - if that is the case, we are inconsistent with the cluster and this cannot be resolved.
+			Assert.assertTrue(record.globalOffset > _lastCommittedMutationOffset);
+			// It is possible that this record requires that we drop some in-flight mutations, though (could happen to fix a term inconsistency shortly after a new election).
+			_reverseInFlightMutationsBefore(record.globalOffset);
 			Assert.assertTrue(_nextGlobalMutationOffset == record.globalOffset);
-			_nextGlobalMutationOffset = record.globalOffset + 1;
-			// Process the mutation into a local event.
-			EventRecord event = _processReceivedMutation(record);
-			_enqueueForCommit(record, event);
+			// We now want to make sure that the term numbers are consistent (otherwise, we can fail here and the next data will do the revert).
+			if (_getPreviousMutationTermNumber() == previousMutationTermNumber) {
+				// This is good so we can apply the mutation.
+				_nextGlobalMutationOffset = record.globalOffset + 1;
+				// Process the mutation into a local event.
+				EventRecord event = _processReceivedMutation(record);
+				_enqueueForCommit(record, event);
+				didApply = true;
+			} else {
+				// This is inconsistent so there is something wrong.
+				didApply = false;
+			}
 		}
-		// Until we check term number, this always returns true.
-		return true;
+		return didApply;
 	}
 
 	@Override
@@ -577,17 +588,47 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		// The mutations are 1-indexed so this must be a positive number.
 		Assert.assertTrue(mutationOffset > 0L);
 		
-		// For now, just wrap with 0L.
-		MutationRecord record = _mainFetchMutationIfAvailable(mutationOffset);
-		return (null != record)
-				? new IClusterManagerCallbacks.MutationWrapper(0L, record)
-				: null;
+		// See if this could be on-disk or if we are waiting for something new from the client.
+		IClusterManagerCallbacks.MutationWrapper inlineResponse = null;
+		if (mutationOffset < _nextGlobalMutationOffset) {
+			// See if this is in-memory.
+			InFlightTuple inFlight = _getInFlightTuple(mutationOffset);
+			if (null != inFlight) {
+				// Find the term number of the mutation before this.
+				long previousMutationTermNumber = 0L;
+				if (mutationOffset > 1) {
+					InFlightTuple prior = _getInFlightTuple(mutationOffset - 1);
+					if (null != prior) {
+						previousMutationTermNumber = prior.mutation.termNumber;
+					} else {
+						previousMutationTermNumber = _lastTermNumberRemovedFromInFlight;
+					}
+				}
+				Assert.assertTrue(null != inFlight.mutation);
+				inlineResponse = new IClusterManagerCallbacks.MutationWrapper(previousMutationTermNumber, inFlight.mutation);
+			} else {
+				// We should have this.
+				_diskManager.fetchMutation(mutationOffset);
+			}
+		} else {
+			// They are waiting for the next, just as we are.
+			Assert.assertTrue(mutationOffset == _nextGlobalMutationOffset);
+		}
+		return inlineResponse;
 	}
 
 	private long _getPreviousMutationTermNumber() {
 		return _inFlightMutations.isEmpty()
 				? _lastTermNumberRemovedFromInFlight
 				: _inFlightMutations.getLast().mutation.termNumber;
+	}
+
+	private void _reverseInFlightMutationsBefore(long globalOffset) {
+		while (!_inFlightMutations.isEmpty() && (_inFlightMutations.peekLast().mutation.globalOffset >= globalOffset)) {
+			_inFlightMutations.removeLast();
+			_nextGlobalMutationOffset -= 1;
+			_nextLocalEventOffset -= 1;
+		}
 	}
 
 

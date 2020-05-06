@@ -13,6 +13,7 @@ import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.types.ConfigEntry;
 import com.jeffdisher.laminar.types.EventRecord;
 import com.jeffdisher.laminar.types.MutationRecord;
+import com.jeffdisher.laminar.types.MutationRecordType;
 
 
 /**
@@ -65,6 +66,50 @@ public class TestNodeState {
 		runner.run((snapshot) -> {test.nodeState.mainMutationWasCommitted(mutation.get()); return null;});
 		Assert.assertEquals(mutationNumber, toClient.get().longValue());
 		Assert.assertEquals(mutationNumber, toCluster.get().longValue());
+		
+		// Stop.
+		test.nodeState.handleStopCommand();
+		test.join();
+	}
+
+	/**
+	 * Tests that in-flight messages with a mismatching term number are removed and the sync state is restarted when
+	 * they are detected.
+	 */
+	@Test
+	public void testDropInFlightOnTermMismatch() throws Throwable {
+		MainThread test = new MainThread();
+		test.start();
+		test.startLatch.await();
+		Runner runner = new Runner(test.nodeState);
+		ConfigEntry upstream = new ConfigEntry(new InetSocketAddress(3), new InetSocketAddress(4));
+		MutationRecord record1 = MutationRecord.generateRecord(MutationRecordType.TEMP, 1L, 1L, UUID.randomUUID(), 1, new byte[] {1});
+		MutationRecord record2 = MutationRecord.generateRecord(MutationRecordType.TEMP, 2L, 2L, UUID.randomUUID(), 1, new byte[] {2});
+		MutationRecord record1_fix = MutationRecord.generateRecord(record1.type, 2L, 1L, record1.clientId, record1.clientNonce, record1.payload);
+		
+		// Send the initial message.
+		F<Long> client_mainEnterFollowerState = test.clientManager.get_mainEnterFollowerState();
+		F<Void> cluster_mainEnterFollowerState = test.clusterManager.get_mainEnterFollowerState();
+		F<MutationRecord> mainMutationWasReceivedOrFetched = test.clusterManager.get_mainMutationWasReceivedOrFetched();
+		boolean didApply = runner.run((snapshot) -> test.nodeState.mainAppendMutationFromUpstream(upstream, 0L, record1));
+		Assert.assertTrue(didApply);
+		Assert.assertEquals(0L, client_mainEnterFollowerState.get().longValue());
+		Assert.assertEquals(record1, mainMutationWasReceivedOrFetched.get());
+		cluster_mainEnterFollowerState.get();
+		// Send a message which contradicts that.
+		// (note that the contradiction doesn't send mainMutationWasReceivedOrFetched)
+		didApply = runner.run((snapshot) -> test.nodeState.mainAppendMutationFromUpstream(upstream, 2L, record2));
+		Assert.assertTrue(!didApply);
+		// Send a replacement message.
+		mainMutationWasReceivedOrFetched = test.clusterManager.get_mainMutationWasReceivedOrFetched();
+		didApply = runner.run((snapshot) -> test.nodeState.mainAppendMutationFromUpstream(upstream, 0L, record1_fix));
+		Assert.assertTrue(didApply);
+		Assert.assertEquals(record1_fix, mainMutationWasReceivedOrFetched.get());
+		// Re-send the failure.
+		mainMutationWasReceivedOrFetched = test.clusterManager.get_mainMutationWasReceivedOrFetched();
+		didApply = runner.run((snapshot) -> test.nodeState.mainAppendMutationFromUpstream(upstream, 2L, record2));
+		Assert.assertTrue(didApply);
+		Assert.assertEquals(record2, mainMutationWasReceivedOrFetched.get());
 		
 		// Stop.
 		test.nodeState.handleStopCommand();
