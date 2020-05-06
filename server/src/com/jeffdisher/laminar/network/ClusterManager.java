@@ -238,6 +238,9 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 						// long as the network is writable) but the NodeState uses it for consensus offset.
 						DownstreamPeerState peer = _downstreamPeerByNode.get(node);
 						_callbacks.mainReceivedAckFromDownstream(peer.entry, lastReceivedMutationOffset);
+						
+						// See if we can send them anything right away.
+						_tryFetchOrSend(peer);
 					} else {
 						Assert.unreachable("Unknown response type");
 					}
