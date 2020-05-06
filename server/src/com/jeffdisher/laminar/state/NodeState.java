@@ -66,6 +66,8 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 	private long _nextLocalEventOffset;
 	// The offset of the mutation most recently committed to disk (used to keep both the clients and other nodes in sync).
 	private long _lastCommittedMutationOffset;
+	// The term number of the mutation most recently removed from in-flight (used to avoid conflict in sync).
+	private long _lastTermNumberRemovedFromInFlight;
 	// Note that event offsets will eventually need to be per-topic.
 	private long _lastCommittedEventOffset;
 
@@ -473,9 +475,10 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 			_commitAndUpdateBias(mutation, event);
 		} else {
 			// Store in list for later commit.
+			long previousMutationTermNumber = _getPreviousMutationTermNumber();
 			_inFlightMutations.add(new InFlightTuple(mutation, event));
 			// Notify anyone downstream about this.
-			_clusterManager.mainMutationWasReceivedOrFetched(0L, mutation);
+			_clusterManager.mainMutationWasReceivedOrFetched(previousMutationTermNumber, mutation);
 		}
 	}
 
@@ -511,6 +514,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		_diskManager.commitMutation(mutation);
 		// We are shifting the baseline by doing this.
 		_inFlightMutationOffsetBias += 1;
+		_lastTermNumberRemovedFromInFlight = mutation.termNumber;
 	}
 
 	private void _rebuildDownstreamUnionAfterConfigChange() {
@@ -578,6 +582,12 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		return (null != record)
 				? new IClusterManagerCallbacks.MutationWrapper(0L, record)
 				: null;
+	}
+
+	private long _getPreviousMutationTermNumber() {
+		return _inFlightMutations.isEmpty()
+				? _lastTermNumberRemovedFromInFlight
+				: _inFlightMutations.getLast().mutation.termNumber;
 	}
 
 
