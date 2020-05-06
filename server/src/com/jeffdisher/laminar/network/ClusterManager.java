@@ -400,7 +400,7 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		
 		if (_isLeader) {
-			DownstreamMessage message = DownstreamMessage.appendMutations(mutation, _lastCommittedMutationOffset);
+			DownstreamMessage message = DownstreamMessage.appendMutations(0L, mutation, _lastCommittedMutationOffset);
 			_sendDownstreamMessage(peer, message, nowMillis);
 			peer.nextMutationOffsetToSend += 1;
 		}
