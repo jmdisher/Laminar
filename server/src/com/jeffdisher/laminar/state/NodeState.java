@@ -422,16 +422,15 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 
 	// <IConsoleManagerBackgroundCallbacks>
 	@Override
-	public void handleStopCommand() {
-		// This MUST NOT be called on the main thread.
+	public void ioEnqueueConsoleCommandForMainThread(Consumer<StateSnapshot> command) {
 		Assert.assertTrue(Thread.currentThread() != _mainThread);
-		
-		_commandQueue.put(new Consumer<StateSnapshot>() {
-			@Override
-			public void accept(StateSnapshot arg) {
-				Assert.assertTrue(Thread.currentThread() == _mainThread);
-				_keepRunning = false;
-			}});
+		_commandQueue.put(command);
+	}
+
+	@Override
+	public void mainHandleStopCommand() {
+		Assert.assertTrue(Thread.currentThread() == _mainThread);
+		_keepRunning = false;
 	}
 	// </IConsoleManagerBackgroundCallbacks>
 

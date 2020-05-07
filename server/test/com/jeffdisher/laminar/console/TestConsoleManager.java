@@ -4,11 +4,14 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.PrintStream;
-import java.util.concurrent.CountDownLatch;
+import java.util.function.Consumer;
 
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
+
+import com.jeffdisher.laminar.state.F;
+import com.jeffdisher.laminar.state.StateSnapshot;
 
 
 public class TestConsoleManager {
@@ -23,32 +26,44 @@ public class TestConsoleManager {
 	@Test
 	public void testStopParse() throws Throwable {
 		FakeStream stream = new FakeStream("stop\n");
-		CountDownLatch waitForStop = new CountDownLatch(1);
+		F<Consumer<StateSnapshot>> wrapper = new F<>();
+		boolean[] out = new boolean[1];
 		ConsoleManager manager = new ConsoleManager(_fakeOut, stream, new IConsoleManagerBackgroundCallbacks() {
 			@Override
-			public void handleStopCommand() {
-				waitForStop.countDown();
+			public void ioEnqueueConsoleCommandForMainThread(Consumer<StateSnapshot> command) {
+				wrapper.put(command);
+			}
+			@Override
+			public void mainHandleStopCommand() {
+				out[0] = true;
 			}
 		});
 		manager.startAndWaitForReady();
 		stream.unblock();
-		waitForStop.await();
+		wrapper.get().accept(null);
+		Assert.assertTrue(out[0]);
 		manager.stopAndWaitForTermination();
 	}
 
 	@Test
 	public void testStopWithArgs() throws Throwable {
 		FakeStream stream = new FakeStream("stop now in 5\n");
-		CountDownLatch waitForStop = new CountDownLatch(1);
+		F<Consumer<StateSnapshot>> wrapper = new F<>();
+		boolean[] out = new boolean[1];
 		ConsoleManager manager = new ConsoleManager(_fakeOut, stream, new IConsoleManagerBackgroundCallbacks() {
 			@Override
-			public void handleStopCommand() {
-				waitForStop.countDown();
+			public void ioEnqueueConsoleCommandForMainThread(Consumer<StateSnapshot> command) {
+				wrapper.put(command);
+			}
+			@Override
+			public void mainHandleStopCommand() {
+				out[0] = true;
 			}
 		});
 		manager.startAndWaitForReady();
 		stream.unblock();
-		waitForStop.await();
+		wrapper.get().accept(null);
+		Assert.assertTrue(out[0]);
 		manager.stopAndWaitForTermination();
 	}
 
@@ -57,7 +72,12 @@ public class TestConsoleManager {
 		FakeStream stream = new FakeStream("");
 		ConsoleManager manager = new ConsoleManager(_fakeOut, stream, new IConsoleManagerBackgroundCallbacks() {
 			@Override
-			public void handleStopCommand() {
+			public void ioEnqueueConsoleCommandForMainThread(Consumer<StateSnapshot> command) {
+				// We shouldn't see this.
+				Assert.fail();
+			}
+			@Override
+			public void mainHandleStopCommand() {
 				// We shouldn't see this.
 				Assert.fail();
 			}
@@ -72,16 +92,22 @@ public class TestConsoleManager {
 	@Test
 	public void testStopMultiple() throws Throwable {
 		FakeStream stream = new FakeStream("stop\nstopstop\nstop\n\n\n");
-		CountDownLatch waitForStop = new CountDownLatch(1);
+		F<Consumer<StateSnapshot>> wrapper = new F<>();
+		boolean[] out = new boolean[1];
 		ConsoleManager manager = new ConsoleManager(_fakeOut, stream, new IConsoleManagerBackgroundCallbacks() {
 			@Override
-			public void handleStopCommand() {
-				waitForStop.countDown();
+			public void ioEnqueueConsoleCommandForMainThread(Consumer<StateSnapshot> command) {
+				wrapper.put(command);
+			}
+			@Override
+			public void mainHandleStopCommand() {
+				out[0] = true;
 			}
 		});
 		manager.startAndWaitForReady();
 		stream.unblock();
-		waitForStop.await();
+		wrapper.get().accept(null);
+		Assert.assertTrue(out[0]);
 		manager.stopAndWaitForTermination();
 	}
 
@@ -93,16 +119,22 @@ public class TestConsoleManager {
 		}
 		builder.append("\nstop\n");
 		FakeStream stream = new FakeStream(builder.toString());
-		CountDownLatch waitForStop = new CountDownLatch(1);
+		F<Consumer<StateSnapshot>> wrapper = new F<>();
+		boolean[] out = new boolean[1];
 		ConsoleManager manager = new ConsoleManager(_fakeOut, stream, new IConsoleManagerBackgroundCallbacks() {
 			@Override
-			public void handleStopCommand() {
-				waitForStop.countDown();
+			public void ioEnqueueConsoleCommandForMainThread(Consumer<StateSnapshot> command) {
+				wrapper.put(command);
+			}
+			@Override
+			public void mainHandleStopCommand() {
+				out[0] = true;
 			}
 		});
 		manager.startAndWaitForReady();
 		stream.unblock();
-		waitForStop.await();
+		wrapper.get().accept(null);
+		Assert.assertTrue(out[0]);
 		manager.stopAndWaitForTermination();
 	}
 

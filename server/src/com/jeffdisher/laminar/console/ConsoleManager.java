@@ -105,7 +105,7 @@ public class ConsoleManager implements IConsoleManager {
 				String next = scanner.next();
 				// We only understand "stop".
 				if (next.equalsIgnoreCase("stop")) {
-					_callbacks.handleStopCommand();
+					_callbacks.ioEnqueueConsoleCommandForMainThread((snapshot) -> _callbacks.mainHandleStopCommand());
 				} else {
 					_out.println("Command \"" + next + "\" not understood");
 				}

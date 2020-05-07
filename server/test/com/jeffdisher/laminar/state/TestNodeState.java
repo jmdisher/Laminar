@@ -38,7 +38,8 @@ public class TestNodeState {
 		MainThread test = new MainThread();
 		test.start();
 		test.startLatch.await();
-		test.nodeState.handleStopCommand();
+		Runner runner = new Runner(test.nodeState);
+		runner.runVoid((snapshot) -> test.nodeState.mainHandleStopCommand());
 		test.join();
 	}
 
@@ -69,7 +70,7 @@ public class TestNodeState {
 		Assert.assertEquals(mutationNumber, toCluster.get().longValue());
 		
 		// Stop.
-		test.nodeState.handleStopCommand();
+		runner.runVoid((snapshot) -> test.nodeState.mainHandleStopCommand());
 		test.join();
 	}
 
@@ -113,7 +114,7 @@ public class TestNodeState {
 		Assert.assertEquals(record2, mainMutationWasReceivedOrFetched.get());
 		
 		// Stop.
-		test.nodeState.handleStopCommand();
+		runner.runVoid((snapshot) -> test.nodeState.mainHandleStopCommand());
 		test.join();
 	}
 
@@ -172,7 +173,7 @@ public class TestNodeState {
 		Assert.assertNull(runner.run((snapshot) -> nodeState.mainClusterFetchMutationIfAvailable(3L)));
 		
 		// Stop.
-		test.nodeState.handleStopCommand();
+		runner.runVoid((snapshot) -> test.nodeState.mainHandleStopCommand());
 		test.join();
 	}
 
