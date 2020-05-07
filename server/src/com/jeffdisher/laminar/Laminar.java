@@ -6,6 +6,7 @@ import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.UnknownHostException;
 import java.nio.channels.ServerSocketChannel;
+import java.util.UUID;
 
 import com.jeffdisher.laminar.console.ConsoleManager;
 import com.jeffdisher.laminar.disk.DiskManager;
@@ -31,6 +32,10 @@ public class Laminar {
 		// The way this starts up is to parse command-line options, bind required ports, output details of the start-up,
 		// ensure the writability of the data directory, start all background components, print that start-up has
 		// completed, and then the main thread transitions into its state management mode where it runs until shutdown.
+		
+		// Create the UUID this node will use (in config, etc).
+		UUID serverUuid = UUID.randomUUID();
+		System.out.println("Laminar server starting up:  " + serverUuid);
 		
 		// Parse command-line options.
 		String clientPortString = parseOption(args, "--client");
@@ -103,7 +108,7 @@ public class Laminar {
 		// Now, create the managers.
 		ClientManager clientManager = null;
 		try {
-			clientManager = new ClientManager(clientSocket, thisNodeState);
+			clientManager = new ClientManager(serverUuid, clientSocket, thisNodeState);
 		} catch (IOException e1) {
 			// Not sure how creating the Selector would fail but we can handle it since we haven't started, yet.
 			failStart("Failure creating ClientManager: " + e1.getLocalizedMessage());

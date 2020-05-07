@@ -29,6 +29,11 @@ public enum ClientMessageType {
 	 */
 	FORCE_LEADER,
 	/**
+	 * This message is used when a tool wants to build a cluster config.
+	 * Returns the UUID of the server and disconnects the caller.
+	 */
+	GET_UUID,
+	/**
 	 * This message is purely temporary to verify the client-server communication.
 	 */
 	TEMP,

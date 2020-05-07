@@ -42,7 +42,7 @@ public class TestClientManager {
 		int port = PORT_BASE + 1;
 		ServerSocketChannel socket = TestingHelpers.createServerSocket(port);
 		LatchedCallbacks callbacks = new LatchedCallbacks();
-		ClientManager manager = new ClientManager(socket, callbacks);
+		ClientManager manager = new ClientManager(UUID.randomUUID(), socket, callbacks);
 		manager.startAndWaitForReady();
 		
 		// Create the connection and send the "temp" message through, directly.
@@ -99,7 +99,7 @@ public class TestClientManager {
 		int port = PORT_BASE + 2;
 		ServerSocketChannel socket = TestingHelpers.createServerSocket(port);
 		LatchedCallbacks callbacks = new LatchedCallbacks();
-		ClientManager manager = new ClientManager(socket, callbacks);
+		ClientManager manager = new ClientManager(UUID.randomUUID(), socket, callbacks);
 		manager.startAndWaitForReady();
 		
 		// Create the connection, send the commit message, and read it, directly.
@@ -163,7 +163,7 @@ public class TestClientManager {
 		int port = PORT_BASE + 3;
 		ServerSocketChannel socket = TestingHelpers.createServerSocket(port);
 		LatchedCallbacks callbacks = new LatchedCallbacks();
-		ClientManager manager = new ClientManager(socket, callbacks);
+		ClientManager manager = new ClientManager(UUID.randomUUID(), socket, callbacks);
 		manager.startAndWaitForReady();
 		
 		// Create the connection, send the commit message, and read it, directly.
@@ -210,7 +210,7 @@ public class TestClientManager {
 		int port = PORT_BASE + 4;
 		ServerSocketChannel socket = TestingHelpers.createServerSocket(port);
 		LatchedCallbacks callbacks = new LatchedCallbacks();
-		ClientManager manager = new ClientManager(socket, callbacks);
+		ClientManager manager = new ClientManager(UUID.randomUUID(), socket, callbacks);
 		manager.startAndWaitForReady();
 		
 		// Create the connection, send the commit message, and read it, directly.
@@ -257,7 +257,7 @@ public class TestClientManager {
 		int port = PORT_BASE + 5;
 		ServerSocketChannel socket = TestingHelpers.createServerSocket(port);
 		LatchedCallbacks callbacks = new LatchedCallbacks();
-		ClientManager manager = new ClientManager(socket, callbacks);
+		ClientManager manager = new ClientManager(UUID.randomUUID(), socket, callbacks);
 		manager.startAndWaitForReady();
 		
 		// Now, tell the ClientManager to enter the follower state.

@@ -325,6 +325,31 @@ public class TestClientsAndListeners {
 		Assert.assertEquals(0, follower.stop());
 	}
 
+	@Test
+	public void testGetUuid() throws Throwable {
+		// Start up a fake client to verify that the RECEIVED and COMMITTED responses have the expected commit offsets.
+		ServerWrapper wrapper = ServerWrapper.startedServerWrapper("testGetUuid", 2003, 2002, new File("/tmp/laminar"));
+		
+		// HACK - wait for startup.
+		Thread.sleep(500);
+		
+		// Fake a connection from a client:  send the handshake and a few messages, then disconnect.
+		InetSocketAddress address = new InetSocketAddress(InetAddress.getLocalHost(), 2002);
+		SocketChannel outbound = SocketChannel.open();
+		outbound.configureBlocking(true);
+		outbound.connect(address);
+		
+		_sendMessage(outbound, ClientMessage.getUuid());
+		// We want this to be precisely a UUID in a message frame.
+		byte[] payload = _readFramedMessage(outbound);
+		Assert.assertEquals(2 * Long.BYTES, payload.length);
+		// Read EOF.
+		Assert.assertEquals(-1, outbound.read(ByteBuffer.allocate(1)));
+		
+		outbound.close();
+		Assert.assertEquals(0, wrapper.stop());
+	}
+
 
 	private void _sendMessage(SocketChannel socket, ClientMessage message) throws IOException {
 		byte[] serialized = message.serialize();
@@ -339,6 +364,11 @@ public class TestClientsAndListeners {
 	}
 
 	private ClientResponse _readResponse(SocketChannel socket) throws IOException {
+		byte[] payload = _readFramedMessage(socket);
+		return ClientResponse.deserialize(payload);
+	}
+
+	private byte[] _readFramedMessage(SocketChannel socket) throws IOException {
 		ByteBuffer buffer = ByteBuffer.allocate(Short.BYTES);
 		int read = socket.read(buffer);
 		Assert.assertEquals(buffer.capacity(), read);
@@ -347,7 +377,7 @@ public class TestClientsAndListeners {
 		buffer = ByteBuffer.allocate(size);
 		read = socket.read(buffer);
 		Assert.assertEquals(buffer.capacity(), read);
-		return ClientResponse.deserialize(buffer.array());
+		return buffer.array();
 	}
 
 

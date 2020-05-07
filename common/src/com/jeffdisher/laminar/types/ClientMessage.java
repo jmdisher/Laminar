@@ -75,6 +75,18 @@ public class ClientMessage {
 	}
 
 	/**
+	 * Creates a message to retrieve the UUID of the contacted server.
+	 * This is only used in tools which wish to create a new cluster config since that now includes the UUIDs of each
+	 * server.
+	 * Note that this message is sent on a fresh connection, not an established one (to avoid redirects).
+	 * 
+	 * @return A new ClientMessage instance.
+	 */
+	public static ClientMessage getUuid() {
+		return new ClientMessage(ClientMessageType.GET_UUID, -1L, ClientMessagePayload_Temp.create(new byte[0]));
+	}
+
+	/**
 	 * Creates a temp message.
 	 * Note that, as the name implies, this only exists for temporary testing of the flow and will be removed, later.
 	 * 
@@ -145,6 +157,9 @@ public class ClientMessage {
 			payload = ClientMessagePayload_Listen.deserialize(buffer);
 			break;
 		case FORCE_LEADER:
+			payload = ClientMessagePayload_Temp.deserialize(buffer);
+			break;
+		case GET_UUID:
 			payload = ClientMessagePayload_Temp.deserialize(buffer);
 			break;
 		case TEMP:

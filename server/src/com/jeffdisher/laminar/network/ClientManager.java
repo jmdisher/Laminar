@@ -1,6 +1,7 @@
 package com.jeffdisher.laminar.network;
 
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.nio.channels.ServerSocketChannel;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -34,6 +35,7 @@ import com.jeffdisher.laminar.utils.Assert;
  */
 public class ClientManager implements IClientManager, INetworkManagerBackgroundCallbacks {
 	private final Thread _mainThread;
+	private final UUID _serverUuid;
 	private final NetworkManager _networkManager;
 	private final IClientManagerCallbacks _callbacks;
 
@@ -49,6 +51,8 @@ public class ClientManager implements IClientManager, INetworkManagerBackgroundC
 	private final Map<UUID, ClientState> _normalClientsById;
 	private final Map<NetworkManager.NodeToken, ListenerState> _listenerClients;
 	private final Map<Long, ClientCommitTuple> _pendingMessageCommits;
+	// Clients which we want to disconnect but are currently waiting for them to become write-ready to know that the buffer has been flushed.
+	private final Set<NetworkManager.NodeToken> _closingClients;
 	// This is a map of local offsets to the list of listener clients waiting for them.
 	// A key is only in this map if a load request for it is outstanding or it is an offset which hasn't yet been sent from a client.
 	// The map uses the ClientNode since these may have disconnected.
@@ -58,8 +62,9 @@ public class ClientManager implements IClientManager, INetworkManagerBackgroundC
 	private final Map<Long, List<NetworkManager.NodeToken>> _listenersWaitingOnLocalOffset;
 	private final Map<Long, List<ReconnectingClientState>> _reconnectingClientsByGlobalOffset;
 
-	public ClientManager(ServerSocketChannel serverSocket, IClientManagerCallbacks callbacks) throws IOException {
+	public ClientManager(UUID serverUuid, ServerSocketChannel serverSocket, IClientManagerCallbacks callbacks) throws IOException {
 		_mainThread = Thread.currentThread();
+		_serverUuid = serverUuid;
 		// This is really just a high-level wrapper over the common NetworkManager so create that here.
 		_networkManager = NetworkManager.bidirectional(serverSocket, this);
 		_callbacks = callbacks;
@@ -71,6 +76,7 @@ public class ClientManager implements IClientManager, INetworkManagerBackgroundC
 		_pendingMessageCommits = new HashMap<>();
 		_listenersWaitingOnLocalOffset = new HashMap<>();
 		_reconnectingClientsByGlobalOffset = new HashMap<>();
+		_closingClients = new HashSet<>();
 	}
 
 	/**
@@ -258,6 +264,7 @@ public class ClientManager implements IClientManager, INetworkManagerBackgroundC
 				}
 				boolean removedNormal = (null != removedClient);
 				boolean removedListener = (null != _listenerClients.remove(node));
+				boolean removedClosing = _closingClients.remove(node);
 				boolean removeConsistent = false;
 				if (removedNew) {
 					System.out.println("Disconnect new client");
@@ -271,6 +278,11 @@ public class ClientManager implements IClientManager, INetworkManagerBackgroundC
 				if (removedListener) {
 					Assert.assertTrue(!removeConsistent);
 					System.out.println("Disconnect listener client");
+					removeConsistent = true;
+				}
+				if (removedClosing) {
+					Assert.assertTrue(!removeConsistent);
+					System.out.println("Disconnect closing client");
 					removeConsistent = true;
 				}
 				Assert.assertTrue(removeConsistent);
@@ -291,6 +303,7 @@ public class ClientManager implements IClientManager, INetworkManagerBackgroundC
 				Assert.assertTrue(!_newClients.contains(node));
 				ClientState normalState = _normalClientsByToken.get(node);
 				ListenerState listenerState = _listenerClients.get(node);
+				boolean isClosing = _closingClients.contains(node);
 				if (null != normalState) {
 					Assert.assertTrue(null == listenerState);
 					// Normal client.
@@ -317,6 +330,10 @@ public class ClientManager implements IClientManager, INetworkManagerBackgroundC
 							_callbacks.mainRequestEventFetch(nextLocalEventToFetch);
 						}
 					}
+				} else if (isClosing) {
+					// We were just waiting for this to be write-ready (since that means the write-buffer was flushed so close this).
+					_networkManager.closeConnection(node);
+					_closingClients.remove(node);
 				} else {
 					// This appears to have disconnected before we processed it.
 					System.out.println("NOTE: Processed write ready from disconnected client");
@@ -502,6 +519,18 @@ public class ClientManager implements IClientManager, INetworkManagerBackgroundC
 			Assert.assertTrue(didRemove);
 			_networkManager.closeConnection(client);
 			_callbacks.mainForceLeader();
+			break;
+		}
+		case GET_UUID: {
+			// Send them the UUID and close this as soon as they become writable, again.
+			boolean didRemove = _newClients.remove(client);
+			Assert.assertTrue(didRemove);
+			byte[] payload = ByteBuffer.allocate(2 * Long.BYTES)
+					.putLong(_serverUuid.getMostSignificantBits())
+					.putLong(_serverUuid.getLeastSignificantBits())
+					.array();
+			_networkManager.trySendMessage(client, payload);
+			_closingClients.add(client);
 			break;
 		}
 		default:
