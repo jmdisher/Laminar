@@ -22,7 +22,7 @@ public class TestDownstreamMessage {
 		InetAddress localhost = InetAddress.getLocalHost();
 		InetSocketAddress cluster = ClusterConfig.cleanSocketAddress(new InetSocketAddress(localhost, 1000));
 		InetSocketAddress client = ClusterConfig.cleanSocketAddress(new InetSocketAddress(localhost, 1001));
-		ConfigEntry entry = new ConfigEntry(cluster, client);
+		ConfigEntry entry = new ConfigEntry(UUID.randomUUID(), cluster, client);
 		DownstreamMessage message = DownstreamMessage.identity(entry);
 		int size = message.serializedSize();
 		ByteBuffer buffer = ByteBuffer.allocate(size);
@@ -31,7 +31,7 @@ public class TestDownstreamMessage {
 		
 		DownstreamMessage test = DownstreamMessage.deserializeFrom(buffer);
 		DownstreamPayload_Identity payload = (DownstreamPayload_Identity)test.payload;
-		Assert.assertEquals(entry, payload.self);
+		Assert.assertEquals(entry.nodeUuid, payload.self.nodeUuid);
 	}
 
 	@Test

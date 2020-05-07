@@ -4,6 +4,7 @@ import java.net.InetSocketAddress;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.UUID;
 
 import org.junit.Assert;
 import org.junit.Test;
@@ -58,7 +59,7 @@ public class TestSyncProgress {
 	private static ClusterConfig _buildConfig(int size) {
 		ConfigEntry[] entries = new ConfigEntry[size];
 		for (int i =0; i < size; ++i) {
-			entries[i] = new ConfigEntry(new InetSocketAddress(1000 + (i*2)), new InetSocketAddress(1001 + (i*2)));
+			entries[i] = new ConfigEntry(UUID.randomUUID(), new InetSocketAddress(1000 + (i*2)), new InetSocketAddress(1001 + (i*2)));
 		}
 		return ClusterConfig.configFromEntries(entries);
 	}

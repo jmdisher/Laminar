@@ -84,7 +84,7 @@ public class TestNodeState {
 		test.start();
 		test.startLatch.await();
 		Runner runner = new Runner(test.nodeState);
-		ConfigEntry upstream = new ConfigEntry(new InetSocketAddress(3), new InetSocketAddress(4));
+		ConfigEntry upstream = new ConfigEntry(UUID.randomUUID(), new InetSocketAddress(3), new InetSocketAddress(4));
 		MutationRecord record1 = MutationRecord.generateRecord(MutationRecordType.TEMP, 1L, 1L, UUID.randomUUID(), 1, new byte[] {1});
 		MutationRecord record2 = MutationRecord.generateRecord(MutationRecordType.TEMP, 2L, 2L, UUID.randomUUID(), 1, new byte[] {2});
 		MutationRecord record1_fix = MutationRecord.generateRecord(record1.type, 2L, 1L, record1.clientId, record1.clientNonce, record1.payload);
@@ -135,8 +135,8 @@ public class TestNodeState {
 		test.startLatch.await();
 		NodeState nodeState = test.nodeState;
 		Runner runner = new Runner(nodeState);
-		ConfigEntry originalEntry = _createConfig().entries[0];
-		ConfigEntry upstreamEntry = new ConfigEntry(new InetSocketAddress(3), new InetSocketAddress(4));
+		ConfigEntry originalEntry = test.initialConfig.entries[0];
+		ConfigEntry upstreamEntry = new ConfigEntry(UUID.randomUUID(), new InetSocketAddress(3), new InetSocketAddress(4));
 		ClusterConfig newConfig = ClusterConfig.configFromEntries(new ConfigEntry[] {originalEntry, upstreamEntry});
 		// Send it 2 mutations (first one is 2-node config).
 		MutationRecord configChangeRecord = MutationRecord.generateRecord(MutationRecordType.UPDATE_CONFIG, 1L, 1L, UUID.randomUUID(), 1L, newConfig.serialize());
@@ -179,7 +179,7 @@ public class TestNodeState {
 
 
 	private static ClusterConfig _createConfig() {
-		return ClusterConfig.configFromEntries(new ConfigEntry[] {new ConfigEntry(new InetSocketAddress(1), new InetSocketAddress(2))});
+		return ClusterConfig.configFromEntries(new ConfigEntry[] {new ConfigEntry(UUID.randomUUID(), new InetSocketAddress(1), new InetSocketAddress(2))});
 	}
 
 
@@ -188,6 +188,7 @@ public class TestNodeState {
 	 * perspective of Laminar.
 	 */
 	private static class MainThread extends Thread {
+		public final ClusterConfig initialConfig;
 		public NodeState nodeState;
 		public FutureClientManager clientManager;
 		public FutureClusterManager clusterManager;
@@ -195,12 +196,13 @@ public class TestNodeState {
 		public CountDownLatch startLatch;
 		
 		public MainThread() {
+			this.initialConfig = _createConfig();
 			this.startLatch = new CountDownLatch(1);
 		}
 		
 		@Override
 		public void run() {
-			this.nodeState = new NodeState(_createConfig());
+			this.nodeState = new NodeState(this.initialConfig);
 			this.clientManager = new FutureClientManager();
 			this.clusterManager = new FutureClusterManager();
 			this.diskManager = new FutureDiskManager();

@@ -56,7 +56,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 	// We keep an image of ourself as a downstream peer state to avoid special-cases in looking at clusters so we will need to update it with latest mutation offset as soon as we assign one.
 	private final DownstreamPeerSyncState _selfState;
 	// The union of all config entries we are currently monitoring (normally just from the current config but could be all in joint consensus).
-	private final Map<ConfigEntry, DownstreamPeerSyncState> _unionOfDownstreamNodes;
+	private final Map<UUID, DownstreamPeerSyncState> _unionOfDownstreamNodes;
 	private SyncProgress _currentConfig;
 	// This map is usually empty but contains any ClusterConfigs which haven't yet committed (meaning they are part of joint consensus).
 	private final Map<Long, SyncProgress> _configsPendingCommit;
@@ -94,7 +94,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		_self = initialConfig.entries[0];
 		_selfState = new DownstreamPeerSyncState();
 		_unionOfDownstreamNodes = new HashMap<>();
-		_unionOfDownstreamNodes.put(_self, _selfState);
+		_unionOfDownstreamNodes.put(_self.nodeUuid, _selfState);
 		_currentConfig = new SyncProgress(initialConfig, Collections.singleton(_selfState));
 		_configsPendingCommit = new HashMap<>();
 		
@@ -344,7 +344,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		Assert.assertTrue(RaftState.LEADER == _currentState);
 		
 		// Update the offset in our sync tracking.
-		_unionOfDownstreamNodes.get(peer).lastMutationOffsetReceived = mutationOffset;
+		_unionOfDownstreamNodes.get(peer.nodeUuid).lastMutationOffsetReceived = mutationOffset;
 		
 		// See if this changed the consensus offset.
 		// (we are the leader so we need to do a term check).
@@ -467,12 +467,12 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 			// Add the missing nodes and start the outgoing connections.
 			Set<DownstreamPeerSyncState> nodesInConfig = new HashSet<>();
 			for (ConfigEntry entry : newConfig.entries) {
-				DownstreamPeerSyncState peer = _unionOfDownstreamNodes.get(entry);
+				DownstreamPeerSyncState peer = _unionOfDownstreamNodes.get(entry.nodeUuid);
 				if (null == peer) {
 					// This is a new node so start the connection and add it to the map.
 					peer = new DownstreamPeerSyncState();
 					_clusterManager.mainOpenDownstreamConnection(entry);
-					_unionOfDownstreamNodes.put(entry, peer);
+					_unionOfDownstreamNodes.put(entry.nodeUuid, peer);
 				}
 				nodesInConfig.add(peer);
 			}
@@ -543,14 +543,14 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 	}
 
 	private void _rebuildDownstreamUnionAfterConfigChange() {
-		HashMap<ConfigEntry, DownstreamPeerSyncState> copy = new HashMap<>(_unionOfDownstreamNodes);
+		HashMap<UUID, DownstreamPeerSyncState> copy = new HashMap<>(_unionOfDownstreamNodes);
 		_unionOfDownstreamNodes.clear();
 		for (ConfigEntry entry : _currentConfig.config.entries) {
-			_unionOfDownstreamNodes.put(entry, copy.get(entry));
+			_unionOfDownstreamNodes.put(entry.nodeUuid, copy.get(entry.nodeUuid));
 		}
 		for (SyncProgress pending : _configsPendingCommit.values()) {
 			for (ConfigEntry entry : pending.config.entries) {
-				_unionOfDownstreamNodes.put(entry, copy.get(entry));
+				_unionOfDownstreamNodes.put(entry.nodeUuid, copy.get(entry.nodeUuid));
 			}
 		}
 	}

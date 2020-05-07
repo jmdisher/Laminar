@@ -23,7 +23,9 @@ import com.jeffdisher.laminar.utils.Assert;
  * Required command-line arguments:
  * -"--client" &lt;port&gt; - the port which will be bound for listening to client connections
  * -"--cluster" &lt;port&gt; - the port which will be bound for listening to connections from other cluster members
- * -"-data" - the directory which will be used for storing incoming and committed stream files
+ * -"--data" - the directory which will be used for storing incoming and committed stream files
+ * Optional arguments:
+ * -"--uuid" &lt;UUID&gt; - forces the UUID of the server to be this instead of randomly generated on start-up
  * NOTE:  Port settings will be made optional in the future (mostly just for testing multiple nodes on one machine).
  * NOTE:  At some point, forcing interfaces for binding will be enabled but not in the short-term.
  */
@@ -33,14 +35,17 @@ public class Laminar {
 		// ensure the writability of the data directory, start all background components, print that start-up has
 		// completed, and then the main thread transitions into its state management mode where it runs until shutdown.
 		
-		// Create the UUID this node will use (in config, etc).
-		UUID serverUuid = UUID.randomUUID();
-		System.out.println("Laminar server starting up:  " + serverUuid);
-		
 		// Parse command-line options.
 		String clientPortString = parseOption(args, "--client");
 		String clusterPortString = parseOption(args, "--cluster");
 		String dataDirectoryName = parseOption(args, "--data");
+		String uuidString = parseOption(args, "--uuid");
+		
+		// Create the UUID this node will use (in config, etc).
+		UUID serverUuid = (null == uuidString)
+				? UUID.randomUUID()
+				: UUID.fromString(uuidString);
+		System.out.println("Laminar server starting up:  " + serverUuid);
 		
 		// Make sure we were given our required options.
 		if ((null == clientPortString) || (null == clusterPortString) || (null == dataDirectoryName)) {
@@ -92,7 +97,7 @@ public class Laminar {
 		// By this point, all requirements of the system should be satisfied so create the subsystems.
 		// First, the core NodeState and the background thread callback handlers for the managers.
 		// Note that we need to create an "initial config" which we will use until we get a cluster update from a client or another node starts sending updates.
-		ConfigEntry self = new ConfigEntry(clusterSocketAddress, clientSocketAddress);
+		ConfigEntry self = new ConfigEntry(serverUuid, clusterSocketAddress, clientSocketAddress);
 		ClusterConfig initialConfig = ClusterConfig.configFromEntries(new ConfigEntry[] {self});
 		NodeState thisNodeState = new NodeState(initialConfig);
 		// We also want to install an uncaught exception handler to make sure background thread failures are fatal.

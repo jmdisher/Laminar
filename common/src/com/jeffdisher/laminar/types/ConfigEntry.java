@@ -4,6 +4,7 @@ import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.UnknownHostException;
 import java.nio.ByteBuffer;
+import java.util.UUID;
 
 import com.jeffdisher.laminar.utils.Assert;
 
@@ -20,9 +21,10 @@ public final class ConfigEntry {
 	public static final int MAX_PORT = (64 * 1024) - 1;
 
 	public static ConfigEntry deserializeFrom(ByteBuffer buffer) {
+		UUID nodeUuid = new UUID(buffer.getLong(), buffer.getLong());
 		InetSocketAddress cluster = _readPair(buffer);
 		InetSocketAddress client = _readPair(buffer);
-		return new ConfigEntry(cluster, client);
+		return new ConfigEntry(nodeUuid, cluster, client);
 	}
 
 
@@ -47,36 +49,24 @@ public final class ConfigEntry {
 	}
 
 
+	public final UUID nodeUuid;
 	public final InetSocketAddress cluster;
 	public final InetSocketAddress client;
 	
-	public ConfigEntry(InetSocketAddress cluster, InetSocketAddress client) {
+	public ConfigEntry(UUID nodeUuid, InetSocketAddress cluster, InetSocketAddress client) {
+		this.nodeUuid = nodeUuid;
 		this.cluster = cluster;
 		this.client = client;
 	}
-	
-	@Override
-	public boolean equals(Object obj) {
-		boolean isEqual = false;
-		if ((null != obj) && (ConfigEntry.class == obj.getClass())) {
-			ConfigEntry other = (ConfigEntry) obj;
-			isEqual = this.cluster.equals(other.cluster) && this.client.equals(other.client);
-		}
-		return isEqual;
-	}
-	
-	@Override
-	public int hashCode() {
-		return this.cluster.hashCode() ^ this.client.hashCode();
-	}
-	
+
 	@Override
 	public String toString() {
-		return "(Cluster: " + this.cluster.toString() + ", Client: " + this.client + ")";
+		return "(UUID: " + this.nodeUuid + ", Cluster: " + this.cluster.toString() + ", Client: " + this.client + ")";
 	}
 
 	public int serializedSize() {
 		int bufferSize = 0;
+		bufferSize += (2 * Long.BYTES);
 		// The port is always a u16 but the IP can be 4 or 16 bytes, and each one has a byte to describe which.
 		bufferSize += Byte.BYTES + this.cluster.getAddress().getAddress().length + Short.BYTES;
 		bufferSize += Byte.BYTES + this.client.getAddress().getAddress().length + Short.BYTES;
@@ -84,6 +74,8 @@ public final class ConfigEntry {
 	}
 
 	public void serializeInto(ByteBuffer buffer) {
+		buffer.putLong(this.nodeUuid.getMostSignificantBits());
+		buffer.putLong(this.nodeUuid.getLeastSignificantBits());
 		_writePair(buffer, this.cluster);
 		_writePair(buffer, this.client);
 	}

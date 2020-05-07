@@ -49,7 +49,7 @@ public class TestClusterManager {
 	public void testOutgoingConnections() throws Throwable {
 		int managerPort = PORT_BASE + 2;
 		int testPort = PORT_BASE + 3;
-		ConfigEntry testEntry = new ConfigEntry(new InetSocketAddress(testPort), new InetSocketAddress(9999));
+		ConfigEntry testEntry = new ConfigEntry(UUID.randomUUID(), new InetSocketAddress(testPort), new InetSocketAddress(9999));
 		ConfigEntry self = _buildSelf();
 		ServerSocketChannel socket = TestingHelpers.createServerSocket(managerPort);
 		TestClusterCallbacks callbacks = new TestClusterCallbacks();
@@ -74,7 +74,7 @@ public class TestClusterManager {
 		ByteBuffer serverIdentity = ByteBuffer.wrap(TestingHelpers.readMessageInFrame(fakePeerSocket.getInputStream()));
 		DownstreamMessage message = DownstreamMessage.deserializeFrom(serverIdentity);
 		Assert.assertEquals(DownstreamMessage.Type.IDENTITY, message.type);
-		Assert.assertEquals(self, ((DownstreamPayload_Identity)message.payload).self);
+		Assert.assertEquals(self.nodeUuid, ((DownstreamPayload_Identity)message.payload).self.nodeUuid);
 		long lastReceivedMutationOffset = 0L;
 		UpstreamResponse response = UpstreamResponse.peerState(lastReceivedMutationOffset);
 		ByteBuffer peerState = ByteBuffer.allocate(response.serializedSize());
@@ -121,8 +121,8 @@ public class TestClusterManager {
 		int downstreamPort = PORT_BASE + 7;
 		ServerSocketChannel upstreamSocket = TestingHelpers.createServerSocket(upstreamPort);
 		ServerSocketChannel downstreamSocket = TestingHelpers.createServerSocket(downstreamPort);
-		ConfigEntry upstreamEntry = new ConfigEntry(new InetSocketAddress(upstreamPort), new InetSocketAddress(9999));
-		ConfigEntry downstreamEntry = new ConfigEntry(new InetSocketAddress(downstreamPort), new InetSocketAddress(9999));
+		ConfigEntry upstreamEntry = new ConfigEntry(UUID.randomUUID(), new InetSocketAddress(upstreamPort), new InetSocketAddress(9999));
+		ConfigEntry downstreamEntry = new ConfigEntry(UUID.randomUUID(), new InetSocketAddress(downstreamPort), new InetSocketAddress(9999));
 		TestClusterCallbacks upstreamCallbacks = new TestClusterCallbacks();
 		TestClusterCallbacks downstreamCallbacks = new TestClusterCallbacks();
 		ClusterManager upstreamManager = new ClusterManager(upstreamEntry, upstreamSocket, upstreamCallbacks);
@@ -163,7 +163,7 @@ public class TestClusterManager {
 		Assert.assertNull(downstreamCallbacks.upstreamMutation);
 		Assert.assertEquals(0L, downstreamCallbacks.upstreamCommitOffset);
 		downstreamCallbacks.runOneCommand();
-		Assert.assertEquals(upstreamEntry, downstreamCallbacks.upstreamPeer);
+		Assert.assertEquals(upstreamEntry.nodeUuid, downstreamCallbacks.upstreamPeer.nodeUuid);
 		Assert.assertNotNull(downstreamCallbacks.upstreamMutation);
 		Assert.assertEquals(offset1, downstreamCallbacks.upstreamMutation.globalOffset);
 		// -1 nodeWriteReady
@@ -193,8 +193,8 @@ public class TestClusterManager {
 		int downstreamPort = PORT_BASE + 9;
 		ServerSocketChannel upstreamSocket = TestingHelpers.createServerSocket(upstreamPort);
 		ServerSocketChannel downstreamSocket = TestingHelpers.createServerSocket(downstreamPort);
-		ConfigEntry upstreamEntry = new ConfigEntry(new InetSocketAddress(upstreamPort), new InetSocketAddress(9999));
-		ConfigEntry downstreamEntry = new ConfigEntry(new InetSocketAddress(downstreamPort), new InetSocketAddress(9999));
+		ConfigEntry upstreamEntry = new ConfigEntry(UUID.randomUUID(), new InetSocketAddress(upstreamPort), new InetSocketAddress(9999));
+		ConfigEntry downstreamEntry = new ConfigEntry(UUID.randomUUID(), new InetSocketAddress(downstreamPort), new InetSocketAddress(9999));
 		TestClusterCallbacks upstreamCallbacks = new TestClusterCallbacks();
 		TestClusterCallbacks downstreamCallbacks = new TestClusterCallbacks();
 		ClusterManager upstreamManager = new ClusterManager(upstreamEntry, upstreamSocket, upstreamCallbacks);
@@ -234,7 +234,7 @@ public class TestClusterManager {
 		Assert.assertNull(downstreamCallbacks.upstreamMutation);
 		Assert.assertEquals(0L, downstreamCallbacks.upstreamCommitOffset);
 		downstreamCallbacks.runOneCommand();
-		Assert.assertEquals(upstreamEntry, downstreamCallbacks.upstreamPeer);
+		Assert.assertEquals(upstreamEntry.nodeUuid, downstreamCallbacks.upstreamPeer.nodeUuid);
 		Assert.assertNotNull(downstreamCallbacks.upstreamMutation);
 		downstreamCallbacks.upstreamMutation = null;
 		
@@ -304,7 +304,7 @@ public class TestClusterManager {
 		InetAddress localhost = InetAddress.getLocalHost();
 		InetSocketAddress cluster = ClusterConfig.cleanSocketAddress(new InetSocketAddress(localhost, 1000));
 		InetSocketAddress client = ClusterConfig.cleanSocketAddress(new InetSocketAddress(localhost, 1001));
-		return new ConfigEntry(cluster, client);
+		return new ConfigEntry(UUID.randomUUID(), cluster, client);
 	}
 
 

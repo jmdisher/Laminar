@@ -224,8 +224,8 @@ public class TestClientConnection {
 		FakeServer fakeServer1 = new FakeServer(socket1, baseMutationOffset);
 		FakeServer fakeServer2 = new FakeServer(socket2, baseMutationOffset);
 		
-		ConfigEntry entry1 = new ConfigEntry(new InetSocketAddress(InetAddress.getLocalHost(), 9999), new InetSocketAddress(InetAddress.getLocalHost(), port1));
-		ConfigEntry entry2 = new ConfigEntry(new InetSocketAddress(InetAddress.getLocalHost(), 9999), new InetSocketAddress(InetAddress.getLocalHost(), port2));
+		ConfigEntry entry1 = new ConfigEntry(UUID.randomUUID(), new InetSocketAddress(InetAddress.getLocalHost(), 9999), new InetSocketAddress(InetAddress.getLocalHost(), port1));
+		ConfigEntry entry2 = new ConfigEntry(UUID.randomUUID(), new InetSocketAddress(InetAddress.getLocalHost(), 9999), new InetSocketAddress(InetAddress.getLocalHost(), port2));
 		
 		// Start the client.
 		try (ClientConnection connection = ClientConnection.open(entry1.client)) {
@@ -293,7 +293,7 @@ public class TestClientConnection {
 	}
 
 	private static ClusterConfig _synthesizeClientOnlyConfig(InetSocketAddress address) {
-		return ClusterConfig.configFromEntries(new ConfigEntry[] {new ConfigEntry(new InetSocketAddress(address.getAddress(), 0), address)});
+		return ClusterConfig.configFromEntries(new ConfigEntry[] {new ConfigEntry(UUID.randomUUID(), new InetSocketAddress(address.getAddress(), 0), address)});
 	}
 
 

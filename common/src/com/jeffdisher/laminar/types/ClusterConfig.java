@@ -25,7 +25,7 @@ public final class ClusterConfig {
 
 	/**
 	 * Creates a new config from a list of entries.  Note that the InetSocketAddress instances in the entries will be
-	 * cleaned of hostnames to make future comparisons more easily defined.
+	 * cleaned of hostnames since they aren't part of serialization.
 	 * 
 	 * @param entries The entries in the config.
 	 * @return A new ClusterConfig instance.
@@ -39,7 +39,7 @@ public final class ClusterConfig {
 		for (int i = 0; i < entries.length; ++i) {
 			InetSocketAddress cluster = _cleanSocketAddress(entries[i].cluster);
 			InetSocketAddress client = _cleanSocketAddress(entries[i].client);
-			copy[i] = new ConfigEntry(cluster, client);
+			copy[i] = new ConfigEntry(entries[i].nodeUuid, cluster, client);
 		}
 		return new ClusterConfig(copy);
 	}

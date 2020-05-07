@@ -301,13 +301,18 @@ public class TestClientsAndListeners {
 		ServerWrapper follower = ServerWrapper.startedServerWrapper("testConfigProcessing-follower", 2005, 2004, new File("/tmp/laminar2"));
 		InetSocketAddress address = new InetSocketAddress(InetAddress.getLocalHost(), 2002);
 		
-		ClusterConfig newConfig = null;
+		ConfigEntry followerEntry = null;
+		try (ClientConnection client = ClientConnection.open(new InetSocketAddress(InetAddress.getLocalHost(), 2004))) {
+			client.waitForConnection();
+			followerEntry = client.getCurrentConfig().entries[0];
+		}
 		
+		ClusterConfig newConfig = null;
 		try (ClientConnection client = ClientConnection.open(address)) {
 			client.waitForConnection();
 			ConfigEntry start = client.getCurrentConfig().entries[0];
 			newConfig = ClusterConfig.configFromEntries(new ConfigEntry[] {
-					new ConfigEntry(new InetSocketAddress(start.cluster.getAddress(), 2005), new InetSocketAddress(start.client.getAddress(), 2004)),
+					followerEntry,
 					start,
 			});
 			client.sendUpdateConfig(newConfig).waitForCommitted();
@@ -316,8 +321,8 @@ public class TestClientsAndListeners {
 			client.waitForConnection();
 			ClusterConfig config = client.getCurrentConfig();
 			Assert.assertEquals(2, config.entries.length);
-			Assert.assertEquals(newConfig.entries[0], config.entries[0]);
-			Assert.assertEquals(newConfig.entries[1], config.entries[1]);
+			Assert.assertEquals(newConfig.entries[0].nodeUuid, config.entries[0].nodeUuid);
+			Assert.assertEquals(newConfig.entries[1].nodeUuid, config.entries[1].nodeUuid);
 		}
 		
 		// Shut down.

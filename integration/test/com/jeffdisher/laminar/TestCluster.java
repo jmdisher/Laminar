@@ -63,7 +63,9 @@ public class TestCluster {
 			ClusterConfig originalConfig = client1.getCurrentConfig();
 			Assert.assertEquals(1, originalConfig.entries.length);
 			ConfigEntry originalEntry = originalConfig.entries[0];
-			ConfigEntry newEntry = new ConfigEntry(new InetSocketAddress(originalEntry.cluster.getAddress(), originalEntry.cluster.getPort() + 1000), new InetSocketAddress(originalEntry.client.getAddress(), originalEntry.client.getPort() + 1000));
+			// Pre-generate the UUID for the follower.
+			UUID followerUuid = UUID.randomUUID();
+			ConfigEntry newEntry = new ConfigEntry(followerUuid, new InetSocketAddress(originalEntry.cluster.getAddress(), originalEntry.cluster.getPort() + 1000), new InetSocketAddress(originalEntry.client.getAddress(), originalEntry.client.getPort() + 1000));
 			ClusterConfig newConfig = ClusterConfig.configFromEntries(new ConfigEntry[] {originalEntry, newEntry});
 			configSender = client1.getClientId();
 			configNonce = client1.getNextNonce();
@@ -88,7 +90,7 @@ public class TestCluster {
 			Assert.assertEquals(originalConfig.entries.length, beforeListener.getCurrentConfig().entries.length);
 			
 			// Start the other node in the config and let the test complete.
-			ServerWrapper wrapper2 = ServerWrapper.startedServerWrapper("testConfigUpdate-FOLLOWER", 3003, 3002, new File("/tmp/laminar2"));
+			ServerWrapper wrapper2 = ServerWrapper.startedServerWrapperWithUuid("testConfigUpdate-FOLLOWER", followerUuid, 3003, 3002, new File("/tmp/laminar2"));
 			
 			// Wait for everything to commit and check that the update we got is the same as the one we send.
 			updateResult.waitForCommitted();
@@ -144,7 +146,9 @@ public class TestCluster {
 			ClusterConfig originalConfig = client1.getCurrentConfig();
 			Assert.assertEquals(1, originalConfig.entries.length);
 			ConfigEntry originalEntry = originalConfig.entries[0];
-			ConfigEntry newEntry = new ConfigEntry(new InetSocketAddress(originalEntry.cluster.getAddress(), originalEntry.cluster.getPort() + 1000), new InetSocketAddress(originalEntry.client.getAddress(), originalEntry.client.getPort() + 1000));
+			// Pre-generate the UUID for the follower.
+			UUID followerUuid = UUID.randomUUID();
+			ConfigEntry newEntry = new ConfigEntry(followerUuid, new InetSocketAddress(originalEntry.cluster.getAddress(), originalEntry.cluster.getPort() + 1000), new InetSocketAddress(originalEntry.client.getAddress(), originalEntry.client.getPort() + 1000));
 			ClusterConfig newConfig = ClusterConfig.configFromEntries(new ConfigEntry[] {originalEntry, newEntry});
 			configSender = client1.getClientId();
 			configNonce = client1.getNextNonce();
@@ -182,7 +186,7 @@ public class TestCluster {
 			
 			// Start the other node in the config and let the test complete.
 			// WARNING:  This way of starting 2 nodes in-process is a huge hack and a better approach will need to be found, soon (mostly the way we are interacting with STDIN).
-			ServerWrapper wrapper2 = ServerWrapper.startedServerWrapper("testReconnectWhileWaitingForClusterCommit-FOLLOWER", 3003, 3002, new File("/tmp/laminar2"));
+			ServerWrapper wrapper2 = ServerWrapper.startedServerWrapperWithUuid("testReconnectWhileWaitingForClusterCommit-FOLLOWER", followerUuid, 3003, 3002, new File("/tmp/laminar2"));
 			
 			// Wait for everything to commit and check that the update we got is the same as the one we send.
 			updateResult.waitForCommitted();
@@ -291,7 +295,7 @@ public class TestCluster {
 		InetSocketAddress leaderClientAddress = new InetSocketAddress(InetAddress.getLocalHost(), 2002);
 		ServerWrapper follower = ServerWrapper.startedServerWrapper("testMajorityProgress-FOLLOWER", 2005, 2004, new File("/tmp/laminar2"));
 		InetSocketAddress followerClientAddress= new InetSocketAddress(InetAddress.getLocalHost(), 2004);
-		ConfigEntry missingServer = new ConfigEntry(new InetSocketAddress(InetAddress.getLocalHost(), 2007), new InetSocketAddress(InetAddress.getLocalHost(), 2006));
+		ConfigEntry missingServer = new ConfigEntry(UUID.randomUUID(), new InetSocketAddress(InetAddress.getLocalHost(), 2007), new InetSocketAddress(InetAddress.getLocalHost(), 2006));
 		
 		// Create 2 clients.
 		ClientConnection client1 = ClientConnection.open(leaderClientAddress);
@@ -342,8 +346,9 @@ public class TestCluster {
 		InetSocketAddress leaderClientAddress = new InetSocketAddress(InetAddress.getLocalHost(), 2002);
 		ServerWrapper follower = ServerWrapper.startedServerWrapper("testPoisonClusterSwitch-FOLLOWER", 2005, 2004, new File("/tmp/laminar2"));
 		InetSocketAddress followerClientAddress= new InetSocketAddress(InetAddress.getLocalHost(), 2004);
+		UUID follower2Uuid = UUID.randomUUID();
 		ServerWrapper follower2 = null;
-		ConfigEntry follower2Config = new ConfigEntry(new InetSocketAddress(InetAddress.getLocalHost(), 2007), new InetSocketAddress(InetAddress.getLocalHost(), 2006));
+		ConfigEntry follower2Config = new ConfigEntry(follower2Uuid, new InetSocketAddress(InetAddress.getLocalHost(), 2007), new InetSocketAddress(InetAddress.getLocalHost(), 2006));
 		
 		// Create 2 clients.
 		ClientConnection client1 = ClientConnection.open(leaderClientAddress);
@@ -376,7 +381,7 @@ public class TestCluster {
 			// Then, stop the existing follower, create another one.
 			Assert.assertEquals(0, follower.stop());
 			follower = null;
-			follower2 = ServerWrapper.startedServerWrapper("testPoisonClusterSwitch-FOLLOWER2", 2007, 2006, new File("/tmp/laminar3"));
+			follower2 = ServerWrapper.startedServerWrapperWithUuid("testPoisonClusterSwitch-FOLLOWER2", follower2Uuid, 2007, 2006, new File("/tmp/laminar3"));
 			
 			// Send poison from client2 and a normal message from each client, then wait for everything to commit.
 			ClientResult client2_2 = client2.sendPoison(new byte[] {2});
@@ -411,9 +416,11 @@ public class TestCluster {
 	 */
 	@Test
 	public void testForceLeader() throws Throwable {
-		ServerWrapper server1 = ServerWrapper.startedServerWrapper("testForceLeader-1", 2003, 2002, new File("/tmp/laminar"));
+		UUID server1Uuid = UUID.randomUUID();
+		UUID server2Uuid = UUID.randomUUID();
+		ServerWrapper server1 = ServerWrapper.startedServerWrapperWithUuid("testForceLeader-1", server1Uuid, 2003, 2002, new File("/tmp/laminar"));
 		InetSocketAddress server1Address = new InetSocketAddress(InetAddress.getLocalHost(), 2002);
-		ServerWrapper server2 = ServerWrapper.startedServerWrapper("testForceLeader-2", 2005, 2004, new File("/tmp/laminar2"));
+		ServerWrapper server2 = ServerWrapper.startedServerWrapperWithUuid("testForceLeader-2", server2Uuid, 2005, 2004, new File("/tmp/laminar2"));
 		InetSocketAddress server2Address= new InetSocketAddress(InetAddress.getLocalHost(), 2004);
 		
 		// Start the listeners.
@@ -429,8 +436,8 @@ public class TestCluster {
 		
 		ClientConnection client = ClientConnection.open(server1Address);
 		ClusterConfig config = ClusterConfig.configFromEntries(new ConfigEntry[] {
-				new ConfigEntry(new InetSocketAddress(InetAddress.getLocalHost(), 2003), server1Address),
-				new ConfigEntry(new InetSocketAddress(InetAddress.getLocalHost(), 2005), server2Address),
+				new ConfigEntry(server1Uuid, new InetSocketAddress(InetAddress.getLocalHost(), 2003), server1Address),
+				new ConfigEntry(server2Uuid, new InetSocketAddress(InetAddress.getLocalHost(), 2005), server2Address),
 		});
 		
 		try {

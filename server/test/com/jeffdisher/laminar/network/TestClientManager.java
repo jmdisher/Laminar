@@ -230,7 +230,7 @@ public class TestClientManager {
 			Assert.assertEquals(ClientResponseType.CLIENT_READY, ready.type);
 			
 			// Now, tell the ClientManager to enter the follower state.
-			ConfigEntry entry = new ConfigEntry(new InetSocketAddress(9999), new InetSocketAddress(port+1));
+			ConfigEntry entry = new ConfigEntry(UUID.randomUUID(), new InetSocketAddress(9999), new InetSocketAddress(port+1));
 			manager.mainEnterFollowerState(entry, 0L);
 			// -nodeWriteReady
 			callbacks.runAndGetNextMessage();
@@ -239,7 +239,7 @@ public class TestClientManager {
 			Assert.assertEquals(ClientResponseType.REDIRECT, redirect.type);
 			Assert.assertEquals(-1L, redirect.nonce);
 			Assert.assertEquals(0L, redirect.lastCommitGlobalOffset);
-			Assert.assertEquals(entry, ConfigEntry.deserializeFrom(ByteBuffer.wrap(redirect.extraData)));
+			Assert.assertEquals(entry.nodeUuid, ConfigEntry.deserializeFrom(ByteBuffer.wrap(redirect.extraData)).nodeUuid);
 		}
 		NetworkManager.NodeToken noNode = callbacks.runRunnableAndGetNewClientNode(manager);
 		Assert.assertNull(noNode);
@@ -261,7 +261,7 @@ public class TestClientManager {
 		manager.startAndWaitForReady();
 		
 		// Now, tell the ClientManager to enter the follower state.
-		ConfigEntry entry = new ConfigEntry(new InetSocketAddress(9999), new InetSocketAddress(port+1));
+		ConfigEntry entry = new ConfigEntry(UUID.randomUUID(), new InetSocketAddress(9999), new InetSocketAddress(port+1));
 		manager.mainEnterFollowerState(entry, 0L);
 		
 		// Create the connection, send the commit message, and read it, directly.
@@ -281,7 +281,7 @@ public class TestClientManager {
 			Assert.assertEquals(ClientResponseType.REDIRECT, redirect.type);
 			Assert.assertEquals(-1L, redirect.nonce);
 			Assert.assertEquals(0L, redirect.lastCommitGlobalOffset);
-			Assert.assertEquals(entry, ConfigEntry.deserializeFrom(ByteBuffer.wrap(redirect.extraData)));
+			Assert.assertEquals(entry.nodeUuid, ConfigEntry.deserializeFrom(ByteBuffer.wrap(redirect.extraData)).nodeUuid);
 		}
 		NetworkManager.NodeToken noNode = callbacks.runRunnableAndGetNewClientNode(manager);
 		Assert.assertNull(noNode);
@@ -295,7 +295,7 @@ public class TestClientManager {
 	 * Used for simple cases where the external test only wants to verify that a call was made when expected.
 	 */
 	private static class LatchedCallbacks implements IClientManagerCallbacks {
-		private final ClusterConfig _dummyConfig = ClusterConfig.configFromEntries(new ConfigEntry[] {new ConfigEntry(new InetSocketAddress(5), new InetSocketAddress(6))});
+		private final ClusterConfig _dummyConfig = ClusterConfig.configFromEntries(new ConfigEntry[] {new ConfigEntry(UUID.randomUUID(), new InetSocketAddress(5), new InetSocketAddress(6))});
 		private Consumer<StateSnapshot> _pendingConsumer;
 		public ClientMessage recentMessage;
 		

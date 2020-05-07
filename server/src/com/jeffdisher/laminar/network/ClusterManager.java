@@ -9,6 +9,7 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import java.util.function.Consumer;
 
 import com.jeffdisher.laminar.components.INetworkManagerBackgroundCallbacks;
@@ -40,7 +41,7 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 
 	// These elements are relevant when _THIS_ node is the LEADER.
 	// In NodeState, we identify downstream nodes via ClusterConfig.ConfigEntry.
-	private final Map<ConfigEntry, DownstreamPeerState> _downstreamPeerByConfig;
+	private final Map<UUID, DownstreamPeerState> _downstreamPeerByUuid;
 	private final Map<NetworkManager.NodeToken, DownstreamPeerState> _downstreamPeerByNode;
 	// The last mutation offset committed on _THIS_ node.
 	private long _lastCommittedMutationOffset;
@@ -61,7 +62,7 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 		_callbacks = callbacks;
 		// We start assuming that we are the leader until told otherwise.
 		_isLeader = true;
-		_downstreamPeerByConfig = new HashMap<>();
+		_downstreamPeerByUuid = new HashMap<>();
 		_downstreamPeerByNode = new HashMap<>();
 		_newUpstreamNodes = new HashSet<>();
 		_upstreamPeerByNode = new HashMap<>();
@@ -129,7 +130,7 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 
 		// Close the downstream and re-initiate connections.
 		List<DownstreamPeerState> toReconnect = new LinkedList<>();
-		for (DownstreamPeerState state : _downstreamPeerByConfig.values()) {
+		for (DownstreamPeerState state : _downstreamPeerByUuid.values()) {
 			if (state.isConnectionUp) {
 				toReconnect.add(state);
 			}
@@ -183,7 +184,7 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 					Assert.assertTrue(null != state);
 				} else if (_downstreamPeerByNode.containsKey(node)) {
 					DownstreamPeerState peer = _downstreamPeerByNode.remove(node);
-					DownstreamPeerState check = _downstreamPeerByConfig.remove(peer.entry);
+					DownstreamPeerState check = _downstreamPeerByUuid.remove(peer.entry.nodeUuid);
 					Assert.assertTrue(check == peer);
 				} else {
 					// This may be something we explicitly disconnected.
@@ -366,7 +367,7 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 		DownstreamPeerState state = _downstreamPeerByNode.remove(node);
 		// (make sure we didn't already disconnect this).
 		if (null != state) {
-			DownstreamPeerState check = _downstreamPeerByConfig.remove(state.entry);
+			DownstreamPeerState check = _downstreamPeerByUuid.remove(state.entry.nodeUuid);
 			Assert.assertTrue(state == check);
 			
 			_mainCreateNewConnectionToPeer(state.entry);
@@ -381,7 +382,7 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 			throw Assert.unimplemented("TODO:  Handle fast-fail on outgoing connections: " + e.getLocalizedMessage());
 		}
 		DownstreamPeerState peer = new DownstreamPeerState(entry, token);
-		_downstreamPeerByConfig.put(entry, peer);
+		_downstreamPeerByUuid.put(entry.nodeUuid, peer);
 		_downstreamPeerByNode.put(token, peer);
 	}
 

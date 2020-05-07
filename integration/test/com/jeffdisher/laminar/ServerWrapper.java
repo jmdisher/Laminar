@@ -10,6 +10,7 @@ import java.io.PrintStream;
 import java.util.Arrays;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.UUID;
 
 
 /**
@@ -21,14 +22,11 @@ import java.util.List;
  */
 public class ServerWrapper {
 	public static ServerWrapper startedServerWrapper(String serverName, int clusterPort, int clientPort, File storagePath) throws IOException {
-		boolean verbose = (null != System.getenv("WRAPPER_VERBOSE"));
-		PrintStream outTarget = verbose ? System.out : new PrintStream(new VoidOutputStream());
-		PrintStream errTarget = verbose ? System.err : new PrintStream(new VoidOutputStream());
-		String[] args = new String[]{"--cluster", Integer.toString(clusterPort)
-				, "--client", Integer.toString(clientPort)
-				, "--data", storagePath.getAbsolutePath()
-		};
-		return _startedServerWrapperWithStreams(serverName, args, outTarget, errTarget);
+		return _startedServerWrapper(serverName, null, clusterPort, clientPort, storagePath);
+	}
+
+	public static ServerWrapper startedServerWrapperWithUuid(String serverName, UUID serverUuid, int clusterPort, int clientPort, File storagePath) throws IOException {
+		return _startedServerWrapper(serverName, serverUuid, clusterPort, clientPort, storagePath);
 	}
 
 	public static ServerWrapper startedServerWrapperRaw(String[] args, OutputStream errorStream) throws IOException {
@@ -65,6 +63,23 @@ public class ServerWrapper {
 		DrainingThread stderr = new DrainingThread(serverName, errTarget, process.getErrorStream());
 		stderr.start();
 		return new ServerWrapper(process, stdin, stdout, stderr);
+	}
+
+	private static ServerWrapper _startedServerWrapper(String serverName, UUID serverUuid, int clusterPort, int clientPort, File storagePath) throws IOException {
+		boolean verbose = (null != System.getenv("WRAPPER_VERBOSE"));
+		PrintStream outTarget = verbose ? System.out : new PrintStream(new VoidOutputStream());
+		PrintStream errTarget = verbose ? System.err : new PrintStream(new VoidOutputStream());
+		String[] args = (null == serverUuid)
+				? new String[]{"--cluster", Integer.toString(clusterPort)
+						, "--client", Integer.toString(clientPort)
+						, "--data", storagePath.getAbsolutePath()
+						}
+				: new String[]{"--uuid", serverUuid.toString()
+						, "--cluster", Integer.toString(clusterPort)
+						, "--client", Integer.toString(clientPort)
+						, "--data", storagePath.getAbsolutePath()
+						};
+		return _startedServerWrapperWithStreams(serverName, args, outTarget, errTarget);
 	}
 
 
