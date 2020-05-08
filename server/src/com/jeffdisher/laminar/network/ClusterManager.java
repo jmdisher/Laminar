@@ -45,6 +45,8 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 	// In NodeState, we identify downstream nodes via ClusterConfig.ConfigEntry.
 	private final Map<UUID, DownstreamPeerState> _downstreamPeerByUuid;
 	private final Map<NetworkManager.NodeToken, DownstreamPeerState> _downstreamPeerByNode;
+	// The last mutation offset received by _THIS_ node (either from a client or peer).
+	private long _lastReceivedMutationOffset;
 	// The last mutation offset committed on _THIS_ node.
 	private long _lastCommittedMutationOffset;
 
@@ -53,8 +55,6 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 	private final Set<NetworkManager.NodeToken> _newUpstreamNodes;
 	// (not addressable by ConfigEntry since they NodeState doesn't know about these).
 	private final Map<NetworkManager.NodeToken, UpstreamPeerState> _upstreamPeerByNode;
-	// Note that we record the last offset received, globally, meaning this mechanism can't sync _from_ multiple nodes - only a single leader.
-	private long _lastMutationOffsetReceived;
 
 	public ClusterManager(ConfigEntry self, ServerSocketChannel serverSocket, IClusterManagerCallbacks callbacks) throws IOException {
 		_mainThread = Thread.currentThread();
@@ -105,6 +105,9 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 				_sendMutationToPeer(state, snapshot.currentTermNumber, previousMutationTermNumber, mutation, nowMillis);
 			}
 		}
+		// If this was a fetch, we don't want to revert, but this path is taken by new mutations from a client or leader.
+		// TODO:  Fix this duplication of "RECEIVED" paths.
+		_lastReceivedMutationOffset = Math.max(_lastReceivedMutationOffset, mutation.globalOffset);
 	}
 
 	@Override
@@ -114,10 +117,6 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 		// This should never skip a value.
 		Assert.assertTrue((_lastCommittedMutationOffset + 1) == mutationOffset);
 		_lastCommittedMutationOffset = mutationOffset;
-		if (_isLeader) {
-			// We need to eventually change how this is done to be more permissive but this approach allows us to keep the logic as strict as it is, for the near-term.
-			_lastMutationOffsetReceived = mutationOffset;
-		}
 	}
 
 	@Override
@@ -126,7 +125,8 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 		_isLeader = false;
 		// Initialize our upstream state, since we haven't heard anything from them, yet.
 		for (UpstreamPeerState peer : _upstreamPeerByNode.values()) {
-			peer.lastMutationOffsetAcknowledged = _lastMutationOffsetReceived;
+			peer.lastMutationOffsetReceived = _lastReceivedMutationOffset;
+			peer.lastMutationOffsetAcknowledged = _lastReceivedMutationOffset;
 		}
 	}
 
@@ -296,7 +296,7 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 					_upstreamPeerByNode.put(node, state);
 					
 					// Send back our PEER_STATE.
-					state.pendingPeerStateMutationOffsetReceived = _lastMutationOffsetReceived;
+					state.pendingPeerStateMutationOffsetReceived = _lastReceivedMutationOffset;
 					_trySendUpstream(state);
 					
 					// We don't tell the NodeState about this unless they upstream starts acting like a LEADER and sending mutations.
@@ -431,10 +431,10 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 				// Send the PEER_STATE.
 				messageToSend = UpstreamResponse.peerState(peer.pendingPeerStateMutationOffsetReceived);
 				peer.pendingPeerStateMutationOffsetReceived = -1L;
-			} else if (!_isLeader && (peer.lastMutationOffsetAcknowledged < _lastMutationOffsetReceived)) {
+			} else if (!_isLeader && (peer.lastMutationOffsetAcknowledged < peer.lastMutationOffsetReceived)) {
 				// Send the ack.
-				messageToSend = UpstreamResponse.receivedMutations(_lastMutationOffsetReceived);
-				peer.lastMutationOffsetAcknowledged = _lastMutationOffsetReceived;
+				messageToSend = UpstreamResponse.receivedMutations(peer.lastMutationOffsetReceived);
+				peer.lastMutationOffsetAcknowledged = peer.lastMutationOffsetReceived;
 			} else if (!_isLeader && (null != peer.pendingVoteToSend)) {
 				messageToSend = peer.pendingVoteToSend;
 				peer.pendingVoteToSend = null;
@@ -516,16 +516,18 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 		for (MutationRecord record : payload.records) {
 			// Update our last offset received and notify the callbacks of this mutation.
 			// NOTE:  This assertion is only valid while we are maintaining a lock-step state.
-			Assert.assertTrue((_lastMutationOffsetReceived + 1) == record.globalOffset);
+			Assert.assertTrue((_lastReceivedMutationOffset + 1) == record.globalOffset);
 			boolean didApply = _callbacks.mainAppendMutationFromUpstream(peer.entry, payload.termNumber, previousMutationTermNumber, record);
 			if (didApply) {
 				// Advance to the next mutation (and make sure this isn't a rewind since we may need to re-ack).
-				_lastMutationOffsetReceived = record.globalOffset;
+				peer.lastMutationOffsetReceived = record.globalOffset;
 				if (record.globalOffset <= peer.lastMutationOffsetAcknowledged) {
 					// We want to ack this.
 					peer.lastMutationOffsetAcknowledged = record.globalOffset - 1L;
 				}
 				previousMutationTermNumber = record.termNumber;
+				// TODO:  Fix this duplication of "RECEIVED" paths.
+				_lastReceivedMutationOffset = Math.max(_lastReceivedMutationOffset, record.globalOffset);
 			} else {
 				didFailToApply = true;
 				break;
@@ -534,8 +536,9 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 		if (didFailToApply) {
 			// There was a mismatch so revert to the previous message and reset our state with the upstream.
 			// Set us up to revert our most recent mutation (since it is the one which doesn't agree).
-			_lastMutationOffsetReceived -= 1;
-			peer.pendingPeerStateMutationOffsetReceived = _lastMutationOffsetReceived;
+			_lastReceivedMutationOffset -= 1;
+			peer.lastMutationOffsetReceived -= 1;
+			peer.pendingPeerStateMutationOffsetReceived = _lastReceivedMutationOffset;
 		} else {
 			// This is normal operation so proceed with committing.
 			_callbacks.mainCommittedMutationOffsetFromUpstream(peer.entry, payload.termNumber, payload.lastCommittedMutationOffset);

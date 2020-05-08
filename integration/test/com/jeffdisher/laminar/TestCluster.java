@@ -527,4 +527,100 @@ public class TestCluster {
 			Assert.assertEquals(0, server.stop());
 		}
 	}
+
+	/**
+	 * Creates a 5-node cluster to make sure that larger clusters still operate correctly (since most of the tests are
+	 * on specific behaviours on a smaller scale, this is a common-case on a large scale).
+	 * At the end, listens to each node to verify it has received all messages.
+	 */
+	@Test
+	public void testLargeCluster() throws Throwable {
+		// Create our config.
+		InetSocketAddress server1Address = new InetSocketAddress(InetAddress.getLocalHost(), 2001);
+		InetSocketAddress server2Address = new InetSocketAddress(InetAddress.getLocalHost(), 2002);
+		InetSocketAddress server3Address = new InetSocketAddress(InetAddress.getLocalHost(), 2003);
+		InetSocketAddress server4Address = new InetSocketAddress(InetAddress.getLocalHost(), 2004);
+		InetSocketAddress server5Address = new InetSocketAddress(InetAddress.getLocalHost(), 2005);
+		UUID server1Uuid = UUID.randomUUID();
+		UUID server2Uuid = UUID.randomUUID();
+		UUID server3Uuid = UUID.randomUUID();
+		UUID server4Uuid = UUID.randomUUID();
+		UUID server5Uuid = UUID.randomUUID();
+		ClusterConfig config = ClusterConfig.configFromEntries(new ConfigEntry[] {
+				new ConfigEntry(server1Uuid, new InetSocketAddress(InetAddress.getLocalHost(), 3001), server1Address),
+				new ConfigEntry(server2Uuid, new InetSocketAddress(InetAddress.getLocalHost(), 3002), server2Address),
+				new ConfigEntry(server3Uuid, new InetSocketAddress(InetAddress.getLocalHost(), 3003), server3Address),
+				new ConfigEntry(server4Uuid, new InetSocketAddress(InetAddress.getLocalHost(), 3004), server4Address),
+				new ConfigEntry(server5Uuid, new InetSocketAddress(InetAddress.getLocalHost(), 3005), server5Address),
+		});
+		
+		// We want to ramp up slowly so start with 3 servers (so we have consensus) and bring on the other 2 as we go, and then shut down 2.
+		ServerWrapper server1 = ServerWrapper.startedServerWrapperWithUuid("testLargeCluster-1", server1Uuid, 3001, 2001, new File("/tmp/laminar1"));
+		ServerWrapper server2 = ServerWrapper.startedServerWrapperWithUuid("testLargeCluster-2", server2Uuid, 3002, 2002, new File("/tmp/laminar2"));
+		ServerWrapper server3 = ServerWrapper.startedServerWrapperWithUuid("testLargeCluster-3", server3Uuid, 3003, 2003, new File("/tmp/laminar3"));
+		ServerWrapper server4 = null;
+		ServerWrapper server5 = null;
+		
+		// Start the client, set the config, and run the test.
+		ClientConnection client = ClientConnection.open(server1Address);
+		try {
+			client.sendUpdateConfig(config);
+			
+			// We want to send the messages in bursts as we bring more servers online.
+			_runBatch(client, 10, 0);
+			server4 = ServerWrapper.startedServerWrapperWithUuid("testLargeCluster-4", server4Uuid, 3004, 2004, new File("/tmp/laminar4"));
+			_runBatch(client, 10, 10);
+			server5 = ServerWrapper.startedServerWrapperWithUuid("testLargeCluster-5", server4Uuid, 3005, 2005, new File("/tmp/laminar5"));
+			_runBatch(client, 10, 20);
+			Assert.assertEquals(0, server2.stop());
+			server2 = null;
+			_runBatch(client, 10, 30);
+			Assert.assertEquals(0, server3.stop());
+			server3 = null;
+			
+			// Start a listener on each remaining server and verify we see all 40 mutations.
+			EventRecord[] records1 = _listenOnServer(server1Address, client.getClientId(), 40);
+			EventRecord[] records4 = _listenOnServer(server4Address, client.getClientId(), 40);
+			EventRecord[] records5 = _listenOnServer(server5Address, client.getClientId(), 40);
+			for (int i = 0; i < 40; ++i) {
+				Assert.assertEquals((byte)i, records1[i].payload[0]);
+				Assert.assertEquals((byte)i, records4[i].payload[0]);
+				Assert.assertEquals((byte)i, records5[i].payload[0]);
+			}
+		} finally {
+			// Shut down.
+			client.close();
+			Assert.assertEquals(0, server1.stop());
+			if (null != server2) {
+				Assert.assertEquals(0, server2.stop());
+			}
+			if (null != server3) {
+				Assert.assertEquals(0, server3.stop());
+			}
+			if (null != server4) {
+				Assert.assertEquals(0, server4.stop());
+			}
+			if (null != server5) {
+				Assert.assertEquals(0, server5.stop());
+			}
+		}
+	}
+
+
+	private EventRecord[] _listenOnServer(InetSocketAddress serverAddress, UUID clientUuid, int count) throws Throwable {
+		CaptureListener listener = new CaptureListener(serverAddress, count);
+		listener.skipNonceCheck(clientUuid, 1L);
+		listener.start();
+		return listener.waitForTerminate();
+	}
+
+	private void _runBatch(ClientConnection client, int size, int bias) throws Throwable {
+		ClientResult results[] = new ClientResult[size];
+		for (int i = 0; i < results.length; ++i) {
+			results[i] = client.sendTemp(new byte[] {(byte)(i + bias)});
+		}
+		for (int i = 0; i < results.length; ++i) {
+			results[i].waitForCommitted();
+		}
+	}
 }

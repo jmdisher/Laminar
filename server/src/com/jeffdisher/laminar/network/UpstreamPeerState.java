@@ -25,6 +25,10 @@ public class UpstreamPeerState {
 	 */
 	public boolean isWritable = true;
 	/**
+	 * The most recent mutation offset we received from them.
+	 */
+	public long lastMutationOffsetReceived = 0L;
+	/**
 	 * The most recent mutation acknowledgement we sent them.
 	 * When the peer is writable and this value is less than lastMutationOffsetReceived, we send them an
 	 * acknowledgement.
