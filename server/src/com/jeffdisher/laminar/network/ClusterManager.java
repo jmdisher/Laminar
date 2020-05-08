@@ -122,6 +122,10 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 	public void mainEnterFollowerState() {
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		_isLeader = false;
+		// Initialize our upstream state, since we haven't heard anything from them, yet.
+		for (UpstreamPeerState peer : _upstreamPeerByNode.values()) {
+			peer.lastMutationOffsetAcknowledged = _lastMutationOffsetReceived;
+		}
 	}
 
 	@Override
