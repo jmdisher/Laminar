@@ -249,6 +249,16 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 		return _serverAddress;
 	}
 
+	/**
+	 * This helper is primarily just to stress test reconnect.  It forces the client to reconnect to the server.
+	 */
+	public void forceReconnect() {
+		_commandQueue.put((ignore) -> {
+			_network.closeConnection(_connection);
+			_internalHandleDisconnect(new IOException("Forced Reconnect"));
+		});
+	}
+
 	// <INetworkManagerBackgroundCallbacks>
 	@Override
 	public void nodeDidConnect(NetworkManager.NodeToken node) {
@@ -268,9 +278,13 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 		_commandQueue.put(new Consumer<Void>() {
 			@Override
 			public void accept(Void t) {
-				Assert.assertTrue(_connection == node);
-				_canWrite = true;
-				_internalTryWrite();
+				// Note that it is possible something was still in-flight from when we disconnected so ignore the message, if that is the case.
+				if (_connection == node) {
+					_canWrite = true;
+					_internalTryWrite();
+				} else {
+					System.err.println("WARNING: Received write-ready on stale connection");
+				}
 			}});
 	}
 
@@ -280,8 +294,12 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 		_commandQueue.put(new Consumer<Void>() {
 			@Override
 			public void accept(Void t) {
-				Assert.assertTrue(_connection == node);
-				_iternalHandleReadableMessage();
+				// Note that it is possible something was still in-flight from when we disconnected so ignore the message, if that is the case.
+				if (_connection == node) {
+					_iternalHandleReadableMessage();
+				} else {
+					System.err.println("WARNING: Received message on stale connection: " + ClientResponse.deserialize(_network.readWaitingMessage(node)).type);
+				}
 			}});
 	}
 
@@ -303,7 +321,7 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 					// We need to send the lowest nonce we don't yet know committed (if any past this did commit, the server will update its state for us when it synthesizes the commits).
 					// Note that, if there are no in-flight messages, this is a degenerate reconnect where the server will send us nothing.
 					long lowestPossibleNextNonce = _inFlightMessages.isEmpty()
-							? _nextNonce
+							? (_nextNonce - _outgoingMessages.size())
 							: _inFlightMessages.firstKey();
 					// Unset any received flags in these since we don't actually know if the other side received them (not in the fail-over case, at least) and rely on the reconnect to fix state.
 					for (ClientResult result : _inFlightMessages.values()) {
@@ -324,8 +342,12 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 		_commandQueue.put(new Consumer<Void>() {
 			@Override
 			public void accept(Void t) {
-				Assert.assertTrue(_connection == node);
-				_internalHandleDisconnect(cause);
+				// Note that it is possible something was still in-flight from when we disconnected so ignore the message, if that is the case.
+				if (_connection == node) {
+					_internalHandleDisconnect(cause);
+				} else {
+					System.err.println("WARNING: Received disconnect on stale connection");
+				}
 			}});
 	}
 

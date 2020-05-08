@@ -486,4 +486,45 @@ public class TestCluster {
 			Assert.assertEquals(0, server2.stop());
 		}
 	}
+
+	/**
+	 * Stress tests reconnection to a server by forcing the connection to close while many messages are in-flight.
+	 */
+	@Test
+	public void testReconnectStress() throws Throwable {
+		ServerWrapper server = ServerWrapper.startedServerWrapper("testReconnectStress", 2003, 2002, new File("/tmp/laminar"));
+		InetSocketAddress serverAddress = new InetSocketAddress(InetAddress.getLocalHost(), 2002);
+		
+		
+		ClientConnection client = ClientConnection.open(serverAddress);
+		try {
+			client.sendTemp(new byte[] {-1}).waitForCommitted();
+			// Send lots of messages and then force a reconnect, before we have blocked on any of them.
+			ClientResult[] results = new ClientResult[100];
+			for (int i = 0; i < 50; ++i) {
+				results[i] = client.sendTemp(new byte[] {(byte)i});
+			}
+			// We can't force reconnect until the connection appears.
+			client.waitForConnection();
+			client.forceReconnect();
+			for (int i = 50; i < results.length; ++i) {
+				results[i] = client.sendTemp(new byte[] {(byte)i});
+			}
+			for (int i = 0; i < results.length; ++i) {
+				results[i].waitForCommitted();
+			}
+			client.forceReconnect();
+			ClientResult[] after = new ClientResult[10];
+			for (int i = 0; i < after.length; ++i) {
+				after[i] = client.sendTemp(new byte[] {(byte)i});
+			}
+			for (int i = 0; i < after.length; ++i) {
+				after[i].waitForCommitted();
+			}
+		} finally {
+			// Shut down.
+			client.close();
+			Assert.assertEquals(0, server.stop());
+		}
+	}
 }
