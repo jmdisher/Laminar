@@ -16,12 +16,12 @@ public class DownstreamMessage {
 		return new DownstreamMessage(Type.IDENTITY, DownstreamPayload_Identity.create(self));
 	}
 
-	public static DownstreamMessage appendMutations(long previousMutationTermNumber, MutationRecord mutation, long lastCommittedMutationOffset) {
-		return new DownstreamMessage(Type.APPEND_MUTATIONS, DownstreamPayload_AppendMutations.create(previousMutationTermNumber, new MutationRecord[] { mutation }, lastCommittedMutationOffset));
+	public static DownstreamMessage appendMutations(long termNumber, long previousMutationTermNumber, MutationRecord mutation, long lastCommittedMutationOffset) {
+		return new DownstreamMessage(Type.APPEND_MUTATIONS, DownstreamPayload_AppendMutations.create(termNumber, previousMutationTermNumber, new MutationRecord[] { mutation }, lastCommittedMutationOffset));
 	}
 
-	public static DownstreamMessage heartbeat(long lastCommittedMutationOffset) {
-		return new DownstreamMessage(Type.APPEND_MUTATIONS, DownstreamPayload_AppendMutations.create(0L, new MutationRecord[0], lastCommittedMutationOffset));
+	public static DownstreamMessage heartbeat(long termNumber, long lastCommittedMutationOffset) {
+		return new DownstreamMessage(Type.APPEND_MUTATIONS, DownstreamPayload_AppendMutations.create(termNumber, 0L, new MutationRecord[0], lastCommittedMutationOffset));
 	}
 
 	public static DownstreamMessage deserializeFrom(ByteBuffer buffer) {

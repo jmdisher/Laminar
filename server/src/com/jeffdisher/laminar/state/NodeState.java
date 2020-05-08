@@ -273,13 +273,9 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		
 		// We shouldn't receive this if we are the leader, unless the call is invalid or from a later term.
 		if (RaftState.LEADER == _currentState) {
-			// Check to see if the mutation is from a later term number.  If so, we need to update our term number and become follower.
-			if (record.termNumber > _currentTermNumber) {
-				_currentState = RaftState.FOLLOWER;
-				_currentTermNumber = record.termNumber;
-				_clusterLeader = peer;
-				_clientManager.mainEnterFollowerState(_clusterLeader, new StateSnapshot(_currentConfig.config, _lastCommittedMutationOffset, _nextGlobalMutationOffset-1, _lastCommittedEventOffset, _currentTermNumber));
-				_clusterManager.mainEnterFollowerState();
+			// Check to see if the leader has a later term.  If so, we need to update our term number and become follower.
+			if (upstreamTermNumber > _currentTermNumber) {
+				_enterFollowerState(peer, upstreamTermNumber);
 			}
 		} else {
 			Assert.assertTrue(_clusterLeader == peer);
@@ -313,22 +309,23 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 	public void mainCommittedMutationOffsetFromUpstream(ConfigEntry peer, long upstreamTermNumber, long lastCommittedMutationOffset) {
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		if (null == _clusterLeader) {
-			// Cluster leadership is only discovered when a peer starts acting like a leader.
-			_currentState = RaftState.FOLLOWER;
-			_clusterLeader = peer;
-			_clientManager.mainEnterFollowerState(_clusterLeader, new StateSnapshot(_currentConfig.config, _lastCommittedMutationOffset, _nextGlobalMutationOffset-1, _lastCommittedEventOffset, _currentTermNumber));
-			_clusterManager.mainEnterFollowerState();
+			// Check to see if the leader has a later term.  If so, we need to update our term number and become follower.
+			if (upstreamTermNumber > _currentTermNumber) {
+				_enterFollowerState(peer, upstreamTermNumber);
+			}
 		} else {
 			Assert.assertTrue(_clusterLeader == peer);
 		}
 		
-		// Update our consensus offset.
-		Assert.assertTrue(lastCommittedMutationOffset >= _clusterLeaderCommitOffset);
-		_clusterLeaderCommitOffset = lastCommittedMutationOffset;
-		// This changes our consensus offset so re-run any commits.
-		// (we don't do a term check when the leader tells us to commit).
-		boolean requireTermCheck = false;
-		_mainCommitValidInFlightTuples(requireTermCheck);
+		if (RaftState.FOLLOWER == _currentState) {
+			// Update our consensus offset.
+			Assert.assertTrue(lastCommittedMutationOffset >= _clusterLeaderCommitOffset);
+			_clusterLeaderCommitOffset = lastCommittedMutationOffset;
+			// This changes our consensus offset so re-run any commits.
+			// (we don't do a term check when the leader tells us to commit).
+			boolean requireTermCheck = false;
+			_mainCommitValidInFlightTuples(requireTermCheck);
+		}
 	}
 
 	@Override
@@ -665,6 +662,15 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 			_nextGlobalMutationOffset -= 1;
 			_nextLocalEventOffset -= 1;
 		}
+	}
+
+	private void _enterFollowerState(ConfigEntry peer, long termNumber) {
+		_currentState = RaftState.FOLLOWER;
+		_clusterLeader = peer;
+		_currentTermNumber = termNumber;
+		StateSnapshot snapshot = new StateSnapshot(_currentConfig.config, _lastCommittedMutationOffset, _nextGlobalMutationOffset-1, _lastCommittedEventOffset, _currentTermNumber);
+		_clientManager.mainEnterFollowerState(_clusterLeader, snapshot);
+		_clusterManager.mainEnterFollowerState();
 	}
 
 

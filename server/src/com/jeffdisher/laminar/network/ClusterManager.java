@@ -100,7 +100,7 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 					&& state.didHandshake
 					&& (state.nextMutationOffsetToSend == mutationOffset)
 			) {
-				_sendMutationToPeer(state, previousMutationTermNumber, mutation, nowMillis);
+				_sendMutationToPeer(state, snapshot.currentTermNumber, previousMutationTermNumber, mutation, nowMillis);
 			}
 		}
 	}
@@ -211,7 +211,7 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 					Assert.assertTrue(peer.isConnectionUp);
 					Assert.assertTrue(!peer.isWritable);
 					peer.isWritable = true;
-					_tryFetchOrSend(peer);
+					_tryFetchOrSend(arg0.currentTermNumber, peer);
 				} else {
 					UpstreamPeerState peer = _upstreamPeerByNode.get(node);
 					Assert.assertTrue(!peer.isWritable);
@@ -245,7 +245,7 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 						peer.nextMutationOffsetToSend = lastReceivedMutationOffset + 1;
 						
 						// See if we can send them anything or just fetch, if they are writable.
-						_tryFetchOrSend(peer);
+						_tryFetchOrSend(arg0.currentTermNumber, peer);
 					} else if (UpstreamResponse.Type.RECEIVED_MUTATIONS == response.type) {
 						long lastReceivedMutationOffset = ((UpstreamPayload_ReceivedMutations)response.payload).lastReceivedMutationOffset;
 						
@@ -255,7 +255,7 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 						_callbacks.mainReceivedAckFromDownstream(peer.entry, lastReceivedMutationOffset);
 						
 						// See if we can send them anything right away.
-						_tryFetchOrSend(peer);
+						_tryFetchOrSend(arg0.currentTermNumber, peer);
 					} else {
 						Assert.unreachable("Unknown response type");
 					}
@@ -292,7 +292,7 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 						// Update our last offset received and notify the callbacks of this mutation.
 						// NOTE:  This assertion is only valid while we are maintaining a lock-step state.
 						Assert.assertTrue((_lastMutationOffsetReceived + 1) == record.globalOffset);
-						boolean didApply = _callbacks.mainAppendMutationFromUpstream(peer.entry, -1L, previousMutationTermNumber, record);
+						boolean didApply = _callbacks.mainAppendMutationFromUpstream(peer.entry, payload.termNumber, previousMutationTermNumber, record);
 						if (didApply) {
 							// Advance to the next mutation (and make sure this isn't a rewind since we may need to re-ack).
 							_lastMutationOffsetReceived = record.globalOffset;
@@ -313,7 +313,7 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 						peer.pendingPeerStateMutationOffsetReceived = _lastMutationOffsetReceived;
 					} else {
 						// This is normal operation so proceed with committing.
-						_callbacks.mainCommittedMutationOffsetFromUpstream(peer.entry, -1L, payload.lastCommittedMutationOffset);
+						_callbacks.mainCommittedMutationOffsetFromUpstream(peer.entry, payload.termNumber, payload.lastCommittedMutationOffset);
 					}
 					// We either want to ack or send back the reset.
 					_trySendUpstream(peer);
@@ -386,7 +386,7 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 		_downstreamPeerByNode.put(token, peer);
 	}
 
-	private void _tryFetchOrSend(DownstreamPeerState peer) {
+	private void _tryFetchOrSend(long currentTermNumber, DownstreamPeerState peer) {
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		
 		if (_isLeader
@@ -397,7 +397,7 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 			IClusterManagerCallbacks.MutationWrapper wrapper = _callbacks.mainClusterFetchMutationIfAvailable(peer.nextMutationOffsetToSend);
 			if (null != wrapper) {
 				long nowMillis = System.currentTimeMillis();
-				_sendMutationToPeer(peer, wrapper.previousMutationTermNumber, wrapper.record, nowMillis);
+				_sendMutationToPeer(peer, currentTermNumber, wrapper.previousMutationTermNumber, wrapper.record, nowMillis);
 			} else {
 				// We will wait for this to come in, later.
 			}
@@ -432,11 +432,11 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 		}
 	}
 
-	private void _sendMutationToPeer(DownstreamPeerState peer, long previousMutationTermNumber, MutationRecord mutation, long nowMillis) {
+	private void _sendMutationToPeer(DownstreamPeerState peer, long currentTermNumber, long previousMutationTermNumber, MutationRecord mutation, long nowMillis) {
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		
 		if (_isLeader) {
-			DownstreamMessage message = DownstreamMessage.appendMutations(previousMutationTermNumber, mutation, _lastCommittedMutationOffset);
+			DownstreamMessage message = DownstreamMessage.appendMutations(currentTermNumber, previousMutationTermNumber, mutation, _lastCommittedMutationOffset);
 			_sendDownstreamMessage(peer, message, nowMillis);
 			peer.nextMutationOffsetToSend += 1;
 		}
@@ -465,16 +465,16 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 			if (_isLeader) {
 				long now = System.currentTimeMillis();
 				_mainRegisterHeartbeat(now);
-				_mainSendHeartbeat(now);
+				_mainSendHeartbeat(snapshot.currentTermNumber, now);
 			}
 		}, MILLIS_BETWEEN_HEARTBEATS);
 	}
 
-	private void _mainSendHeartbeat(long nowMillis) {
+	private void _mainSendHeartbeat(long currentTermNumber, long nowMillis) {
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		
 		if (!_downstreamPeerByNode.isEmpty()) {
-			DownstreamMessage heartbeat = DownstreamMessage.heartbeat(_lastCommittedMutationOffset);
+			DownstreamMessage heartbeat = DownstreamMessage.heartbeat(currentTermNumber, _lastCommittedMutationOffset);
 			long thresholdForHeartbeat = nowMillis - MILLIS_BETWEEN_HEARTBEATS;
 			for (DownstreamPeerState peer : _downstreamPeerByNode.values()) {
 				if (_isLeader
