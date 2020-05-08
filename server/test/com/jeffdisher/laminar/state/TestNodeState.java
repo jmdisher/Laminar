@@ -93,23 +93,23 @@ public class TestNodeState {
 		F<Long> client_mainEnterFollowerState = test.clientManager.get_mainEnterFollowerState();
 		F<Void> cluster_mainEnterFollowerState = test.clusterManager.get_mainEnterFollowerState();
 		F<MutationRecord> mainMutationWasReceivedOrFetched = test.clusterManager.get_mainMutationWasReceivedOrFetched();
-		boolean didApply = runner.run((snapshot) -> test.nodeState.mainAppendMutationFromUpstream(upstream, 0L, record1));
+		boolean didApply = runner.run((snapshot) -> test.nodeState.mainAppendMutationFromUpstream(upstream, 1L, 0L, record1));
 		Assert.assertTrue(didApply);
 		Assert.assertEquals(0L, client_mainEnterFollowerState.get().longValue());
 		Assert.assertEquals(record1, mainMutationWasReceivedOrFetched.get());
 		cluster_mainEnterFollowerState.get();
 		// Send a message which contradicts that.
 		// (note that the contradiction doesn't send mainMutationWasReceivedOrFetched)
-		didApply = runner.run((snapshot) -> test.nodeState.mainAppendMutationFromUpstream(upstream, 2L, record2));
+		didApply = runner.run((snapshot) -> test.nodeState.mainAppendMutationFromUpstream(upstream, 2L, 2L, record2));
 		Assert.assertTrue(!didApply);
 		// Send a replacement message.
 		mainMutationWasReceivedOrFetched = test.clusterManager.get_mainMutationWasReceivedOrFetched();
-		didApply = runner.run((snapshot) -> test.nodeState.mainAppendMutationFromUpstream(upstream, 0L, record1_fix));
+		didApply = runner.run((snapshot) -> test.nodeState.mainAppendMutationFromUpstream(upstream, 2L, 0L, record1_fix));
 		Assert.assertTrue(didApply);
 		Assert.assertEquals(record1_fix, mainMutationWasReceivedOrFetched.get());
 		// Re-send the failure.
 		mainMutationWasReceivedOrFetched = test.clusterManager.get_mainMutationWasReceivedOrFetched();
-		didApply = runner.run((snapshot) -> test.nodeState.mainAppendMutationFromUpstream(upstream, 2L, record2));
+		didApply = runner.run((snapshot) -> test.nodeState.mainAppendMutationFromUpstream(upstream, 2L, 2L, record2));
 		Assert.assertTrue(didApply);
 		Assert.assertEquals(record2, mainMutationWasReceivedOrFetched.get());
 		
@@ -140,13 +140,13 @@ public class TestNodeState {
 		ClusterConfig newConfig = ClusterConfig.configFromEntries(new ConfigEntry[] {originalEntry, upstreamEntry});
 		// Send it 2 mutations (first one is 2-node config).
 		MutationRecord configChangeRecord = MutationRecord.generateRecord(MutationRecordType.UPDATE_CONFIG, 1L, 1L, UUID.randomUUID(), 1L, newConfig.serialize());
-		boolean didApply = runner.run((snapshot) -> nodeState.mainAppendMutationFromUpstream(upstreamEntry, 0L, configChangeRecord));
+		boolean didApply = runner.run((snapshot) -> nodeState.mainAppendMutationFromUpstream(upstreamEntry, 1L, 0L, configChangeRecord));
 		Assert.assertTrue(didApply);
 		MutationRecord tempRecord = MutationRecord.generateRecord(MutationRecordType.TEMP, 1L, 2L, UUID.randomUUID(), 1L, new byte[] {1});
-		didApply = runner.run((snapshot) -> nodeState.mainAppendMutationFromUpstream(upstreamEntry, 1L, tempRecord));
+		didApply = runner.run((snapshot) -> nodeState.mainAppendMutationFromUpstream(upstreamEntry, 1L, 1L, tempRecord));
 		Assert.assertTrue(didApply);
 		// Tell it the first mutation committed (meaning that config will be active).
-		runner.runVoid((snapshot) -> nodeState.mainCommittedMutationOffsetFromUpstream(upstreamEntry, 1L));
+		runner.runVoid((snapshot) -> nodeState.mainCommittedMutationOffsetFromUpstream(upstreamEntry, 1L, 1L));
 		// Force it to become leader.
 		runner.runVoid((snapshot) -> nodeState.mainForceLeader());
 		// Ask it to send the remaining mutation downstream.

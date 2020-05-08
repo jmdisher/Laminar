@@ -203,7 +203,7 @@ public class ClientManager implements IClientManager, INetworkManagerBackgroundC
 	}
 
 	@Override
-	public void mainEnterLeaderState() {
+	public void mainEnterLeaderState(StateSnapshot snapshot) {
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		_clusterLeader = null;
 	}
@@ -224,12 +224,12 @@ public class ClientManager implements IClientManager, INetworkManagerBackgroundC
 	}
 
 	@Override
-	public void mainEnterFollowerState(ConfigEntry clusterLeader, long lastCommittedMutationOffset) {
+	public void mainEnterFollowerState(ConfigEntry clusterLeader, StateSnapshot snapshot) {
 		// Set the config entry for future connection redirects.
 		_clusterLeader = clusterLeader;
 		
 		// Send this to all clients (not new clients since we don't yet know if they are normal clients or listeners).
-		ClientResponse redirect = ClientResponse.redirect(_clusterLeader, lastCommittedMutationOffset);
+		ClientResponse redirect = ClientResponse.redirect(_clusterLeader, snapshot.lastCommittedMutationOffset);
 		for (UUID client : _normalClientsById.keySet()) {
 			_mainEnqueueMessageToClient(client, redirect);
 		}

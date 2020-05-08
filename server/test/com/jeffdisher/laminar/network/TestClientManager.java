@@ -231,7 +231,7 @@ public class TestClientManager {
 			
 			// Now, tell the ClientManager to enter the follower state.
 			ConfigEntry entry = new ConfigEntry(UUID.randomUUID(), new InetSocketAddress(9999), new InetSocketAddress(port+1));
-			manager.mainEnterFollowerState(entry, 0L);
+			manager.mainEnterFollowerState(entry, new StateSnapshot(null, 0L, 0L, 0L, 1L));
 			// -nodeWriteReady
 			callbacks.runAndGetNextMessage();
 			raw = TestingHelpers.readMessageInFrame(fromServer);
@@ -262,7 +262,7 @@ public class TestClientManager {
 		
 		// Now, tell the ClientManager to enter the follower state.
 		ConfigEntry entry = new ConfigEntry(UUID.randomUUID(), new InetSocketAddress(9999), new InetSocketAddress(port+1));
-		manager.mainEnterFollowerState(entry, 0L);
+		manager.mainEnterFollowerState(entry, new StateSnapshot(null, 0L, 0L, 0L, 1L));
 		
 		// Create the connection, send the commit message, and read it, directly.
 		try (Socket client = new Socket("localhost", port)) {
@@ -352,7 +352,7 @@ public class TestClientManager {
 			while (null == _pendingConsumer) {
 				this.wait();
 			}
-			_pendingConsumer.accept(new StateSnapshot(_dummyConfig, 0L, 0L, 0L));
+			_pendingConsumer.accept(new StateSnapshot(_dummyConfig, 0L, 0L, 0L, 1L));
 			_pendingConsumer = null;
 			this.notifyAll();
 		}

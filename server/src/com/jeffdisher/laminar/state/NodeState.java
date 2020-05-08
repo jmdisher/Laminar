@@ -129,7 +129,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 			// Poll for the next work item.
 			Consumer<StateSnapshot> next = _commandQueue.blockingGet();
 			// Create the state snapshot and pass it to the consumer.
-			StateSnapshot snapshot = new StateSnapshot(_currentConfig.config, _lastCommittedMutationOffset, _nextGlobalMutationOffset-1, _lastCommittedEventOffset);
+			StateSnapshot snapshot = new StateSnapshot(_currentConfig.config, _lastCommittedMutationOffset, _nextGlobalMutationOffset-1, _lastCommittedEventOffset, _currentTermNumber);
 			next.accept(snapshot);
 		}
 	}
@@ -240,7 +240,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		_currentState = RaftState.LEADER;
 		_currentTermNumber += 1;
 		_clusterLeader = null;
-		_clientManager.mainEnterLeaderState();
+		_clientManager.mainEnterLeaderState(new StateSnapshot(_currentConfig.config, _lastCommittedMutationOffset, _nextGlobalMutationOffset-1, _lastCommittedEventOffset, _currentTermNumber));
 		_clusterManager.mainEnterLeaderState();
 	}
 	// </IClientManagerCallbacks>
@@ -268,7 +268,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 	}
 
 	@Override
-	public boolean mainAppendMutationFromUpstream(ConfigEntry peer, long previousMutationTermNumber, MutationRecord record) {
+	public boolean mainAppendMutationFromUpstream(ConfigEntry peer, long upstreamTermNumber, long previousMutationTermNumber, MutationRecord record) {
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		
 		// We shouldn't receive this if we are the leader, unless the call is invalid or from a later term.
@@ -278,7 +278,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 				_currentState = RaftState.FOLLOWER;
 				_currentTermNumber = record.termNumber;
 				_clusterLeader = peer;
-				_clientManager.mainEnterFollowerState(_clusterLeader, _lastCommittedMutationOffset);
+				_clientManager.mainEnterFollowerState(_clusterLeader, new StateSnapshot(_currentConfig.config, _lastCommittedMutationOffset, _nextGlobalMutationOffset-1, _lastCommittedEventOffset, _currentTermNumber));
 				_clusterManager.mainEnterFollowerState();
 			}
 		} else {
@@ -310,13 +310,13 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 	}
 
 	@Override
-	public void mainCommittedMutationOffsetFromUpstream(ConfigEntry peer, long lastCommittedMutationOffset) {
+	public void mainCommittedMutationOffsetFromUpstream(ConfigEntry peer, long upstreamTermNumber, long lastCommittedMutationOffset) {
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		if (null == _clusterLeader) {
 			// Cluster leadership is only discovered when a peer starts acting like a leader.
 			_currentState = RaftState.FOLLOWER;
 			_clusterLeader = peer;
-			_clientManager.mainEnterFollowerState(_clusterLeader, _lastCommittedMutationOffset);
+			_clientManager.mainEnterFollowerState(_clusterLeader, new StateSnapshot(_currentConfig.config, _lastCommittedMutationOffset, _nextGlobalMutationOffset-1, _lastCommittedEventOffset, _currentTermNumber));
 			_clusterManager.mainEnterFollowerState();
 		} else {
 			Assert.assertTrue(_clusterLeader == peer);
@@ -377,7 +377,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		SyncProgress newConfigProgress = _configsPendingCommit.remove(completed.globalOffset);
 		if (null != newConfigProgress) {
 			// We need a new snapshot since we just changed state in this command, above.
-			StateSnapshot newSnapshot = new StateSnapshot(_currentConfig.config, _lastCommittedMutationOffset, _nextGlobalMutationOffset-1, _lastCommittedEventOffset);
+			StateSnapshot newSnapshot = new StateSnapshot(_currentConfig.config, _lastCommittedMutationOffset, _nextGlobalMutationOffset-1, _lastCommittedEventOffset, _currentTermNumber);
 			// This requires that we broadcast the config update to the connected clients and listeners.
 			_clientManager.mainBroadcastConfigUpdate(newSnapshot, newConfigProgress.config);
 			// We change the config but this would render the snapshot stale so we do it last, to make that clear.
@@ -409,7 +409,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		_clientManager.mainReplayCommittedMutationForReconnects(snapshot, record);
 		
 		// Check to see if a downstream peer needs this.
-		_clusterManager.mainMutationWasReceivedOrFetched(previousMutationTermNumber, record);
+		_clusterManager.mainMutationWasReceivedOrFetched(snapshot, previousMutationTermNumber, record);
 	}
 
 	@Override
@@ -503,7 +503,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 			long previousMutationTermNumber = _getPreviousMutationTermNumber();
 			_inFlightMutations.add(new InFlightTuple(mutation, event));
 			// Notify anyone downstream about this.
-			_clusterManager.mainMutationWasReceivedOrFetched(previousMutationTermNumber, mutation);
+			_clusterManager.mainMutationWasReceivedOrFetched(new StateSnapshot(_currentConfig.config, _lastCommittedMutationOffset, _nextGlobalMutationOffset-1, _lastCommittedEventOffset, _currentTermNumber), previousMutationTermNumber, mutation);
 		}
 	}
 

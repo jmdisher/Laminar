@@ -57,7 +57,7 @@ public class FutureClusterManager implements IClusterManager {
 		}
 	}
 	@Override
-	public void mainMutationWasReceivedOrFetched(long previousMutationTermNumber, MutationRecord record) {
+	public void mainMutationWasReceivedOrFetched(StateSnapshot snapshot, long previousMutationTermNumber, MutationRecord record) {
 		if (null != f_mainMutationWasReceivedOrFetched) {
 			f_mainMutationWasReceivedOrFetched.put(record);
 			f_mainMutationWasReceivedOrFetched = null;

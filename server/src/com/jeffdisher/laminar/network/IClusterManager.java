@@ -1,5 +1,6 @@
 package com.jeffdisher.laminar.network;
 
+import com.jeffdisher.laminar.state.StateSnapshot;
 import com.jeffdisher.laminar.types.ConfigEntry;
 import com.jeffdisher.laminar.types.MutationRecord;
 
@@ -34,10 +35,11 @@ public interface IClusterManager {
 	 * Called by the NodeState when a mutation was received or made available.  It may be committed or not.
 	 * This means it came in directly from a client or was just fetched from disk.
 	 * 
+	 * @param snapshot The state of the node during this invocation.
 	 * @param previousMutationTermNumber The term number of the mutation before this one.
 	 * @param mutation The mutation.
 	 */
-	void mainMutationWasReceivedOrFetched(long previousMutationTermNumber, MutationRecord mutation);
+	void mainMutationWasReceivedOrFetched(StateSnapshot snapshot, long previousMutationTermNumber, MutationRecord mutation);
 
 	/**
 	 * Requests that a downstream connection be created to the peer identified by entry.

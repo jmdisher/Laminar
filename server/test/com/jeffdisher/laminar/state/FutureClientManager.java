@@ -34,9 +34,9 @@ public class FutureClientManager implements IClientManager {
 		System.out.println("IClientManager - mainDisconnectAllClientsAndListeners");
 	}
 	@Override
-	public void mainEnterFollowerState(ConfigEntry clusterLeader, long lastCommittedMutationOffset) {
+	public void mainEnterFollowerState(ConfigEntry clusterLeader, StateSnapshot snapshot) {
 		if (null != f_mainEnterFollowerState) {
-			f_mainEnterFollowerState.put(lastCommittedMutationOffset);
+			f_mainEnterFollowerState.put(snapshot.lastCommittedMutationOffset);
 			f_mainEnterFollowerState = null;
 		} else {
 			System.out.println("IClientManager - mainEnterFollowerState");
@@ -64,7 +64,7 @@ public class FutureClientManager implements IClientManager {
 		System.out.println("IClientManager - mainReplayCommittedMutationForReconnects");
 	}
 	@Override
-	public void mainEnterLeaderState() {
+	public void mainEnterLeaderState(StateSnapshot snapshot) {
 		System.out.println("IClientManager - mainEnterLeaderState");
 	}
 }

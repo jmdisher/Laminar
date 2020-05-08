@@ -42,11 +42,12 @@ public interface IClusterManagerCallbacks {
 	 * as the leader, for redirects.
 	 * 
 	 * @param peer The peer which sent the mutation.
+	 * @param upstreamTermNumber The term number of the upstream peer.
 	 * @param previousMutationTermNumber The term number of the mutation before this one.
 	 * @param mutation The mutation.
 	 * @return True if this was appended, false if there was a term mismatch and the mutation was not appended.
 	 */
-	boolean mainAppendMutationFromUpstream(ConfigEntry peer, long previousMutationTermNumber, MutationRecord mutation);
+	boolean mainAppendMutationFromUpstream(ConfigEntry peer, long upstreamTermNumber, long previousMutationTermNumber, MutationRecord mutation);
 
 	/**
 	 * Called after processing a list of incoming mutations or a heartbeat from an upstream peer.
@@ -58,9 +59,10 @@ public interface IClusterManagerCallbacks {
 	 * whether it can commit a message from its term (this safety is a consequence of section 5.4.2 in the Raft paper).
 	 * 
 	 * @param peer The peer which sent the update.
+	 * @param upstreamTermNumber The term number of the upstream peer.
 	 * @param lastCommittedMutationOffset The leader has committed mutations up to this point.
 	 */
-	void mainCommittedMutationOffsetFromUpstream(ConfigEntry peer, long lastCommittedMutationOffset);
+	void mainCommittedMutationOffsetFromUpstream(ConfigEntry peer, long upstreamTermNumber, long lastCommittedMutationOffset);
 
 	/**
 	 * Called when the ClusterManager wishes to send a mutation to a downstream peer and needs it to be loaded.

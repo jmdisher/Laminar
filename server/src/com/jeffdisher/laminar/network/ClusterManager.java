@@ -88,7 +88,7 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 	}
 
 	@Override
-	public void mainMutationWasReceivedOrFetched(long previousMutationTermNumber, MutationRecord mutation) {
+	public void mainMutationWasReceivedOrFetched(StateSnapshot snapshot, long previousMutationTermNumber, MutationRecord mutation) {
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		
 		// See if any of our downstream peers were waiting for this mutation and are writable.
@@ -292,7 +292,7 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 						// Update our last offset received and notify the callbacks of this mutation.
 						// NOTE:  This assertion is only valid while we are maintaining a lock-step state.
 						Assert.assertTrue((_lastMutationOffsetReceived + 1) == record.globalOffset);
-						boolean didApply = _callbacks.mainAppendMutationFromUpstream(peer.entry, previousMutationTermNumber, record);
+						boolean didApply = _callbacks.mainAppendMutationFromUpstream(peer.entry, -1L, previousMutationTermNumber, record);
 						if (didApply) {
 							// Advance to the next mutation (and make sure this isn't a rewind since we may need to re-ack).
 							_lastMutationOffsetReceived = record.globalOffset;
@@ -313,7 +313,7 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 						peer.pendingPeerStateMutationOffsetReceived = _lastMutationOffsetReceived;
 					} else {
 						// This is normal operation so proceed with committing.
-						_callbacks.mainCommittedMutationOffsetFromUpstream(peer.entry, payload.lastCommittedMutationOffset);
+						_callbacks.mainCommittedMutationOffsetFromUpstream(peer.entry, -1L, payload.lastCommittedMutationOffset);
 					}
 					// We either want to ack or send back the reset.
 					_trySendUpstream(peer);

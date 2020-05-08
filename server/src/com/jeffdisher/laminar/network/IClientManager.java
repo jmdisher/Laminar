@@ -23,9 +23,9 @@ public interface IClientManager {
 	 * We will leave listeners connected, though, as they will be able to listen to a FOLLOWER.
 	 * 
 	 * @param clusterLeader The new leader of the cluster.
-	 * @param lastCommittedMutationOffset The offset of the most recent mutation the server committed.
+	 * @param snapshot The state of the node during this invocation.
 	 */
-	void mainEnterFollowerState(ConfigEntry clusterLeader, long lastCommittedMutationOffset);
+	void mainEnterFollowerState(ConfigEntry clusterLeader, StateSnapshot snapshot);
 
 	/**
 	 * Called when the mutation commit offset changes.
@@ -65,6 +65,8 @@ public interface IClientManager {
 	/**
 	 * Called when the node has entered a LEADER state.  This means that the receiver should stop sending REDIRECTs and
 	 * allow normal client connections, again.
+	 * 
+	 * @param snapshot The state of the node during this invocation.
 	 */
-	void mainEnterLeaderState();
+	void mainEnterLeaderState(StateSnapshot snapshot);
 }

@@ -251,7 +251,7 @@ public class TestClusterManager {
 		// Now, send another message which will invalidate the term number of the last one we sent.
 		MutationRecord record2 = MutationRecord.generateRecord(MutationRecordType.TEMP, 2L, 2L, record1.clientId, 2L, new byte[] {2});
 		// (this 2L is what should cause the downstream to drop record1).
-		upstreamManager.mainMutationWasReceivedOrFetched(2L, record2);
+		upstreamManager.mainMutationWasReceivedOrFetched(new StateSnapshot(null, 0L, 0L, 0L, 2L), 2L, record2);
 		// -1 nodeWriteReady
 		upstreamCallbacks.runOneCommand();
 		// -2 nodeReadReady (this will cause them to send a new PEER_STATE to the upstream).
@@ -323,7 +323,7 @@ public class TestClusterManager {
 			while (null == _command) {
 				this.wait();
 			}
-			_command.accept(new StateSnapshot(null, 0L, 0L, 0L));
+			_command.accept(new StateSnapshot(null, 0L, 0L, 0L, 1L));
 			_command = null;
 			this.notifyAll();
 		}
@@ -348,7 +348,7 @@ public class TestClusterManager {
 		}
 		
 		@Override
-		public boolean mainAppendMutationFromUpstream(ConfigEntry peer, long previousMutationTermNumber, MutationRecord mutation) {
+		public boolean mainAppendMutationFromUpstream(ConfigEntry peer, long upstreamTermNumber, long previousMutationTermNumber, MutationRecord mutation) {
 			if (null == this.upstreamPeer) {
 				this.upstreamPeer = peer;
 			} else {
@@ -370,7 +370,7 @@ public class TestClusterManager {
 		}
 		
 		@Override
-		public void mainCommittedMutationOffsetFromUpstream(ConfigEntry peer, long lastCommittedMutationOffset) {
+		public void mainCommittedMutationOffsetFromUpstream(ConfigEntry peer, long upstreamTermNumber, long lastCommittedMutationOffset) {
 			this.upstreamCommitOffset = lastCommittedMutationOffset;
 		}
 		
