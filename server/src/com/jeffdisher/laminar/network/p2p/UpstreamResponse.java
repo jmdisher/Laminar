@@ -18,6 +18,10 @@ public class UpstreamResponse {
 		return new UpstreamResponse(Type.RECEIVED_MUTATIONS, UpstreamPayload_ReceivedMutations.create(lastReceivedMutationOffset));
 	}
 
+	public static UpstreamResponse castVote(long termNumber) {
+		return new UpstreamResponse(Type.CAST_VOTE, UpstreamPayload_CastVote.create(termNumber));
+	}
+
 	public static UpstreamResponse deserializeFrom(ByteBuffer buffer) {
 		byte typeByte = buffer.get();
 		if ((typeByte < 0) || (typeByte >= Type.values().length)) {
@@ -31,6 +35,9 @@ public class UpstreamResponse {
 			break;
 		case RECEIVED_MUTATIONS:
 			payload = UpstreamPayload_ReceivedMutations.deserializeFrom(buffer);
+			break;
+		case CAST_VOTE:
+			payload = UpstreamPayload_CastVote.deserializeFrom(buffer);
 			break;
 		case INVALID:
 			throw _parseError();
@@ -73,5 +80,6 @@ public class UpstreamResponse {
 		INVALID,
 		PEER_STATE,
 		RECEIVED_MUTATIONS,
+		CAST_VOTE,
 	}
 }

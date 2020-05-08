@@ -24,6 +24,10 @@ public class DownstreamMessage {
 		return new DownstreamMessage(Type.APPEND_MUTATIONS, DownstreamPayload_AppendMutations.create(termNumber, 0L, new MutationRecord[0], lastCommittedMutationOffset));
 	}
 
+	public static DownstreamMessage requestVotes(long newTermNumber, long previousMutationTerm, long previousMuationOffset) {
+		return new DownstreamMessage(Type.REQUEST_VOTES, DownstreamPayload_RequestVotes.create(newTermNumber, previousMutationTerm, previousMuationOffset));
+	}
+
 	public static DownstreamMessage deserializeFrom(ByteBuffer buffer) {
 		byte typeByte = buffer.get();
 		if ((typeByte < 0) || (typeByte >= Type.values().length)) {
@@ -37,6 +41,9 @@ public class DownstreamMessage {
 			break;
 		case APPEND_MUTATIONS:
 			payload = DownstreamPayload_AppendMutations.deserializeFrom(buffer);
+			break;
+		case REQUEST_VOTES:
+			payload = DownstreamPayload_RequestVotes.deserializeFrom(buffer);
 			break;
 		case INVALID:
 			throw _parseError();
@@ -79,5 +86,6 @@ public class DownstreamMessage {
 		INVALID,
 		IDENTITY,
 		APPEND_MUTATIONS,
+		REQUEST_VOTES,
 	}
 }

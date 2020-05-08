@@ -66,4 +66,22 @@ public class TestDownstreamMessage {
 		Assert.assertEquals(lastCommittedMutationOffset, payload.lastCommittedMutationOffset);
 		Assert.assertEquals(0, payload.records.length);
 	}
+
+	@Test
+	public void testRequestVotes() throws Throwable {
+		long newTermNumber = 2L;
+		long previousMutationTerm = 1L;
+		long previousMuationOffset = 3L;
+		DownstreamMessage message = DownstreamMessage.requestVotes(newTermNumber, previousMutationTerm, previousMuationOffset);
+		int size = message.serializedSize();
+		ByteBuffer buffer = ByteBuffer.allocate(size);
+		message.serializeInto(buffer);
+		buffer.flip();
+		
+		DownstreamMessage test = DownstreamMessage.deserializeFrom(buffer);
+		DownstreamPayload_RequestVotes payload = (DownstreamPayload_RequestVotes)test.payload;
+		Assert.assertEquals(newTermNumber, payload.newTermNumber);
+		Assert.assertEquals(previousMutationTerm, payload.previousMutationTerm);
+		Assert.assertEquals(previousMuationOffset, payload.previousMuationOffset);
+	}
 }
