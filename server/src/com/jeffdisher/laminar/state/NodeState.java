@@ -237,11 +237,15 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 
 	@Override
 	public void mainForceLeader() {
-		_currentState = RaftState.LEADER;
+		// Change mode and increment term number, clearing any existing leader.
+		_currentState = RaftState.CANDIDATE;
 		_currentTermNumber += 1;
 		_clusterLeader = null;
-		_clientManager.mainEnterLeaderState(new StateSnapshot(_currentConfig.config, _lastCommittedMutationOffset, _nextGlobalMutationOffset-1, _lastCommittedEventOffset, _currentTermNumber));
-		_clusterManager.mainEnterLeaderState();
+		
+		// Vote for ourselves, pause client interactions, and request downstream votes.
+		_selfState.termOfLastCastVote = _currentTermNumber;
+		_clientManager.mainEnterCandidateState();
+		_clusterManager.mainEnterCandidateState(_currentTermNumber, _getPreviousMutationTermNumber(), _nextGlobalMutationOffset - 1);
 	}
 	// </IClientManagerCallbacks>
 
@@ -352,13 +356,42 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 	@Override
 	public boolean mainReceivedRequestForVotes(ConfigEntry peer, long newTermNumber, long candidateLastReceivedMutationTerm, long candidateLastReceivedMutation) {
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
-		throw Assert.unimplemented("TODO: Implement");
+		// Rules here defined in section 5.4.1 of Raft paper.
+		// Check if their last received mutation term is greater than ours.
+		long mostRecentMutationTerm = _getPreviousMutationTermNumber();
+		boolean shouldVote = false;
+		if ((candidateLastReceivedMutationTerm > mostRecentMutationTerm) || ((candidateLastReceivedMutationTerm == mostRecentMutationTerm) && (candidateLastReceivedMutation >= (_nextGlobalMutationOffset - 1)))) {
+			// They are more up-to-date so we presume they are the leader.
+			_enterFollowerState(peer, newTermNumber);
+			// Send them our vote.
+			shouldVote = true;
+		}
+		return shouldVote;
 	}
 
 	@Override
 	public void mainReceivedVoteFromFollower(ConfigEntry peer, long newTermNumber) {
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
-		throw Assert.unimplemented("TODO: Implement");
+		// Make sure that we are a candidate and this is our term.
+		// TODO:  Relax this as we start to allow more asynchronicity in the cluster.
+		Assert.assertTrue(RaftState.CANDIDATE == _currentState);
+		Assert.assertTrue(_currentTermNumber == newTermNumber);
+		
+		// Set the term number in our sync state.
+		_unionOfDownstreamNodes.get(peer.nodeUuid).termOfLastCastVote = newTermNumber;
+		// See if we won the election (note that we need to be leader in all currently active configs).
+		// We want the minimum term number of all active configs.
+		boolean isElected = _currentConfig.isElectedInTerm(_currentTermNumber);
+		for (SyncProgress pending : _configsPendingCommit.values()) {
+			isElected &= pending.isElectedInTerm(_currentTermNumber);
+		}
+		if (isElected) {
+			// We won the election so enter the leader state.
+			_currentState = RaftState.LEADER;
+			StateSnapshot snapshot = new StateSnapshot(_currentConfig.config, _lastCommittedMutationOffset, _nextGlobalMutationOffset-1, _lastCommittedEventOffset, _currentTermNumber);
+			_clientManager.mainEnterLeaderState(snapshot);
+			_clusterManager.mainEnterLeaderState();
+		}
 	}
 	// </IClusterManagerCallbacks>
 

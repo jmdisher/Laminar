@@ -17,6 +17,8 @@ import com.jeffdisher.laminar.components.NetworkManager;
 import com.jeffdisher.laminar.network.p2p.DownstreamMessage;
 import com.jeffdisher.laminar.network.p2p.DownstreamPayload_AppendMutations;
 import com.jeffdisher.laminar.network.p2p.DownstreamPayload_Identity;
+import com.jeffdisher.laminar.network.p2p.DownstreamPayload_RequestVotes;
+import com.jeffdisher.laminar.network.p2p.UpstreamPayload_CastVote;
 import com.jeffdisher.laminar.network.p2p.UpstreamPayload_PeerState;
 import com.jeffdisher.laminar.network.p2p.UpstreamPayload_ReceivedMutations;
 import com.jeffdisher.laminar.network.p2p.UpstreamResponse;
@@ -164,7 +166,14 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 	@Override
 	public void mainEnterCandidateState(long newTermNumber, long previousMutationTerm, long previousMuationOffset) {
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
-		throw Assert.unimplemented("TODO: Implement");
+		// We want to unset our leader flag and set a requirement for REQUEST_VOTES to be sent to all downstream peers.
+		// (this will be easier once there is buffering on inter-node communication but for now we store this information in DownstreamPeerState).
+		_isLeader = false;
+		DownstreamMessage request = DownstreamMessage.requestVotes(newTermNumber, previousMutationTerm, previousMuationOffset);
+		for (DownstreamPeerState peer : _downstreamPeerByNode.values()) {
+			peer.pendingVoteRequest = request;
+			_tryFetchOrSend(newTermNumber, peer);
+		}
 	}
 
 	@Override
@@ -266,6 +275,11 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 						
 						// See if we can send them anything right away.
 						_tryFetchOrSend(arg0.currentTermNumber, peer);
+					} else if (UpstreamResponse.Type.CAST_VOTE == response.type) {
+						// We got a vote from this peer.
+						DownstreamPeerState peer = _downstreamPeerByNode.get(node);
+						long termNumber = ((UpstreamPayload_CastVote)response.payload).termNumber;
+						_callbacks.mainReceivedVoteFromFollower(peer.entry, termNumber);
 					} else {
 						Assert.unreachable("Unknown response type");
 					}
@@ -293,10 +307,22 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 					
 					byte[] raw = _networkManager.readWaitingMessage(node);
 					DownstreamMessage message = DownstreamMessage.deserializeFrom(ByteBuffer.wrap(raw));
-					Assert.assertTrue(DownstreamMessage.Type.APPEND_MUTATIONS == message.type);
-					DownstreamPayload_AppendMutations payload = (DownstreamPayload_AppendMutations)message.payload;
 					
-					_mainHandleAppendMutations(peer, payload);
+					// There are 2 messages which come from upstream peers:  APPEND_MUTATIONS and REQUEST_VOTES.
+					if (DownstreamMessage.Type.APPEND_MUTATIONS == message.type) {
+						DownstreamPayload_AppendMutations payload = (DownstreamPayload_AppendMutations)message.payload;
+						_mainHandleAppendMutations(peer, payload);
+					} else if (DownstreamMessage.Type.REQUEST_VOTES == message.type) {
+						DownstreamPayload_RequestVotes payload = (DownstreamPayload_RequestVotes)message.payload;
+						boolean shouldVote = _callbacks.mainReceivedRequestForVotes(peer.entry, payload.newTermNumber, payload.previousMutationTerm, payload.previousMuationOffset);
+						if (shouldVote) {
+							// We should now be in the follower state.
+							Assert.assertTrue(!_isLeader);
+							peer.pendingVoteToSend = UpstreamResponse.castVote(payload.newTermNumber);
+						}
+					} else {
+						throw Assert.unreachable("Unknown message type from upstream");
+					}
 					// We either want to ack or send back the reset.
 					_trySendUpstream(peer);
 				}
@@ -377,12 +403,20 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 				&& peer.isWritable
 		) {
 			if (_isLeader) {
+				// Normal mutation sends happen when leader.
 				IClusterManagerCallbacks.MutationWrapper wrapper = _callbacks.mainClusterFetchMutationIfAvailable(peer.nextMutationOffsetToSend);
 				if (null != wrapper) {
 					long nowMillis = System.currentTimeMillis();
 					_sendMutationToPeer(peer, currentTermNumber, wrapper.previousMutationTermNumber, wrapper.record, nowMillis);
 				} else {
 					// We will wait for this to come in, later.
+				}
+			} else {
+				// The only thing which we can send downstream when not the leader (as CANDIDATE, specifically) is a request for votes.
+				if (null != peer.pendingVoteRequest) {
+					long nowMillis = System.currentTimeMillis();
+					_sendDownstreamMessage(peer, peer.pendingVoteRequest, nowMillis);
+					peer.pendingVoteRequest = null;
 				}
 			}
 		}
@@ -401,6 +435,9 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 				// Send the ack.
 				messageToSend = UpstreamResponse.receivedMutations(_lastMutationOffsetReceived);
 				peer.lastMutationOffsetAcknowledged = _lastMutationOffsetReceived;
+			} else if (!_isLeader && (null != peer.pendingVoteToSend)) {
+				messageToSend = peer.pendingVoteToSend;
+				peer.pendingVoteToSend = null;
 			}
 			
 			if (null != messageToSend) {

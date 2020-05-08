@@ -8,6 +8,7 @@ import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Queue;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Consumer;
@@ -41,6 +42,9 @@ public class ClientManager implements IClientManager, INetworkManagerBackgroundC
 
 	// The current leader of the cluster (null if we are the leader).  Clients will be redirected to it.
 	private ConfigEntry _clusterLeader;
+	// We enqueue any client readable callbacks we get while in the candidate phase and run them once we become LEADER or FOLLOWER.
+	// (we do this since we don't know how to handle the state transitions they will send us - existing outgoing messages can still be sent, though).
+	private Queue<Consumer<StateSnapshot>> _suspendedClientReadsDuringCandidate;
 	// Note that we track clients in 1 of 3 different states:  new, normal, listener.
 	// -new clients just connected and haven't yet sent a message so we don't know what they are doing.
 	// -normal clients are the kind which send mutative operations and wait for acks
@@ -205,13 +209,22 @@ public class ClientManager implements IClientManager, INetworkManagerBackgroundC
 	@Override
 	public void mainEnterLeaderState(StateSnapshot snapshot) {
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
+		Assert.assertTrue(null != _suspendedClientReadsDuringCandidate);
 		_clusterLeader = null;
+		for (Consumer<StateSnapshot> clientRead : _suspendedClientReadsDuringCandidate) {
+			clientRead.accept(snapshot);
+		}
+		_suspendedClientReadsDuringCandidate = null;
 	}
 
 	@Override
 	public void mainEnterCandidateState() {
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
-		throw Assert.unimplemented("TODO: Implement");
+		_clusterLeader = null;
+		// Create our list of suspended client reads (it is possible to go from candidate state to candidate state so we may just want to continue a previous one).
+		if (null == _suspendedClientReadsDuringCandidate) {
+			_suspendedClientReadsDuringCandidate = new LinkedList<>();
+		}
 	}
 
 	/**
@@ -233,6 +246,14 @@ public class ClientManager implements IClientManager, INetworkManagerBackgroundC
 	public void mainEnterFollowerState(ConfigEntry clusterLeader, StateSnapshot snapshot) {
 		// Set the config entry for future connection redirects.
 		_clusterLeader = clusterLeader;
+		
+		// We can enter the FOLLOWER state directly from leader so there may not be suspended reads.
+		if (null != _suspendedClientReadsDuringCandidate) {
+			for (Consumer<StateSnapshot> clientRead : _suspendedClientReadsDuringCandidate) {
+				clientRead.accept(snapshot);
+			}
+			_suspendedClientReadsDuringCandidate = null;
+		}
 		
 		// Send this to all clients (not new clients since we don't yet know if they are normal clients or listeners).
 		ClientResponse redirect = ClientResponse.redirect(_clusterLeader, snapshot.lastCommittedMutationOffset);
@@ -354,7 +375,14 @@ public class ClientManager implements IClientManager, INetworkManagerBackgroundC
 		_callbacks.ioEnqueueClientCommandForMainThread(new Consumer<StateSnapshot>() {
 			@Override
 			public void accept(StateSnapshot arg) {
-				_mainHandleReadableClient(node, arg);
+				// See if we need to suspend this until an election is over.
+				if (null != _suspendedClientReadsDuringCandidate) {
+					// Wrap this in a new Consumer and save it for later.
+					_suspendedClientReadsDuringCandidate.add((snapshot) -> _mainHandleReadableClient(node, snapshot));
+				} else {
+					// We are in a normal running state so just run it.
+					_mainHandleReadableClient(node, arg);
+				}
 			}});
 	}
 

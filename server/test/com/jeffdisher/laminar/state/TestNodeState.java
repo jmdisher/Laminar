@@ -140,6 +140,7 @@ public class TestNodeState {
 		ClusterConfig newConfig = ClusterConfig.configFromEntries(new ConfigEntry[] {originalEntry, upstreamEntry});
 		// Send it 2 mutations (first one is 2-node config).
 		MutationRecord configChangeRecord = MutationRecord.generateRecord(MutationRecordType.UPDATE_CONFIG, 1L, 1L, UUID.randomUUID(), 1L, newConfig.serialize());
+		// (note that this will cause them to become a FOLLOWER).
 		boolean didApply = runner.run((snapshot) -> nodeState.mainAppendMutationFromUpstream(upstreamEntry, 1L, 0L, configChangeRecord));
 		Assert.assertTrue(didApply);
 		MutationRecord tempRecord = MutationRecord.generateRecord(MutationRecordType.TEMP, 1L, 2L, UUID.randomUUID(), 1L, new byte[] {1});
@@ -147,8 +148,18 @@ public class TestNodeState {
 		Assert.assertTrue(didApply);
 		// Tell it the first mutation committed (meaning that config will be active).
 		runner.runVoid((snapshot) -> nodeState.mainCommittedMutationOffsetFromUpstream(upstreamEntry, 1L, 1L));
-		// Force it to become leader.
+		
+		// <election>
+		// Force it to enter CANDIDATE state.
+		F<Long> electionStart = test.clusterManager.get_mainEnterCandidateState();
 		runner.runVoid((snapshot) -> nodeState.mainForceLeader());
+		Assert.assertEquals(2L, electionStart.get().longValue());
+		// Send back vote (allows it to enter LEADER state).
+		F<Void> electionEnd = test.clusterManager.get_mainEnterLeaderState();
+		runner.runVoid((snapshot) -> nodeState.mainReceivedVoteFromFollower(upstreamEntry, 2L));
+		electionEnd.get();
+		// </election>
+		
 		// Ask it to send the remaining mutation downstream.
 		IClusterManagerCallbacks.MutationWrapper wrapper = runner.run((snapshot) -> nodeState.mainClusterFetchMutationIfAvailable(2L));
 		Assert.assertNotNull(wrapper);
