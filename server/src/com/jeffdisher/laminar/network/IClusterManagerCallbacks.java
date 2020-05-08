@@ -87,6 +87,26 @@ public interface IClusterManagerCallbacks {
 	 */
 	void mainReceivedAckFromDownstream(ConfigEntry peer, long mutationOffset);
 
+	/**
+	 * Called when an upstream peer has declared itself a CANDIDATE in a new term and started an election.  The receiver
+	 * must decide if they are going to send their vote to this candidate or ignore it.
+	 * 
+	 * @param peer The upstream peer who started the election.
+	 * @param newTermNumber The term number of the term it opened with the election.
+	 * @param candidateLastReceivedMutationTerm The term number of the last mutation the candidate RECEIVED.
+	 * @param candidateLastReceivedMutation The mutation offset of the last mutation the candidate RECEIVED.
+	 * @return True if the receiver wants to send the vote, false if it wants to ignore it.
+	 */
+	boolean mainReceivedRequestForVotes(ConfigEntry peer, long newTermNumber, long candidateLastReceivedMutationTerm, long candidateLastReceivedMutation);
+
+	/**
+	 * Called when a downstream peer has become a FOLLOWER in the new term and voted for the receiver in their election.
+	 * 
+	 * @param peer The downstream peer who voted.
+	 * @param newTermNumber The term number where the election is happening.
+	 */
+	void mainReceivedVoteFromFollower(ConfigEntry peer, long newTermNumber);
+
 
 	/**
 	 * Just a container for returning a tuple in this interface.

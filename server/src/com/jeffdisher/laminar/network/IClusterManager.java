@@ -55,4 +55,14 @@ public interface IClusterManager {
 	 * downstream nodes.
 	 */
 	void mainEnterLeaderState();
+
+	/**
+	 * Called to tell the ClusterManager that the node has entered into a CANDIDATE state.  This means it must send off
+	 * vote requests to all downstream peers.
+	 * 
+	 * @param newTermNumber The term number where the election is happening.
+	 * @param previousMutationTerm The term number of the most recently RECEIVED mutation on this node.
+	 * @param previousMuationOffset The mutation offset of the most recently RECEIVED mutation on this node.
+	 */
+	void mainEnterCandidateState(long newTermNumber, long previousMutationTerm, long previousMuationOffset);
 }

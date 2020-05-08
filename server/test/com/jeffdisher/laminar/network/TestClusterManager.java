@@ -408,5 +408,16 @@ public class TestClusterManager {
 			_command = command;
 			this.notifyAll();
 		}
+
+		@Override
+		public boolean mainReceivedRequestForVotes(ConfigEntry peer, long newTermNumber, long candidateLastReceivedMutationTerm, long candidateLastReceivedMutation) {
+			Assert.fail("Not used");
+			return false;
+		}
+
+		@Override
+		public void mainReceivedVoteFromFollower(ConfigEntry peer, long newTermNumber) {
+			Assert.fail("Not used");
+		}
 	}
 }

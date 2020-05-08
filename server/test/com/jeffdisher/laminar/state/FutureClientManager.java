@@ -67,4 +67,9 @@ public class FutureClientManager implements IClientManager {
 	public void mainEnterLeaderState(StateSnapshot snapshot) {
 		System.out.println("IClientManager - mainEnterLeaderState");
 	}
+
+	@Override
+	public void mainEnterCandidateState() {
+		System.out.println("IClientManager - mainEnterCandidateState");
+	}
 }

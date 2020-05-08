@@ -162,6 +162,12 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 	}
 
 	@Override
+	public void mainEnterCandidateState(long newTermNumber, long previousMutationTerm, long previousMuationOffset) {
+		Assert.assertTrue(Thread.currentThread() == _mainThread);
+		throw Assert.unimplemented("TODO: Implement");
+	}
+
+	@Override
 	public void nodeDidConnect(NetworkManager.NodeToken node) {
 		Assert.assertTrue(Thread.currentThread() != _mainThread);
 		_callbacks.ioEnqueueClusterCommandForMainThread(new Consumer<StateSnapshot>() {

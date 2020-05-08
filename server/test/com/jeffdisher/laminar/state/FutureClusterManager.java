@@ -15,6 +15,8 @@ public class FutureClusterManager implements IClusterManager {
 	private F<Void> f_mainEnterFollowerState;
 	private F<Long> f_mainMutationWasCommitted;
 	private F<MutationRecord> f_mainMutationWasReceivedOrFetched;
+	private F<Void> f_mainEnterLeaderState;
+	private F<Long> f_mainEnterCandidateState;
 
 	public F<Void> get_mainEnterFollowerState() {
 		Assert.assertNull(f_mainEnterFollowerState);
@@ -32,6 +34,18 @@ public class FutureClusterManager implements IClusterManager {
 		Assert.assertNull(f_mainMutationWasReceivedOrFetched);
 		f_mainMutationWasReceivedOrFetched = new F<MutationRecord>();
 		return f_mainMutationWasReceivedOrFetched;
+	}
+
+	public F<Void> get_mainEnterLeaderState() {
+		Assert.assertNull(f_mainEnterLeaderState);
+		f_mainEnterLeaderState = new F<>();
+		return f_mainEnterLeaderState;
+	}
+
+	public F<Long> get_mainEnterCandidateState() {
+		Assert.assertNull(f_mainEnterCandidateState);
+		f_mainEnterCandidateState = new F<>();
+		return f_mainEnterCandidateState;
 	}
 
 	@Override
@@ -71,6 +85,21 @@ public class FutureClusterManager implements IClusterManager {
 	}
 	@Override
 	public void mainEnterLeaderState() {
-		System.out.println("IClusterManager - mainEnterLeaderState");
+		if (null != f_mainEnterLeaderState) {
+			f_mainEnterLeaderState.put(null);
+			f_mainEnterLeaderState = null;
+		} else {
+			System.out.println("IClusterManager - mainEnterLeaderState");
+		}
+	}
+
+	@Override
+	public void mainEnterCandidateState(long newTermNumber, long previousMutationTerm, long previousMuationOffset) {
+		if (null != f_mainEnterCandidateState) {
+			f_mainEnterCandidateState.put(newTermNumber);
+			f_mainEnterCandidateState = null;
+		} else {
+			System.out.println("IClusterManager - mainEnterCandidateState");
+		}
 	}
 }

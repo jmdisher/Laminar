@@ -69,4 +69,10 @@ public interface IClientManager {
 	 * @param snapshot The state of the node during this invocation.
 	 */
 	void mainEnterLeaderState(StateSnapshot snapshot);
+
+	/**
+	 * Called when the node has entered the CANDIDATE state.
+	 * The ClientManager is expected to suspend all incoming readable messages from clients while in this state.
+	 */
+	void mainEnterCandidateState();
 }

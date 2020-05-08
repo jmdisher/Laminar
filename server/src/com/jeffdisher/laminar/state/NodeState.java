@@ -348,6 +348,18 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		boolean requireTermCheck = true;
 		_mainCommitValidInFlightTuples(requireTermCheck);
 	}
+
+	@Override
+	public boolean mainReceivedRequestForVotes(ConfigEntry peer, long newTermNumber, long candidateLastReceivedMutationTerm, long candidateLastReceivedMutation) {
+		Assert.assertTrue(Thread.currentThread() == _mainThread);
+		throw Assert.unimplemented("TODO: Implement");
+	}
+
+	@Override
+	public void mainReceivedVoteFromFollower(ConfigEntry peer, long newTermNumber) {
+		Assert.assertTrue(Thread.currentThread() == _mainThread);
+		throw Assert.unimplemented("TODO: Implement");
+	}
 	// </IClusterManagerCallbacks>
 
 	// <IDiskManagerBackgroundCallbacks>

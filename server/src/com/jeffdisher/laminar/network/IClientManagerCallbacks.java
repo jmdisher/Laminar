@@ -37,7 +37,7 @@ public interface IClientManagerCallbacks {
 	void mainRequestEventFetch(long nextLocalEventToFetch);
 
 	/**
-	 * A testing method to force the node into a LEADER state in response to a testing message.
+	 * A testing method to force the node to start an election in response to a testing message.
 	 */
 	void mainForceLeader();
 }
