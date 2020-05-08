@@ -1,6 +1,7 @@
 package com.jeffdisher.laminar.network;
 
 import com.jeffdisher.laminar.components.NetworkManager;
+import com.jeffdisher.laminar.network.p2p.DownstreamMessage;
 import com.jeffdisher.laminar.types.ConfigEntry;
 
 /**
@@ -48,6 +49,11 @@ public class DownstreamPeerState {
 	 * The millisecond clock the last time we sent a message to this peer.  This is tracked for heartbeat.
 	 */
 	public long lastSentMessageMillis = 0L;
+	/**
+	 * If we are trying to start an election, we need to send REQUEST_VOTE messages to all downstream peers.  That
+	 * message is stored here until the socket is writable.  Once sent, this is set to null.
+	 */
+	public DownstreamMessage pendingVoteRequest = null;
 
 	public DownstreamPeerState(ConfigEntry entry, NetworkManager.NodeToken token) {
 		this.entry = entry;

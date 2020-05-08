@@ -44,4 +44,22 @@ public class SyncProgress {
 		}
 		return sorter.remove();
 	}
+
+	/**
+	 * Similar to the checkCurrentProgress, above, but this is much more strict:  We just count how many votes came in
+	 * for the given term.  If this is a majority, we return true.
+	 * 
+	 * @param term The term where the election is currently taking place.
+	 * @return True if a majority have voted in the given term.
+	 */
+	public boolean isElectedInTerm(long term) {
+		int tally = 0;
+		for (DownstreamPeerSyncState state : _downstreamConnections) {
+			if (term == state.termOfLastCastVote) {
+				tally += 1;
+			}
+		}
+		int majority = (_downstreamConnections.size() / 2) + 1;
+		return (tally >= majority);
+	}
 }

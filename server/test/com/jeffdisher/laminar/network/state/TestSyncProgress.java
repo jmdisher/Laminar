@@ -55,6 +55,36 @@ public class TestSyncProgress {
 		Assert.assertEquals(100L, progress.checkCurrentProgress());
 	}
 
+	@Test
+	public void testSingleElection() throws Throwable {
+		ClusterConfig config = _buildConfig(1);
+		DownstreamPeerSyncState state1 = new DownstreamPeerSyncState();
+		SyncProgress progress = new SyncProgress(config, new HashSet<>(Arrays.asList(state1)));
+		state1.termOfLastCastVote = 5L;
+		Assert.assertFalse(progress.isElectedInTerm(4L));
+		Assert.assertTrue(progress.isElectedInTerm(5L));
+		Assert.assertFalse(progress.isElectedInTerm(6L));
+	}
+
+	@Test
+	public void testFiveElection() throws Throwable {
+		ClusterConfig config = _buildConfig(5);
+		DownstreamPeerSyncState state1 = new DownstreamPeerSyncState();
+		DownstreamPeerSyncState state2 = new DownstreamPeerSyncState();
+		DownstreamPeerSyncState state3 = new DownstreamPeerSyncState();
+		DownstreamPeerSyncState state4 = new DownstreamPeerSyncState();
+		DownstreamPeerSyncState state5 = new DownstreamPeerSyncState();
+		SyncProgress progress = new SyncProgress(config, new HashSet<>(Arrays.asList(state1, state2, state3, state4, state5)));
+		state1.termOfLastCastVote = 5L;
+		state2.termOfLastCastVote = 4L;
+		state3.termOfLastCastVote = 5L;
+		state4.termOfLastCastVote = 6L;
+		state5.termOfLastCastVote = 5L;
+		Assert.assertFalse(progress.isElectedInTerm(4L));
+		Assert.assertTrue(progress.isElectedInTerm(5L));
+		Assert.assertFalse(progress.isElectedInTerm(6L));
+	}
+
 
 	private static ClusterConfig _buildConfig(int size) {
 		ConfigEntry[] entries = new ConfigEntry[size];

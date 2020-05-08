@@ -1,6 +1,7 @@
 package com.jeffdisher.laminar.network;
 
 import com.jeffdisher.laminar.components.NetworkManager;
+import com.jeffdisher.laminar.network.p2p.UpstreamResponse;
 import com.jeffdisher.laminar.types.ConfigEntry;
 
 /**
@@ -39,6 +40,11 @@ public class UpstreamPeerState {
 	 * (0L is a valid starting point so -1L is the default).
 	 */
 	public long pendingPeerStateMutationOffsetReceived = -1L;
+	/**
+	 * If an election is in-progress and we want to vote for an upstream peer, we need to send CAST_VOTE up to it. That
+	 * response is stored here until the socket is writable.  Once sent, this is set to null.
+	 */
+	public UpstreamResponse pendingVoteToSend = null;
 
 	public UpstreamPeerState(ConfigEntry entry, NetworkManager.NodeToken token) {
 		this.entry = entry;
