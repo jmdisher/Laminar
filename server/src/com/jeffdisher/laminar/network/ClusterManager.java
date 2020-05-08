@@ -473,16 +473,18 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 	private void _mainSendHeartbeat(long nowMillis) {
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		
-		DownstreamMessage heartbeat = DownstreamMessage.heartbeat(_lastCommittedMutationOffset);
-		long thresholdForHeartbeat = nowMillis - MILLIS_BETWEEN_HEARTBEATS;
-		for (DownstreamPeerState peer : _downstreamPeerByNode.values()) {
-			if (_isLeader
-					&& peer.isConnectionUp
-					&& peer.didHandshake
-					&& peer.isWritable
-					&& (peer.lastSentMessageMillis < thresholdForHeartbeat)
-			) {
-				_sendDownstreamMessage(peer, heartbeat, nowMillis);
+		if (!_downstreamPeerByNode.isEmpty()) {
+			DownstreamMessage heartbeat = DownstreamMessage.heartbeat(_lastCommittedMutationOffset);
+			long thresholdForHeartbeat = nowMillis - MILLIS_BETWEEN_HEARTBEATS;
+			for (DownstreamPeerState peer : _downstreamPeerByNode.values()) {
+				if (_isLeader
+						&& peer.isConnectionUp
+						&& peer.didHandshake
+						&& peer.isWritable
+						&& (peer.lastSentMessageMillis < thresholdForHeartbeat)
+				) {
+					_sendDownstreamMessage(peer, heartbeat, nowMillis);
+				}
 			}
 		}
 	}
