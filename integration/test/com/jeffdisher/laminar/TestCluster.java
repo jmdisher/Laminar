@@ -455,7 +455,7 @@ public class TestCluster {
 			timingListener.waitForTerminate();
 			
 			// Now, create the ad-hoc message to send the FORCE_LEADER.
-			try (Socket adhoc = new Socket(server1Address.getAddress(), server2Address.getPort())) {
+			try (Socket adhoc = new Socket(server2Address.getAddress(), server2Address.getPort())) {
 				OutputStream toServer = adhoc.getOutputStream();
 				TestingHelpers.writeMessageInFrame(toServer, ClientMessage.forceLeader().serialize());
 				// Read until disconnect.
@@ -464,6 +464,7 @@ public class TestCluster {
 			
 			ClientConnection client2 = ClientConnection.open(server2Address);
 			client2.sendTemp(new byte[] {2}).waitForCommitted();
+			Assert.assertEquals(server2Address, client2.getCurrentServer());
 			client2.close();
 			
 			// Send the other message

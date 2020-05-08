@@ -241,6 +241,14 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 		return _currentClusterConfig;
 	}
 
+	/**
+	 * @return The address of the server the client is interacting with or attempting to interact with (who it thinks is
+	 * leading the cluster).
+	 */
+	public InetSocketAddress getCurrentServer() {
+		return _serverAddress;
+	}
+
 	// <INetworkManagerBackgroundCallbacks>
 	@Override
 	public void nodeDidConnect(NetworkManager.NodeToken node) {
