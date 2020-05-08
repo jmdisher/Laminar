@@ -354,52 +354,7 @@ public class ClientManager implements IClientManager, INetworkManagerBackgroundC
 		_callbacks.ioEnqueueClientCommandForMainThread(new Consumer<StateSnapshot>() {
 			@Override
 			public void accept(StateSnapshot arg) {
-				Assert.assertTrue(Thread.currentThread() == _mainThread);
-				// Check what state the client is in.
-				boolean isNew = _newClients.contains(node);
-				ClientState normalState = _normalClientsByToken.get(node);
-				ListenerState listenerState = _listenerClients.get(node);
-				ClientMessage incoming = receive(node);
-				
-				if (isNew) {
-					Assert.assertTrue(null == normalState);
-					Assert.assertTrue(null == listenerState);
-					
-					// We will ignore the nonce on a new connection.
-					// Note that the client maps are modified by this helper.
-					long mutationOffsetToFetch = _mainTransitionNewConnectionState(node, incoming, arg.lastReceivedMutationOffset, arg.lastCommittedMutationOffset, arg.currentConfig, arg.lastCommittedEventOffset);
-					if (-1 != mutationOffsetToFetch) {
-						// This might return an in-flight mutation, immediately.
-						MutationRecord nextToProcess = _callbacks.mainClientFetchMutationIfAvailable(mutationOffsetToFetch);
-						while (null != nextToProcess) {
-							// These in-flight mutations are never committed if returned inline.
-							boolean isCommitted = false;
-							nextToProcess = _mainReplayMutationAndFetchNext(arg, nextToProcess, isCommitted);
-						}
-					}
-				} else if (null != normalState) {
-					Assert.assertTrue(null == listenerState);
-					
-					// We can do the nonce check here, before we enter the state machine for the specific message type/contents.
-					if (normalState.nextNonce == incoming.nonce) {
-						normalState.nextNonce += 1;
-						long globalMutationOffsetOfAcceptedMessage = _callbacks.mainHandleValidClientMessage(normalState.clientId, incoming);
-						Assert.assertTrue(globalMutationOffsetOfAcceptedMessage > 0L);
-						// We enqueue the ack, immediately.
-						ClientResponse ack = ClientResponse.received(incoming.nonce, arg.lastCommittedMutationOffset);
-						_mainEnqueueMessageToClient(normalState.clientId, ack);
-						// Set up the client to be notified that the message committed once the MutationRecord is durable.
-						_pendingMessageCommits.put(globalMutationOffsetOfAcceptedMessage, new ClientCommitTuple(normalState.clientId, incoming.nonce));
-					} else {
-						_mainEnqueueMessageToClient(normalState.clientId, ClientResponse.error(incoming.nonce, arg.lastCommittedMutationOffset));
-					}
-				} else if (null != listenerState) {
-					// Once a listener is in the listener state, they should never send us another message.
-					Assert.unimplemented("TODO: Disconnect listener on invalid state transition");
-				} else {
-					// This appears to have disconnected before we processed it.
-					System.out.println("NOTE: Processed read ready from disconnected client");
-				}
+				_mainHandleReadableClient(node, arg);
 			}});
 	}
 
@@ -705,5 +660,54 @@ public class ClientManager implements IClientManager, INetworkManagerBackgroundC
 			}
 		}
 		return nextToProcess;
+	}
+
+	private void _mainHandleReadableClient(NetworkManager.NodeToken node, StateSnapshot arg) {
+		Assert.assertTrue(Thread.currentThread() == _mainThread);
+		// Check what state the client is in.
+		boolean isNew = _newClients.contains(node);
+		ClientState normalState = _normalClientsByToken.get(node);
+		ListenerState listenerState = _listenerClients.get(node);
+		ClientMessage incoming = receive(node);
+		
+		if (isNew) {
+			Assert.assertTrue(null == normalState);
+			Assert.assertTrue(null == listenerState);
+			
+			// We will ignore the nonce on a new connection.
+			// Note that the client maps are modified by this helper.
+			long mutationOffsetToFetch = _mainTransitionNewConnectionState(node, incoming, arg.lastReceivedMutationOffset, arg.lastCommittedMutationOffset, arg.currentConfig, arg.lastCommittedEventOffset);
+			if (-1 != mutationOffsetToFetch) {
+				// This might return an in-flight mutation, immediately.
+				MutationRecord nextToProcess = _callbacks.mainClientFetchMutationIfAvailable(mutationOffsetToFetch);
+				while (null != nextToProcess) {
+					// These in-flight mutations are never committed if returned inline.
+					boolean isCommitted = false;
+					nextToProcess = _mainReplayMutationAndFetchNext(arg, nextToProcess, isCommitted);
+				}
+			}
+		} else if (null != normalState) {
+			Assert.assertTrue(null == listenerState);
+			
+			// We can do the nonce check here, before we enter the state machine for the specific message type/contents.
+			if (normalState.nextNonce == incoming.nonce) {
+				normalState.nextNonce += 1;
+				long globalMutationOffsetOfAcceptedMessage = _callbacks.mainHandleValidClientMessage(normalState.clientId, incoming);
+				Assert.assertTrue(globalMutationOffsetOfAcceptedMessage > 0L);
+				// We enqueue the ack, immediately.
+				ClientResponse ack = ClientResponse.received(incoming.nonce, arg.lastCommittedMutationOffset);
+				_mainEnqueueMessageToClient(normalState.clientId, ack);
+				// Set up the client to be notified that the message committed once the MutationRecord is durable.
+				_pendingMessageCommits.put(globalMutationOffsetOfAcceptedMessage, new ClientCommitTuple(normalState.clientId, incoming.nonce));
+			} else {
+				_mainEnqueueMessageToClient(normalState.clientId, ClientResponse.error(incoming.nonce, arg.lastCommittedMutationOffset));
+			}
+		} else if (null != listenerState) {
+			// Once a listener is in the listener state, they should never send us another message.
+			Assert.unimplemented("TODO: Disconnect listener on invalid state transition");
+		} else {
+			// This appears to have disconnected before we processed it.
+			System.out.println("NOTE: Processed read ready from disconnected client");
+		}
 	}
 }
