@@ -45,9 +45,9 @@ public interface IClusterManagerCallbacks {
 	 * @param upstreamTermNumber The term number of the upstream peer.
 	 * @param previousMutationTermNumber The term number of the mutation before this one.
 	 * @param mutation The mutation.
-	 * @return True if this was appended, false if there was a term mismatch and the mutation was not appended.
+	 * @return The offset of the next mutation number required (if successfully applied, this will be the next one).
 	 */
-	boolean mainAppendMutationFromUpstream(ConfigEntry peer, long upstreamTermNumber, long previousMutationTermNumber, MutationRecord mutation);
+	long mainAppendMutationFromUpstream(ConfigEntry peer, long upstreamTermNumber, long previousMutationTermNumber, MutationRecord mutation);
 
 	/**
 	 * Called after processing a list of incoming mutations or a heartbeat from an upstream peer.

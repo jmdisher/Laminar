@@ -154,7 +154,7 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 	}
 
 	@Override
-	public void mainEnterLeaderState() {
+	public void mainEnterLeaderState(StateSnapshot snapshot) {
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		_isLeader = true;
 		for (DownstreamPeerState peer : _downstreamPeerByNode.values()) {
@@ -164,12 +164,12 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 	}
 
 	@Override
-	public void mainEnterCandidateState(long newTermNumber, long previousMutationTerm, long previousMuationOffset) {
+	public void mainEnterCandidateState(long newTermNumber, long previousMutationTerm, long previousMutationOffset) {
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		// We want to unset our leader flag and set a requirement for REQUEST_VOTES to be sent to all downstream peers.
 		// (this will be easier once there is buffering on inter-node communication but for now we store this information in DownstreamPeerState).
 		_isLeader = false;
-		DownstreamMessage request = DownstreamMessage.requestVotes(newTermNumber, previousMutationTerm, previousMuationOffset);
+		DownstreamMessage request = DownstreamMessage.requestVotes(newTermNumber, previousMutationTerm, previousMutationOffset);
 		for (DownstreamPeerState peer : _downstreamPeerByNode.values()) {
 			peer.pendingVoteRequest = request;
 			_tryFetchOrSend(newTermNumber, peer);
@@ -511,14 +511,15 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 	}
 
 	private void _mainHandleAppendMutations(UpstreamPeerState peer, DownstreamPayload_AppendMutations payload) {
-		boolean didFailToApply = false;
+		boolean didApplyMutation = (0 == payload.records.length);
 		long previousMutationTermNumber = payload.previousMutationTermNumber;
 		for (MutationRecord record : payload.records) {
 			// Update our last offset received and notify the callbacks of this mutation.
 			// NOTE:  This assertion is only valid while we are maintaining a lock-step state.
 			Assert.assertTrue((_lastReceivedMutationOffset + 1) == record.globalOffset);
-			boolean didApply = _callbacks.mainAppendMutationFromUpstream(peer.entry, payload.termNumber, previousMutationTermNumber, record);
-			if (didApply) {
+			long nextMutationToRequest = _callbacks.mainAppendMutationFromUpstream(peer.entry, payload.termNumber, previousMutationTermNumber, record);
+			didApplyMutation = (nextMutationToRequest == (record.globalOffset + 1));
+			if (didApplyMutation) {
 				// Advance to the next mutation (and make sure this isn't a rewind since we may need to re-ack).
 				peer.lastMutationOffsetReceived = record.globalOffset;
 				if (record.globalOffset <= peer.lastMutationOffsetAcknowledged) {
@@ -529,19 +530,18 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 				// TODO:  Fix this duplication of "RECEIVED" paths.
 				_lastReceivedMutationOffset = Math.max(_lastReceivedMutationOffset, record.globalOffset);
 			} else {
-				didFailToApply = true;
 				break;
 			}
 		}
-		if (didFailToApply) {
+		if (didApplyMutation) {
+			// This is normal operation so proceed with committing.
+			_callbacks.mainCommittedMutationOffsetFromUpstream(peer.entry, payload.termNumber, payload.lastCommittedMutationOffset);
+		} else {
 			// There was a mismatch so revert to the previous message and reset our state with the upstream.
 			// Set us up to revert our most recent mutation (since it is the one which doesn't agree).
 			_lastReceivedMutationOffset -= 1;
 			peer.lastMutationOffsetReceived -= 1;
 			peer.pendingPeerStateMutationOffsetReceived = _lastReceivedMutationOffset;
-		} else {
-			// This is normal operation so proceed with committing.
-			_callbacks.mainCommittedMutationOffsetFromUpstream(peer.entry, payload.termNumber, payload.lastCommittedMutationOffset);
 		}
 	}
 }

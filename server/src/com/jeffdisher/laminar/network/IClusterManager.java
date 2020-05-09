@@ -53,8 +53,10 @@ public interface IClusterManager {
 	/**
 	 * Called to instruct the receiver that the node has entered the LEADER state so it should start syncing to
 	 * downstream nodes.
+	 * 
+	 * @param snapshot The state of the node after the leader took charge.
 	 */
-	void mainEnterLeaderState();
+	void mainEnterLeaderState(StateSnapshot snapshot);
 
 	/**
 	 * Called to tell the ClusterManager that the node has entered into a CANDIDATE state.  This means it must send off

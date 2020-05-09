@@ -84,7 +84,7 @@ public class FutureClusterManager implements IClusterManager {
 		System.out.println("IClusterManager - mainOpenDownstreamConnection");
 	}
 	@Override
-	public void mainEnterLeaderState() {
+	public void mainEnterLeaderState(StateSnapshot snapshot) {
 		if (null != f_mainEnterLeaderState) {
 			f_mainEnterLeaderState.put(null);
 			f_mainEnterLeaderState = null;

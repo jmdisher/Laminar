@@ -348,25 +348,29 @@ public class TestClusterManager {
 		}
 		
 		@Override
-		public boolean mainAppendMutationFromUpstream(ConfigEntry peer, long upstreamTermNumber, long previousMutationTermNumber, MutationRecord mutation) {
+		public long mainAppendMutationFromUpstream(ConfigEntry peer, long upstreamTermNumber, long previousMutationTermNumber, MutationRecord mutation) {
 			if (null == this.upstreamPeer) {
 				this.upstreamPeer = peer;
 			} else {
 				Assert.assertTrue(this.upstreamPeer == peer);
 			}
-			boolean didAppend = false;
 			// For now, to make the revert on term number mismatch test pass, we will revert to previous term 0 whenever we see offset 1.
 			if (1L == mutation.globalOffset) {
 				_previousTermNumber = 0L;
 			}
+			long mutationToFetchNext = -1L;
 			if (_previousTermNumber == previousMutationTermNumber) {
 				Assert.assertNull(this.upstreamMutation);
 				Assert.assertEquals(0L,  this.upstreamCommitOffset);
 				this.upstreamMutation = mutation;
 				_previousTermNumber = mutation.termNumber;
-				didAppend = true;
+				// This is good so fetch the next.
+				mutationToFetchNext = mutation.globalOffset + 1;
+			} else {
+				// This is an inconsistency so we want the one before the one they sent us.
+				mutationToFetchNext = mutation.globalOffset - 1;
 			}
-			return didAppend;
+			return mutationToFetchNext;
 		}
 		
 		@Override

@@ -269,7 +269,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 	}
 
 	@Override
-	public boolean mainAppendMutationFromUpstream(ConfigEntry peer, long upstreamTermNumber, long previousMutationTermNumber, MutationRecord record) {
+	public long mainAppendMutationFromUpstream(ConfigEntry peer, long upstreamTermNumber, long previousMutationTermNumber, MutationRecord record) {
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		
 		// We shouldn't receive this if we are the leader, unless the call is invalid or from a later term.
@@ -282,7 +282,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 			Assert.assertTrue(_clusterLeader == peer);
 		}
 		
-		boolean didApply = false;
+		long nextMutationToRequest = -1L;
 		// We can only append mutations if we are a follower.
 		if (RaftState.FOLLOWER == _currentState) {
 			// We will never receive data from before our commit level - if that is the case, we are inconsistent with the cluster and this cannot be resolved.
@@ -297,13 +297,14 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 				// Process the mutation into a local event.
 				EventRecord event = _processReceivedMutation(record);
 				_enqueueForCommit(record, event);
-				didApply = true;
+				// We just want the next one.
+				nextMutationToRequest = (record.globalOffset + 1);
 			} else {
-				// This is inconsistent so there is something wrong.
-				didApply = false;
+				// This is inconsistent so there is something wrong - re-fetch the previous mutation since that might fix the inconsistency (the reverse will already have updated this)
+				nextMutationToRequest = (record.globalOffset - 1);
 			}
 		}
-		return didApply;
+		return nextMutationToRequest;
 	}
 
 	@Override
@@ -387,7 +388,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 			_currentState = RaftState.LEADER;
 			StateSnapshot snapshot = new StateSnapshot(_currentConfig.config, _lastCommittedMutationOffset, _selfState.lastMutationOffsetReceived, _lastCommittedEventOffset, _currentTermNumber);
 			_clientManager.mainEnterLeaderState(snapshot);
-			_clusterManager.mainEnterLeaderState();
+			_clusterManager.mainEnterLeaderState(snapshot);
 		}
 	}
 	// </IClusterManagerCallbacks>
