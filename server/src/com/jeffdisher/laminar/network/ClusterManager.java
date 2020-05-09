@@ -576,6 +576,9 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 				if (!_isLeader) {
 					long now = System.currentTimeMillis();
 					if (_lastUpstreamMessageMillisTime < nowMillisTime) {
+						// We will treat this decision as an upstream activity (normally the callbacks will do something
+						// to make this true but there are cases where it decides not to start an election).
+						_lastUpstreamMessageMillisTime = now;
 						// Tell the callbacks that we have timed-out and should start another election.
 						_callbacks.mainUpstreamMessageDidTimeout();
 					}

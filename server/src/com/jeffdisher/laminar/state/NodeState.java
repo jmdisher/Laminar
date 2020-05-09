@@ -697,15 +697,20 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 	}
 
 	private void _mainStartElection(long termNumber) {
-		// Change mode and increment term number, clearing any existing leader.
-		_currentState = RaftState.CANDIDATE;
-		_currentTermNumber = termNumber;
-		_clusterLeader = null;
-		
-		// Vote for ourselves, pause client interactions, and request downstream votes.
-		_selfState.termOfLastCastVote = _currentTermNumber;
-		_clientManager.mainEnterCandidateState();
-		_clusterManager.mainEnterCandidateState(_currentTermNumber, _getPreviousMutationTermNumber(), _selfState.lastMutationOffsetReceived);
+		// We cannot become a candidate if we have no downstream peers.
+		// This is to handle a rare case where we become FOLLOWER in an unsatisfied election before we have any data and
+		// therefore can't properly build the REQUEST_VOTES message (since we don't allow a previous mutation term of 0).
+		if (_unionOfDownstreamNodes.size() > 1) {
+			// Change mode and increment term number, clearing any existing leader.
+			_currentState = RaftState.CANDIDATE;
+			_currentTermNumber = termNumber;
+			_clusterLeader = null;
+			
+			// Vote for ourselves, pause client interactions, and request downstream votes.
+			_selfState.termOfLastCastVote = _currentTermNumber;
+			_clientManager.mainEnterCandidateState();
+			_clusterManager.mainEnterCandidateState(_currentTermNumber, _getPreviousMutationTermNumber(), _selfState.lastMutationOffsetReceived);
+		}
 	}
 
 	private long _mainProcessValidMutationFromUpstream(long previousMutationTermNumber, MutationRecord record) {

@@ -217,14 +217,18 @@ public class TestNodeState {
 		NodeState nodeState = test.nodeState;
 		Runner runner = new Runner(nodeState);
 		
-		// Send in a mutation so we have something in storage.
+		// Send in a mutation so we have something in storage and so the node knows that there it has downstream peers.
+		ConfigEntry originalEntry = test.initialConfig.entries[0];
+		ConfigEntry upstreamEntry1 = new ConfigEntry(UUID.randomUUID(), new InetSocketAddress(3), new InetSocketAddress(4));
+		ClusterConfig newConfig = ClusterConfig.configFromEntries(new ConfigEntry[] {originalEntry, upstreamEntry1});
+		
 		F<MutationRecord> commit = test.diskManager.get_commitMutation();
-		long mutationNumber = runner.run((snapshot) -> test.nodeState.mainHandleValidClientMessage(UUID.randomUUID(), ClientMessage.temp(1L, new byte[] {1})));
+		long mutationNumber = runner.run((snapshot) -> test.nodeState.mainHandleValidClientMessage(UUID.randomUUID(), ClientMessage.updateConfig(1L, newConfig)));
 		Assert.assertEquals(1L, mutationNumber);
+		runner.runVoid((snapshot) -> test.nodeState.mainReceivedAckFromDownstream(upstreamEntry1, 1L));
 		Assert.assertEquals(1L, commit.get().globalOffset);
 		
 		// Synthesize a call for an election from a peer behind us and verify that this causes us to start an election.
-		ConfigEntry upstreamEntry1 = new ConfigEntry(UUID.randomUUID(), new InetSocketAddress(3), new InetSocketAddress(4));
 		F<Long> startElection = test.clusterManager.get_mainEnterCandidateState();
 		runner.runVoid((snapshot) -> nodeState.mainReceivedRequestForVotes(upstreamEntry1, 2L, 0L, 0L));
 		Assert.assertEquals(2L, startElection.get().longValue());
