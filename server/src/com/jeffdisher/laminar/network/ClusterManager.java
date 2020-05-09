@@ -172,7 +172,9 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		_isLeader = true;
 		for (DownstreamPeerState peer : _downstreamPeerByNode.values()) {
-			peer.nextMutationOffsetToSend = _lastCommittedMutationOffset + 1;
+			// We will start by sending them the most recent mutation we received and let them walk back from that.
+			peer.nextMutationOffsetToSend = _lastReceivedMutationOffset;
+			_tryFetchOrSend(snapshot.currentTermNumber, peer);
 		}
 		_mainRegisterHeartbeat(System.currentTimeMillis());
 	}
@@ -532,21 +534,21 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 		long previousMutationTermNumber = payload.previousMutationTermNumber;
 		for (MutationRecord record : payload.records) {
 			// Update our last offset received and notify the callbacks of this mutation.
-			// NOTE:  This assertion is only valid while we are maintaining a lock-step state.
-			Assert.assertTrue((_lastReceivedMutationOffset + 1) == record.globalOffset);
 			long nextMutationToRequest = _callbacks.mainAppendMutationFromUpstream(peer.entry, payload.termNumber, previousMutationTermNumber, record);
 			didApplyMutation = (nextMutationToRequest == (record.globalOffset + 1));
-			if (didApplyMutation) {
-				// Advance to the next mutation (and make sure this isn't a rewind since we may need to re-ack).
-				peer.lastMutationOffsetReceived = record.globalOffset;
-				if (record.globalOffset <= peer.lastMutationOffsetAcknowledged) {
-					// We want to ack this.
-					peer.lastMutationOffsetAcknowledged = record.globalOffset - 1L;
-				}
-				previousMutationTermNumber = record.termNumber;
-				// TODO:  Fix this duplication of "RECEIVED" paths.
-				_lastReceivedMutationOffset = Math.max(_lastReceivedMutationOffset, record.globalOffset);
+			// Set the last mutation received to the one before the one we should requuest (handles apply and rewind cases).
+			peer.lastMutationOffsetReceived = nextMutationToRequest - 1;
+			if (nextMutationToRequest > record.globalOffset) {
+				// We are moving forward so we want to ack this.
+				peer.lastMutationOffsetAcknowledged = record.globalOffset - 1L;
 			} else {
+				peer.lastMutationOffsetAcknowledged = nextMutationToRequest - 1L;
+			}
+			// Advance term number of the next mutation in the list.
+			previousMutationTermNumber = record.termNumber;
+			// TODO:  Fix this duplication of "RECEIVED" paths.
+			_lastReceivedMutationOffset = nextMutationToRequest - 1;
+			if (!didApplyMutation) {
 				break;
 			}
 		}
@@ -554,10 +556,6 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 			// This is normal operation so proceed with committing.
 			_callbacks.mainCommittedMutationOffsetFromUpstream(peer.entry, payload.termNumber, payload.lastCommittedMutationOffset);
 		} else {
-			// There was a mismatch so revert to the previous message and reset our state with the upstream.
-			// Set us up to revert our most recent mutation (since it is the one which doesn't agree).
-			_lastReceivedMutationOffset -= 1;
-			peer.lastMutationOffsetReceived -= 1;
 			peer.pendingPeerStateMutationOffsetReceived = _lastReceivedMutationOffset;
 		}
 	}

@@ -405,11 +405,11 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 		// Decode this.
 		ClientResponse deserialized = ClientResponse.deserialize(message);
 		// Update the global commit offset.
-		// This number can stay the same or increase, but a decrease means the cluster is horribly broken (or is a different cluster).
-		if (deserialized.lastCommitGlobalOffset < this._lastCommitGlobalOffset) {
-			throw Assert.unimplemented("Determine how to handle the case of the server giving us a dangerously wrong answer");
+		// The _lastCommitGlobalOffset generally just stays the same or increases but a decrease can happen after reconnecting to a new leader.
+		// We account for this by only increasing the value we have if it is moving in the right direction.
+		if (deserialized.lastCommitGlobalOffset > this._lastCommitGlobalOffset) {
+			this._lastCommitGlobalOffset = deserialized.lastCommitGlobalOffset;
 		}
-		this._lastCommitGlobalOffset = deserialized.lastCommitGlobalOffset;
 		// Find the corresponding in-flight message and set its state.
 		ClientResult result = _inFlightMessages.get(deserialized.nonce);
 		switch (deserialized.type) {

@@ -270,16 +270,18 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 			if (upstreamTermNumber > _currentTermNumber) {
 				_enterFollowerState(peer, upstreamTermNumber);
 			}
-		} else {
-			Assert.assertTrue(_clusterLeader == peer);
 		}
 		
 		long nextMutationToRequest = -1L;
-		// We can only append mutations if we are a follower.
-		if (RaftState.FOLLOWER == _currentState) {
-			// We will never receive data from before our commit level - if that is the case, we are inconsistent with the cluster and this cannot be resolved.
-			Assert.assertTrue(record.globalOffset > _lastCommittedMutationOffset);
-			nextMutationToRequest = _mainProcessValidMutationFromUpstream(previousMutationTermNumber, record);
+		// We can only append mutations if we are a follower and this mutation is either from the past or is the next mutation we were waiting for.
+		if ((RaftState.FOLLOWER == _currentState) && (record.globalOffset <= (_selfState.lastMutationOffsetReceived + 1))) {
+			// TODO:  Come up with a thorough explanation of how we can get a mutation from before our commit level.
+			if (record.globalOffset > _lastCommittedMutationOffset) {
+				nextMutationToRequest = _mainProcessValidMutationFromUpstream(previousMutationTermNumber, record);
+			}
+		} else {
+			// They are ahead of us so tell them to wind back and give us the next mutation we are waiting for.
+			nextMutationToRequest = (_selfState.lastMutationOffsetReceived + 1);
 		}
 		return nextMutationToRequest;
 	}
@@ -292,13 +294,11 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 			if (upstreamTermNumber > _currentTermNumber) {
 				_enterFollowerState(peer, upstreamTermNumber);
 			}
-		} else {
-			Assert.assertTrue(_clusterLeader == peer);
 		}
 		
 		if (RaftState.FOLLOWER == _currentState) {
 			// Update our consensus offset.
-			Assert.assertTrue(lastCommittedMutationOffset >= _clusterLeaderCommitOffset);
+			// Note that, right after an election, it is possible for the leader to be _behind_ us, in terms of commit offset.  This is still ok as we know we have the same logs up until the later commit point.
 			_clusterLeaderCommitOffset = lastCommittedMutationOffset;
 			// This changes our consensus offset so re-run any commits.
 			// (we don't do a term check when the leader tells us to commit).
@@ -348,17 +348,19 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 	public void mainReceivedVoteFromFollower(ConfigEntry peer, long newTermNumber) {
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		// Make sure that we are a candidate and this is our term.
-		// TODO:  Relax this as we start to allow more asynchronicity in the cluster.
-		Assert.assertTrue(RaftState.CANDIDATE == _currentState);
-		Assert.assertTrue(_currentTermNumber == newTermNumber);
-		
-		_mainHandleVoteWhileCandidate(peer, newTermNumber);
+		// (we might be getting votes after being elected or after the real leader discovers us).
+		if (RaftState.CANDIDATE == _currentState) {
+			// TODO:  Relax this as we start to allow more asynchronicity in the cluster.
+			Assert.assertTrue(_currentTermNumber == newTermNumber);
+			
+			_mainHandleVoteWhileCandidate(peer, newTermNumber);
+		}
 	}
 
 	@Override
 	public void mainUpstreamMessageDidTimeout() {
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
-		// TODO:  Implement - for now, this is just here so mechanisms can be built around it but it doesn't yet do anything.
+		_mainStartElection();
 	}
 	// </IClusterManagerCallbacks>
 

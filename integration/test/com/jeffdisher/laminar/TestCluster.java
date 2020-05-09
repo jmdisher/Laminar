@@ -606,6 +606,74 @@ public class TestCluster {
 		}
 	}
 
+	/**
+	 * Creates a 5-node cluster and continuously stops the restarts the leader to force elections.
+	 * At the end, listens to each node to verify it has received all messages.
+	 */
+	@Test
+	public void testElectionTimeout() throws Throwable {
+		// Create our config.
+		InetSocketAddress server1Address = new InetSocketAddress(InetAddress.getLocalHost(), 2001);
+		InetSocketAddress server2Address = new InetSocketAddress(InetAddress.getLocalHost(), 2002);
+		InetSocketAddress server3Address = new InetSocketAddress(InetAddress.getLocalHost(), 2003);
+		InetSocketAddress server4Address = new InetSocketAddress(InetAddress.getLocalHost(), 2004);
+		InetSocketAddress server5Address = new InetSocketAddress(InetAddress.getLocalHost(), 2005);
+		UUID serverUuids[] = new UUID[] {
+				UUID.randomUUID(),
+				UUID.randomUUID(),
+				UUID.randomUUID(),
+				UUID.randomUUID(),
+				UUID.randomUUID(),
+		};
+		ClusterConfig config = ClusterConfig.configFromEntries(new ConfigEntry[] {
+				new ConfigEntry(serverUuids[0], new InetSocketAddress(InetAddress.getLocalHost(), 3001), server1Address),
+				new ConfigEntry(serverUuids[1], new InetSocketAddress(InetAddress.getLocalHost(), 3002), server2Address),
+				new ConfigEntry(serverUuids[2], new InetSocketAddress(InetAddress.getLocalHost(), 3003), server3Address),
+				new ConfigEntry(serverUuids[3], new InetSocketAddress(InetAddress.getLocalHost(), 3004), server4Address),
+				new ConfigEntry(serverUuids[4], new InetSocketAddress(InetAddress.getLocalHost(), 3005), server5Address),
+		});
+		
+		// Start all 5 servers since we will rotate out a single one at each step.
+		ServerWrapper servers[] = new ServerWrapper[5];
+		for (int i = 0; i < servers.length; ++i) {
+			servers[i] = _startServerWrapper("testElectionTimeout", serverUuids[i], i);
+		}
+		
+		// Start the client, set the config, and run the test.
+		ClientConnection client = ClientConnection.open(server1Address);
+		try {
+			client.sendUpdateConfig(config);
+			
+			// We want to send the messages in bursts as we bring more servers online.
+			_runBatch(client, 10, 0);
+			_rotateServer(serverUuids, config, servers, client);
+			_runBatch(client, 10, 10);
+			_rotateServer(serverUuids, config, servers, client);
+			_runBatch(client, 10, 20);
+			_rotateServer(serverUuids, config, servers, client);
+			_runBatch(client, 10, 30);
+			
+			EventRecord[] records1 = _listenOnServer(server1Address, client.getClientId(), 40);
+			EventRecord[] records2 = _listenOnServer(server2Address, client.getClientId(), 40);
+			EventRecord[] records3 = _listenOnServer(server3Address, client.getClientId(), 40);
+			EventRecord[] records4 = _listenOnServer(server4Address, client.getClientId(), 40);
+			EventRecord[] records5 = _listenOnServer(server5Address, client.getClientId(), 40);
+			for (int i = 0; i < 40; ++i) {
+				Assert.assertEquals((byte)i, records1[i].payload[0]);
+				Assert.assertEquals((byte)i, records2[i].payload[0]);
+				Assert.assertEquals((byte)i, records3[i].payload[0]);
+				Assert.assertEquals((byte)i, records4[i].payload[0]);
+				Assert.assertEquals((byte)i, records5[i].payload[0]);
+			}
+		} finally {
+			// Shut down.
+			client.close();
+			for (ServerWrapper wrapper: servers) {
+				Assert.assertEquals(0, wrapper.stop());
+			}
+		}
+	}
+
 
 	private EventRecord[] _listenOnServer(InetSocketAddress serverAddress, UUID clientUuid, int count) throws Throwable {
 		CaptureListener listener = new CaptureListener(serverAddress, count);
@@ -622,5 +690,30 @@ public class TestCluster {
 		for (int i = 0; i < results.length; ++i) {
 			results[i].waitForCommitted();
 		}
+	}
+
+	private void _rotateServer(UUID[] serverUuids, ClusterConfig config, ServerWrapper[] servers,
+			ClientConnection client) throws InterruptedException, Throwable {
+		int attachedIndex = _getAttachedServerIndex(config, client);
+		Assert.assertEquals(0, servers[attachedIndex].stop());
+		servers[attachedIndex] = _startServerWrapper("testElectionTimeout", serverUuids[attachedIndex], attachedIndex);
+	}
+
+	private int _getAttachedServerIndex(ClusterConfig config, ClientConnection client) {
+		int attachedIndex = -1;
+		for (int i = 0; i < config.entries.length; ++i) {
+			ConfigEntry entry = config.entries[i];
+			if (entry.client.equals(client.getCurrentServer())) {
+				attachedIndex = i;
+				break;
+			}
+		}
+		Assert.assertNotEquals(-1, attachedIndex);
+		return attachedIndex;
+	}
+
+	private ServerWrapper _startServerWrapper(String name, UUID uuid, int i) throws Throwable {
+		int count = i + 1;
+		return ServerWrapper.startedServerWrapperWithUuid(name + "-" + count, uuid, 3000 + count, 2000 + count, new File("/tmp/laminar" + count));
 	}
 }

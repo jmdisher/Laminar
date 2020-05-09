@@ -171,10 +171,11 @@ public class ClientManager implements IClientManager, INetworkManagerBackgroundC
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		// Look up the tuple so we know which clients and listeners should be told about the commit.
 		ClientCommitTuple tuple = _pendingMessageCommits.remove(globalOffsetOfCommit);
-		// This was requested for the specific tuple so it can't be missing.
-		Assert.assertTrue(null != tuple);
 		
-		_mainProcessTupleForCommit(globalOffsetOfCommit, tuple);
+		// It is possible that nobody was interested in this commit if it was fetched for ClusterManager.
+		if (null != tuple) {
+			_mainProcessTupleForCommit(globalOffsetOfCommit, tuple);
+		}
 	}
 
 	@Override
@@ -433,8 +434,23 @@ public class ClientManager implements IClientManager, INetworkManagerBackgroundC
 			// sent us before the disconnect actually did commit, even though we couldn't tell them it did (so they know
 			// what to re-send).
 			ClientMessagePayload_Reconnect reconnect = (ClientMessagePayload_Reconnect)incoming.payload;
-			
-			mutationOffsetToFetch = _mainHandleReconnectMessageWithNoLeader(client, incoming, lastReceivedMutationOffset, lastCommittedMutationOffset, currentConfig, mutationOffsetToFetch, reconnect);
+			if (null == _clusterLeader) {
+				if (reconnect.lastCommitGlobalOffset > lastReceivedMutationOffset) {
+					// They are from the future so this probably means we just started and haven't yet found the leader.  Just disconnect them.
+					boolean didRemove = _newClients.remove(client);
+					Assert.assertTrue(didRemove);
+					_networkManager.closeConnection(client);
+				} else {
+					mutationOffsetToFetch = _mainHandleReconnectMessageWithNoLeader(client, incoming, lastReceivedMutationOffset, lastCommittedMutationOffset, currentConfig, mutationOffsetToFetch, reconnect);
+				}
+			} else {
+				// Someone else is the leader so send them a redirect.
+				ClientState state = _createAndInstallNewClient(client, reconnect.clientId, -1L);
+				// On new connections, the redirect shouldn't pretend to know what the leader has committed (could confuse client).
+				ClientResponse redirect = ClientResponse.redirect(_clusterLeader, 0L);
+				System.out.println("REDIRECT: " + state.clientId);
+				_mainEnqueueMessageToClient(state.clientId, redirect);
+			}
 			break;
 		}
 		case LISTEN: {
