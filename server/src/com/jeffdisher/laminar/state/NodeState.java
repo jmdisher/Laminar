@@ -51,6 +51,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 	private RaftState _currentState;
 	private ConfigEntry _clusterLeader;
 	private long _currentTermNumber;
+	private long _mostRecentVoteTerm;
 	private long _clusterLeaderCommitOffset;
 	private final ConfigEntry _self;
 	// We keep an image of ourself as a downstream peer state to avoid special-cases in looking at clusters so we will need to update it with latest mutation offset as soon as we assign one.
@@ -331,15 +332,19 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 	@Override
 	public boolean mainReceivedRequestForVotes(ConfigEntry peer, long newTermNumber, long candidateLastReceivedMutationTerm, long candidateLastReceivedMutation) {
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
-		// Rules here defined in section 5.4.1 of Raft paper.
-		// Check if their last received mutation term is greater than ours.
-		long mostRecentMutationTerm = _getPreviousMutationTermNumber();
+		// We can only vote at most once in a given term.
 		boolean shouldVote = false;
-		if ((candidateLastReceivedMutationTerm > mostRecentMutationTerm) || ((candidateLastReceivedMutationTerm == mostRecentMutationTerm) && (candidateLastReceivedMutation >= _selfState.lastMutationOffsetReceived))) {
-			// They are more up-to-date so we presume they are the leader.
-			_enterFollowerState(peer, newTermNumber);
-			// Send them our vote.
-			shouldVote = true;
+		if ((newTermNumber > _mostRecentVoteTerm) && (newTermNumber > _currentTermNumber)) {
+			// Rules here defined in section 5.4.1 of Raft paper.
+			// Check if their last received mutation term is greater than ours.
+			long mostRecentMutationTerm = _getPreviousMutationTermNumber();
+			if ((candidateLastReceivedMutationTerm > mostRecentMutationTerm) || ((candidateLastReceivedMutationTerm == mostRecentMutationTerm) && (candidateLastReceivedMutation >= _selfState.lastMutationOffsetReceived))) {
+				// They are more up-to-date so we presume they are the leader.
+				_enterFollowerState(peer, newTermNumber);
+				// Send them our vote.
+				shouldVote = true;
+				_mostRecentVoteTerm = newTermNumber;
+			}
 		}
 		return shouldVote;
 	}

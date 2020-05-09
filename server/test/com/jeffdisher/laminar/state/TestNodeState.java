@@ -188,6 +188,26 @@ public class TestNodeState {
 		test.join();
 	}
 
+	@Test
+	public void testSingleVotePerElection() throws Throwable {
+		// Create the node.
+		MainThread test = new MainThread();
+		test.start();
+		test.startLatch.await();
+		NodeState nodeState = test.nodeState;
+		Runner runner = new Runner(nodeState);
+		ConfigEntry upstreamEntry1 = new ConfigEntry(UUID.randomUUID(), new InetSocketAddress(3), new InetSocketAddress(4));
+		ConfigEntry upstreamEntry2 = new ConfigEntry(UUID.randomUUID(), new InetSocketAddress(5), new InetSocketAddress(6));
+		
+		// We should see the first call but NOT the second.
+		F<Void> callFollower = test.clusterManager.get_mainEnterFollowerState();
+		runner.runVoid((snapshot) -> nodeState.mainReceivedRequestForVotes(upstreamEntry1, 2L, 1L, 1L));
+		callFollower.get();
+		callFollower = test.clusterManager.get_mainEnterFollowerState();
+		runner.runVoid((snapshot) -> nodeState.mainReceivedRequestForVotes(upstreamEntry2, 2L, 1L, 1L));
+		Assert.assertFalse(callFollower.pollDidCall());
+	}
+
 
 	private static ClusterConfig _createConfig() {
 		return ClusterConfig.configFromEntries(new ConfigEntry[] {new ConfigEntry(UUID.randomUUID(), new InetSocketAddress(1), new InetSocketAddress(2))});

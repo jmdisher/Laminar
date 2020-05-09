@@ -14,9 +14,11 @@ import org.junit.Assert;
 public class F<T> {
 	private CountDownLatch _latch = new CountDownLatch(1);
 	private T _result;
+	private volatile boolean _didCall;
 
 	public void put(T result) {
 		_result = result;
+		_didCall = true;
 		_latch.countDown();
 	}
 
@@ -27,5 +29,16 @@ public class F<T> {
 			Assert.fail("Not used in tests");
 		}
 		return _result;
+	}
+
+	/**
+	 * Used when a test wants to verify that something was NOT called by a specific point in test.  Note that this call
+	 * doesn't synchronize with anything so it is important that the caller use other means to ensure that the result
+	 * won't change in racy ways.
+	 * 
+	 * @return Whether or not the result has been populated.
+	 */
+	public boolean pollDidCall() {
+		return _didCall;
 	}
 }
