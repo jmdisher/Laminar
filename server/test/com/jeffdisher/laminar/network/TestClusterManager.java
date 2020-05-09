@@ -423,5 +423,10 @@ public class TestClusterManager {
 		public void mainReceivedVoteFromFollower(ConfigEntry peer, long newTermNumber) {
 			Assert.fail("Not used");
 		}
+
+		@Override
+		public void mainUpstreamMessageDidTimeout() {
+			Assert.fail("Not used");
+		}
 	}
 }

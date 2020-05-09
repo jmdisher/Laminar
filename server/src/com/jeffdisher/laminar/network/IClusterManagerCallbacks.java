@@ -107,6 +107,12 @@ public interface IClusterManagerCallbacks {
 	 */
 	void mainReceivedVoteFromFollower(ConfigEntry peer, long newTermNumber);
 
+	/**
+	 * Called when we have gone too long without a message from the cluster leader, meaning we probably need to start an
+	 * election.
+	 */
+	void mainUpstreamMessageDidTimeout();
+
 
 	/**
 	 * Just a container for returning a tuple in this interface.

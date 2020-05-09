@@ -354,6 +354,12 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		
 		_mainHandleVoteWhileCandidate(peer, newTermNumber);
 	}
+
+	@Override
+	public void mainUpstreamMessageDidTimeout() {
+		Assert.assertTrue(Thread.currentThread() == _mainThread);
+		// TODO:  Implement - for now, this is just here so mechanisms can be built around it but it doesn't yet do anything.
+	}
 	// </IClusterManagerCallbacks>
 
 	// <IDiskManagerBackgroundCallbacks>
