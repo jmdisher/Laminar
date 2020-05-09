@@ -234,15 +234,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 
 	@Override
 	public void mainForceLeader() {
-		// Change mode and increment term number, clearing any existing leader.
-		_currentState = RaftState.CANDIDATE;
-		_currentTermNumber += 1;
-		_clusterLeader = null;
-		
-		// Vote for ourselves, pause client interactions, and request downstream votes.
-		_selfState.termOfLastCastVote = _currentTermNumber;
-		_clientManager.mainEnterCandidateState();
-		_clusterManager.mainEnterCandidateState(_currentTermNumber, _getPreviousMutationTermNumber(), _selfState.lastMutationOffsetReceived);
+		_mainStartElection();
 	}
 	// </IClientManagerCallbacks>
 
@@ -287,22 +279,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		if (RaftState.FOLLOWER == _currentState) {
 			// We will never receive data from before our commit level - if that is the case, we are inconsistent with the cluster and this cannot be resolved.
 			Assert.assertTrue(record.globalOffset > _lastCommittedMutationOffset);
-			// It is possible that this record requires that we drop some in-flight mutations, though (could happen to fix a term inconsistency shortly after a new election).
-			_reverseInFlightMutationsBefore(record.globalOffset);
-			Assert.assertTrue((_selfState.lastMutationOffsetReceived + 1) == record.globalOffset);
-			// We now want to make sure that the term numbers are consistent (otherwise, we can fail here and the next data will do the revert).
-			if (_getPreviousMutationTermNumber() == previousMutationTermNumber) {
-				// This is good so we can apply the mutation.
-				_selfState.lastMutationOffsetReceived = record.globalOffset;
-				// Process the mutation into a local event.
-				EventRecord event = _processReceivedMutation(record);
-				_enqueueForCommit(record, event);
-				// We just want the next one.
-				nextMutationToRequest = (record.globalOffset + 1);
-			} else {
-				// This is inconsistent so there is something wrong - re-fetch the previous mutation since that might fix the inconsistency (the reverse will already have updated this)
-				nextMutationToRequest = (record.globalOffset - 1);
-			}
+			nextMutationToRequest = _mainProcessValidMutationFromUpstream(previousMutationTermNumber, record);
 		}
 		return nextMutationToRequest;
 	}
@@ -375,21 +352,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		Assert.assertTrue(RaftState.CANDIDATE == _currentState);
 		Assert.assertTrue(_currentTermNumber == newTermNumber);
 		
-		// Set the term number in our sync state.
-		_unionOfDownstreamNodes.get(peer.nodeUuid).termOfLastCastVote = newTermNumber;
-		// See if we won the election (note that we need to be leader in all currently active configs).
-		// We want the minimum term number of all active configs.
-		boolean isElected = _currentConfig.isElectedInTerm(_currentTermNumber);
-		for (SyncProgress pending : _configsPendingCommit.values()) {
-			isElected &= pending.isElectedInTerm(_currentTermNumber);
-		}
-		if (isElected) {
-			// We won the election so enter the leader state.
-			_currentState = RaftState.LEADER;
-			StateSnapshot snapshot = new StateSnapshot(_currentConfig.config, _lastCommittedMutationOffset, _selfState.lastMutationOffsetReceived, _lastCommittedEventOffset, _currentTermNumber);
-			_clientManager.mainEnterLeaderState(snapshot);
-			_clusterManager.mainEnterLeaderState(snapshot);
-		}
+		_mainHandleVoteWhileCandidate(peer, newTermNumber);
 	}
 	// </IClusterManagerCallbacks>
 
@@ -714,6 +677,57 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		StateSnapshot snapshot = new StateSnapshot(_currentConfig.config, _lastCommittedMutationOffset, _selfState.lastMutationOffsetReceived, _lastCommittedEventOffset, _currentTermNumber);
 		_clientManager.mainEnterFollowerState(_clusterLeader, snapshot);
 		_clusterManager.mainEnterFollowerState();
+	}
+
+	private void _mainStartElection() {
+		// Change mode and increment term number, clearing any existing leader.
+		_currentState = RaftState.CANDIDATE;
+		_currentTermNumber += 1;
+		_clusterLeader = null;
+		
+		// Vote for ourselves, pause client interactions, and request downstream votes.
+		_selfState.termOfLastCastVote = _currentTermNumber;
+		_clientManager.mainEnterCandidateState();
+		_clusterManager.mainEnterCandidateState(_currentTermNumber, _getPreviousMutationTermNumber(), _selfState.lastMutationOffsetReceived);
+	}
+
+	private long _mainProcessValidMutationFromUpstream(long previousMutationTermNumber, MutationRecord record) {
+		long nextMutationToRequest;
+		// It is possible that this record requires that we drop some in-flight mutations, though (could happen to fix a term inconsistency shortly after a new election).
+		_reverseInFlightMutationsBefore(record.globalOffset);
+		Assert.assertTrue((_selfState.lastMutationOffsetReceived + 1) == record.globalOffset);
+		// We now want to make sure that the term numbers are consistent (otherwise, we can fail here and the next data will do the revert).
+		if (_getPreviousMutationTermNumber() == previousMutationTermNumber) {
+			// This is good so we can apply the mutation.
+			_selfState.lastMutationOffsetReceived = record.globalOffset;
+			// Process the mutation into a local event.
+			EventRecord event = _processReceivedMutation(record);
+			_enqueueForCommit(record, event);
+			// We just want the next one.
+			nextMutationToRequest = (record.globalOffset + 1);
+		} else {
+			// This is inconsistent so there is something wrong - re-fetch the previous mutation since that might fix the inconsistency (the reverse will already have updated this)
+			nextMutationToRequest = (record.globalOffset - 1);
+		}
+		return nextMutationToRequest;
+	}
+
+	private void _mainHandleVoteWhileCandidate(ConfigEntry peer, long newTermNumber) {
+		// Set the term number in our sync state.
+		_unionOfDownstreamNodes.get(peer.nodeUuid).termOfLastCastVote = newTermNumber;
+		// See if we won the election (note that we need to be leader in all currently active configs).
+		// We want the minimum term number of all active configs.
+		boolean isElected = _currentConfig.isElectedInTerm(_currentTermNumber);
+		for (SyncProgress pending : _configsPendingCommit.values()) {
+			isElected &= pending.isElectedInTerm(_currentTermNumber);
+		}
+		if (isElected) {
+			// We won the election so enter the leader state.
+			_currentState = RaftState.LEADER;
+			StateSnapshot snapshot = new StateSnapshot(_currentConfig.config, _lastCommittedMutationOffset, _selfState.lastMutationOffsetReceived, _lastCommittedEventOffset, _currentTermNumber);
+			_clientManager.mainEnterLeaderState(snapshot);
+			_clusterManager.mainEnterLeaderState(snapshot);
+		}
 	}
 
 
