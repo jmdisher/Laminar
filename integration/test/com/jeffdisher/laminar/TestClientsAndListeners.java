@@ -2,8 +2,10 @@ package com.jeffdisher.laminar;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.OutputStream;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.net.Socket;
 import java.nio.ByteBuffer;
 import java.nio.channels.SocketChannel;
 import java.util.UUID;
@@ -21,6 +23,7 @@ import com.jeffdisher.laminar.types.ClientResponseType;
 import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.types.ConfigEntry;
 import com.jeffdisher.laminar.types.EventRecord;
+import com.jeffdisher.laminar.utils.TestingHelpers;
 
 
 /**
@@ -353,6 +356,61 @@ public class TestClientsAndListeners {
 		
 		outbound.close();
 		Assert.assertEquals(0, wrapper.stop());
+	}
+
+	/**
+	 * Tests that the reconnect logic will allow the client to find a new member of the cluster if the leader goes
+	 * offline.
+	 */
+	@Test
+	public void testReconnectAndFailOver() throws Throwable {
+		InetSocketAddress server1Address = new InetSocketAddress(InetAddress.getLocalHost(), 2001);
+		InetSocketAddress server2Address = new InetSocketAddress(InetAddress.getLocalHost(), 2002);
+		InetSocketAddress server3Address = new InetSocketAddress(InetAddress.getLocalHost(), 2003);
+		UUID server1Uuid = UUID.randomUUID();
+		UUID server2Uuid = UUID.randomUUID();
+		UUID server3Uuid = UUID.randomUUID();
+		ClusterConfig config = ClusterConfig.configFromEntries(new ConfigEntry[] {
+				new ConfigEntry(server1Uuid, new InetSocketAddress(InetAddress.getLocalHost(), 3001), server1Address),
+				new ConfigEntry(server2Uuid, new InetSocketAddress(InetAddress.getLocalHost(), 3002), server2Address),
+				new ConfigEntry(server3Uuid, new InetSocketAddress(InetAddress.getLocalHost(), 3003), server3Address),
+		});
+		ServerWrapper server1 = ServerWrapper.startedServerWrapperWithUuid("testReconnectAndFailOver-1", server1Uuid, 3001, 2001, new File("/tmp/laminar1"));
+		ServerWrapper server2 = ServerWrapper.startedServerWrapperWithUuid("testReconnectAndFailOver-2", server2Uuid, 3002, 2002, new File("/tmp/laminar2"));
+		ServerWrapper server3 = ServerWrapper.startedServerWrapperWithUuid("testReconnectAndFailOver-3", server3Uuid, 3003, 2003, new File("/tmp/laminar3"));
+		
+		CaptureListener timingListener = new CaptureListener(server2Address, 1);
+		timingListener.start();
+		UUID clientUuid = null;
+		
+		try (ClientConnection client = ClientConnection.open(new InetSocketAddress(InetAddress.getLocalHost(), 2001))) {
+			clientUuid = client.getClientId();
+			timingListener.skipNonceCheck(clientUuid, 1L);
+			client.waitForConnection();
+			client.sendUpdateConfig(config).waitForCommitted();
+			client.sendTemp(new byte[] {1}).waitForCommitted();
+			
+			// Stop the leader and ask another node to become leader then see if we can continue sending messages.
+			timingListener.waitForTerminate();
+			Assert.assertEquals(0, server1.stop());
+			try (Socket adhoc = new Socket(server2Address.getAddress(), server2Address.getPort())) {
+				OutputStream toServer = adhoc.getOutputStream();
+				TestingHelpers.writeMessageInFrame(toServer, ClientMessage.forceLeader().serialize());
+				// Read until disconnect.
+				adhoc.getInputStream().read();
+			}
+			
+			client.sendTemp(new byte[] {2}).waitForCommitted();
+			client.sendTemp(new byte[] {3}).waitForCommitted();
+		}
+		CaptureListener counting = new CaptureListener(server2Address, 3);
+		counting.skipNonceCheck(clientUuid, 1L);
+		counting.start();
+		counting.waitForTerminate();
+		
+		// Shut down.
+		Assert.assertEquals(0, server2.stop());
+		Assert.assertEquals(0, server3.stop());
 	}
 
 

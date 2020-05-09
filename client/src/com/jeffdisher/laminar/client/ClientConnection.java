@@ -7,6 +7,7 @@ import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Queue;
 import java.util.SortedMap;
 import java.util.TreeMap;
 import java.util.UUID;
@@ -84,11 +85,13 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 	 */
 	private final UninterruptibleQueue<Void> _commandQueue;
 	private InetSocketAddress _serverAddress;
+	private InetSocketAddress _redirectAddress;
 	private final NetworkManager _network;
 	private final UUID _clientId;
 	private NetworkManager.NodeToken _connection;
 	// We also track the latest config from the cluster - this is currently just used for testing but will eventually be used to govern reconnect decisions.
 	private ClusterConfig _currentClusterConfig;
+	private Queue<InetSocketAddress> _nextReconnectAttempts;
 
 	private volatile boolean _keepRunning;
 	private Thread _internalThread;
@@ -117,6 +120,8 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 		// Make sure we erase the hostname from this, if we were given one (fixes some checks, later on, since the internal system never uses hostnames).
 		// This is largely gratuitous but makes some very precise testing possible.
 		_serverAddress = new InetSocketAddress(InetAddress.getByAddress(server.getAddress().getAddress()), server.getPort());
+		_nextReconnectAttempts = new LinkedList<>();
+		_nextReconnectAttempts.add(_serverAddress);
 		_network = NetworkManager.outboundOnly(this);
 		_clientId = UUID.randomUUID();
 		_outgoingMessages = new LinkedList<>();
@@ -435,6 +440,11 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 			Assert.assertTrue(didFind);
 			// Whether this was null (start-up) or something else (if the config change mid-run), we want to set this as our active config in case of a reconnect.
 			_currentClusterConfig = currentConfig;
+			// Build our queue of reconnect targets.
+			_nextReconnectAttempts = new LinkedList<>();
+			for (ConfigEntry entry : _currentClusterConfig.entries) {
+				_nextReconnectAttempts.add(entry.client);
+			}
 			
 			// We need to sift through the in-flight messages now that the reconnect is done:
 			// -those RECEIVED can stay in in-flight
@@ -467,12 +477,17 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 			Assert.assertTrue(null == result);
 			// Now, just deserialize and set the config (whether our exising one was null, or not).
 			_currentClusterConfig = ClusterConfig.deserialize(deserialized.extraData);
+			// Build our queue of reconnect targets.
+			_nextReconnectAttempts = new LinkedList<>();
+			for (ConfigEntry entry : _currentClusterConfig.entries) {
+				_nextReconnectAttempts.add(entry.client);
+			}
 			break;
 		case REDIRECT:
 			// We need to shut down our current connection and establish a new one to this new cluster leader.
 			ConfigEntry newLeader = ConfigEntry.deserializeFrom(ByteBuffer.wrap(deserialized.extraData));
 			// We will do this by changing the server address and simulating a dropped connection.
-			_serverAddress = newLeader.client;
+			_redirectAddress = newLeader.client;
 			_network.closeConnection(_connection);
 			_internalThread.setName("Laminar client (" + _serverAddress + ")");
 			_internalHandleDisconnect(new IOException("Redirect received"));
@@ -509,8 +524,12 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 		_isClientReady = false;
 		// We record that a disconnect happened so our next connection attempt is a reconnect.
 		_hasDisconnectedEver = true;
-		// We will immediately request a reconnect.
-		_internalIssueConnect(cause);
+		_commandQueue.putPriority(new Consumer<Void>() {
+			@Override
+			public void accept(Void t) {
+				// We just issue the reconnect.
+				_internalIssueConnect(cause);
+			}}, MILLIS_BETWEEN_CONNECTION_ATTEMPTS);
 	}
 
 	private ClientResult _externalWaitForMessageSetup(Function<Long, ClientMessage> packager) {
@@ -554,6 +573,15 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 		// We consume the connection failure and move it to _mostRecentConnectionFailure so it is available
 		// for the client code's information.
 		try {
+			// When connecting, we will either first try a redirect address we were given or we will rotate through a list from the config.
+			if (null != _redirectAddress) {
+				_serverAddress = _redirectAddress;
+				_redirectAddress = null;
+			} else {
+				// Rotate the candidates list.
+				_serverAddress = _nextReconnectAttempts.remove();
+				_nextReconnectAttempts.add(_serverAddress);
+			}
 			_network.createOutgoingConnection(_serverAddress);
 		} catch (IOException e) {
 			// We are just restarting something we already did so a failure here would mean something big changed.
