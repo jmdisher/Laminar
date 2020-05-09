@@ -34,12 +34,24 @@ import com.jeffdisher.laminar.utils.Assert;
 public class ClusterManager implements IClusterManager, INetworkManagerBackgroundCallbacks {
 	private static final long MILLIS_BETWEEN_CONNECTION_ATTEMPTS = 100L;
 	private static final long MILLIS_BETWEEN_HEARTBEATS = 100L;
+	/**
+	 * The baseline minimum timeout for starting an election when no message from upstream (any upstream node).
+	 */
+	private static final long MILLIS_MINIMUM_ELECTION_TIMEOUT = 500L;
+	/**
+	 * The maximum timeout increase to add to minimum when randomly setting election timeout.
+	 */
+	private static final long MILLIS_ELECTION_TIMEOUT_RANDOM_SCALE = 500L;
 
 	private final Thread _mainThread;
 	private final ConfigEntry _self;
 	private final NetworkManager _networkManager;
 	private final IClusterManagerCallbacks _callbacks;
 	private boolean _isLeader;
+
+	private boolean _isTimeoutCheckScheduled;
+	private long _lastUpstreamMessageMillisTime;
+	private long _currentElectionTimeoutMillisInterval;
 
 	// These elements are relevant when _THIS_ node is the LEADER.
 	// In NodeState, we identify downstream nodes via ClusterConfig.ConfigEntry.
@@ -128,6 +140,8 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 			peer.lastMutationOffsetReceived = _lastReceivedMutationOffset;
 			peer.lastMutationOffsetAcknowledged = _lastReceivedMutationOffset;
 		}
+		// Schedule a timeout in case the leader disappears.
+		_mainStartNewElectionTimeout();
 	}
 
 	@Override
@@ -174,6 +188,7 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 			peer.pendingVoteRequest = request;
 			_tryFetchOrSend(newTermNumber, peer);
 		}
+		_mainStartNewElectionTimeout();
 	}
 
 	@Override
@@ -325,6 +340,8 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 					}
 					// We either want to ack or send back the reset.
 					_trySendUpstream(peer);
+					// Update our last message time to avoid election.
+					_lastUpstreamMessageMillisTime = System.currentTimeMillis();
 				}
 			}});
 	}
@@ -543,5 +560,40 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 			peer.lastMutationOffsetReceived -= 1;
 			peer.pendingPeerStateMutationOffsetReceived = _lastReceivedMutationOffset;
 		}
+	}
+
+	private void _mainRegisterElectionTimer(long nowMillisTime) {
+		Assert.assertTrue(Thread.currentThread() == _mainThread);
+		
+		// Multiple paths can cause this to start so make sure we never double-up.
+		if (!_isTimeoutCheckScheduled) {
+			long nextScheduledCheckMillisTime = _lastUpstreamMessageMillisTime + _currentElectionTimeoutMillisInterval;
+			long millisToWaitForNextCheck = (nowMillisTime > nextScheduledCheckMillisTime)
+					? 0L
+					: (nextScheduledCheckMillisTime - nowMillisTime);
+			_callbacks.mainEnqueuePriorityClusterCommandForMainThread((snapshot) -> {
+				// Check no longer scheduled.
+				_isTimeoutCheckScheduled = false;
+				// We will only reschedule if we are NOT the leader (allows this to shut down when we aren't leader).
+				if (!_isLeader) {
+					long now = System.currentTimeMillis();
+					if (_lastUpstreamMessageMillisTime < nowMillisTime) {
+						// Tell the callbacks that we have timed-out and should start another election.
+						_callbacks.mainUpstreamMessageDidTimeout();
+					}
+					// We want to schedule the next check even if we timeout since we may need to timeout our own election if there is a split.
+					_mainRegisterElectionTimer(now);
+				}
+			}, millisToWaitForNextCheck);
+			// Check has now been scheduled.
+			_isTimeoutCheckScheduled = true;
+		}
+	}
+
+	private void _mainStartNewElectionTimeout() {
+		_currentElectionTimeoutMillisInterval = MILLIS_MINIMUM_ELECTION_TIMEOUT + (long)(Math.random() * MILLIS_ELECTION_TIMEOUT_RANDOM_SCALE);
+		long now = System.currentTimeMillis();
+		_lastUpstreamMessageMillisTime = now;
+		_mainRegisterElectionTimer(now);
 	}
 }
