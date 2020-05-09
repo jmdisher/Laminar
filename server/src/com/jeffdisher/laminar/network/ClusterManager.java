@@ -548,6 +548,8 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 			previousMutationTermNumber = record.termNumber;
 			// TODO:  Fix this duplication of "RECEIVED" paths.
 			_lastReceivedMutationOffset = nextMutationToRequest - 1;
+			// Make sure that this never goes negative (would imply a bug somewhere).
+			Assert.assertTrue(_lastReceivedMutationOffset >= 0);
 			if (!didApplyMutation) {
 				break;
 			}

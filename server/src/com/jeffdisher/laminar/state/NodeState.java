@@ -273,11 +273,18 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 			}
 		}
 		
-		long nextMutationToRequest = -1L;
+		long nextMutationToRequest;
 		// We can only append mutations if we are a follower and this mutation is either from the past or is the next mutation we were waiting for.
 		if ((RaftState.FOLLOWER == _currentState) && (record.globalOffset <= (_selfState.lastMutationOffsetReceived + 1))) {
-			// TODO:  Come up with a thorough explanation of how we can get a mutation from before our commit level.
-			if (record.globalOffset > _lastCommittedMutationOffset) {
+			// We will never receive a mutation from before our commit offset (but it could be _at_ the commit offset if the leader was behind us yet still up-to-date with the majority).
+			Assert.assertTrue(record.globalOffset >= _lastCommittedMutationOffset);
+			if (record.globalOffset == _lastCommittedMutationOffset) {
+				// This should only happen right after an election and should then be somewhat rare:  it only happens when the leader is only as up-to-date as the majority, not ahead.
+				// We just make sure it is consistent with what we committed and then ask for the next.
+				Assert.assertTrue(_lastTermNumberRemovedFromInFlight == record.termNumber);
+				nextMutationToRequest = record.globalOffset + 1;
+			} else {
+				Assert.assertTrue(record.globalOffset > _lastCommittedMutationOffset);
 				nextMutationToRequest = _mainProcessValidMutationFromUpstream(previousMutationTermNumber, record);
 			}
 		} else {
