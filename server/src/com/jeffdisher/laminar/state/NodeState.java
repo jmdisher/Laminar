@@ -681,9 +681,11 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 
 	private void _reverseInFlightMutationsBefore(long globalOffset) {
 		while (!_inFlightMutations.isEmpty() && (_inFlightMutations.peekLast().mutation.globalOffset >= globalOffset)) {
-			_inFlightMutations.removeLast();
+			InFlightTuple tuple = _inFlightMutations.removeLast();
 			_selfState.lastMutationOffsetReceived -= 1;
-			_nextLocalEventOffset -= 1;
+			if (null != tuple.event) {
+				_nextLocalEventOffset -= 1;
+			}
 		}
 	}
 
