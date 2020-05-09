@@ -208,6 +208,28 @@ public class TestNodeState {
 		Assert.assertFalse(callFollower.pollDidCall());
 	}
 
+	@Test
+	public void testStartElectionOnVoteRequest() throws Throwable {
+		// Create the node.
+		MainThread test = new MainThread();
+		test.start();
+		test.startLatch.await();
+		NodeState nodeState = test.nodeState;
+		Runner runner = new Runner(nodeState);
+		
+		// Send in a mutation so we have something in storage.
+		F<MutationRecord> commit = test.diskManager.get_commitMutation();
+		long mutationNumber = runner.run((snapshot) -> test.nodeState.mainHandleValidClientMessage(UUID.randomUUID(), ClientMessage.temp(1L, new byte[] {1})));
+		Assert.assertEquals(1L, mutationNumber);
+		Assert.assertEquals(1L, commit.get().globalOffset);
+		
+		// Synthesize a call for an election from a peer behind us and verify that this causes us to start an election.
+		ConfigEntry upstreamEntry1 = new ConfigEntry(UUID.randomUUID(), new InetSocketAddress(3), new InetSocketAddress(4));
+		F<Long> startElection = test.clusterManager.get_mainEnterCandidateState();
+		runner.runVoid((snapshot) -> nodeState.mainReceivedRequestForVotes(upstreamEntry1, 2L, 0L, 0L));
+		Assert.assertEquals(2L, startElection.get().longValue());
+	}
+
 
 	private static ClusterConfig _createConfig() {
 		return ClusterConfig.configFromEntries(new ConfigEntry[] {new ConfigEntry(UUID.randomUUID(), new InetSocketAddress(1), new InetSocketAddress(2))});

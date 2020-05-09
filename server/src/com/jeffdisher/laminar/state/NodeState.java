@@ -235,7 +235,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 
 	@Override
 	public void mainForceLeader() {
-		_mainStartElection();
+		_mainStartElection(_currentTermNumber + 1);
 	}
 	// </IClientManagerCallbacks>
 
@@ -344,6 +344,10 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 				// Send them our vote.
 				shouldVote = true;
 				_mostRecentVoteTerm = newTermNumber;
+			} else if (newTermNumber > _currentTermNumber) {
+				// Even if we don't want to vote for someone, the fact that an election started means we need to participate.
+				// Otherwise, it is possible for this rogue server to never sync back up with the cluster.
+				_mainStartElection(newTermNumber);
 			}
 		}
 		return shouldVote;
@@ -365,7 +369,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 	@Override
 	public void mainUpstreamMessageDidTimeout() {
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
-		_mainStartElection();
+		_mainStartElection(_currentTermNumber + 1);
 	}
 	// </IClusterManagerCallbacks>
 
@@ -692,10 +696,10 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		_clusterManager.mainEnterFollowerState();
 	}
 
-	private void _mainStartElection() {
+	private void _mainStartElection(long termNumber) {
 		// Change mode and increment term number, clearing any existing leader.
 		_currentState = RaftState.CANDIDATE;
-		_currentTermNumber += 1;
+		_currentTermNumber = termNumber;
 		_clusterLeader = null;
 		
 		// Vote for ourselves, pause client interactions, and request downstream votes.
