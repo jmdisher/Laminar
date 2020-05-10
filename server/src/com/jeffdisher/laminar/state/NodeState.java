@@ -3,7 +3,6 @@ package com.jeffdisher.laminar.state;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.LinkedList;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -70,11 +69,8 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 	private long _lastCommittedEventOffset;
 
 	// Tracking of in-flight mutations ready to be committed when the cluster agrees.
-	// These must be committed in-order, so they are a queue with a base offset bias.
 	// (note that the Events are synthesized from these mutations at the point of commit and _nextLocalEventOffset is updated then)
-	// Note that we use a LinkedList since we want this to be addressable but also implement Queue.
-	private LinkedList<MutationRecord> _inFlightMutations;
-	private long _inFlightMutationOffsetBias;
+	private InFlightMutations _inFlightMutations;
 
 	// Information related to the state of the main execution thread.
 	private boolean _keepRunning;
@@ -99,9 +95,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		// Global offsets are 1-indexed so the first one is 1L.
 		_nextLocalEventOffset = 1L;
 		
-		// The first mutation has offset 1L so we use that as the initial bias.
-		_inFlightMutations = new LinkedList<>();
-		_inFlightMutationOffsetBias = 1L;
+		_inFlightMutations = new InFlightMutations();
 		
 		_commandQueue = new UninterruptibleQueue<>();
 	}
@@ -504,7 +498,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 
 	private void _enqueueForCommit(MutationRecord mutation) {
 		// Make sure the in-flight queue is consistent.
-		Assert.assertTrue(mutation.globalOffset == (_inFlightMutations.size() + _inFlightMutationOffsetBias));
+		Assert.assertTrue(mutation.globalOffset == _inFlightMutations.getNextMutationOffset());
 		
 		// Make sure we aren't in a degenerate case where we can commit this, immediately (only applies to single-node clusters).
 		long consensusOffset = _checkConsesusMutationOffset();
@@ -512,7 +506,9 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 			// Commit, immediately.
 			Assert.assertTrue(_inFlightMutations.isEmpty());
 			EventRecord event = _createEventAndIncrementOffset(mutation);
-			_commitAndUpdateBias(mutation, event);
+			_commit(mutation, event);
+			// We also need to tell the in-flight mutations to increment its bias since it won't see this mutation.
+			_inFlightMutations.updateBiasForDirectCommit(mutation.globalOffset);
 		} else {
 			// Store in list for later commit.
 			_inFlightMutations.add(mutation);
@@ -545,15 +541,13 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		return _selfState.lastMutationOffsetReceived;
 	}
 
-	private void _commitAndUpdateBias(MutationRecord mutation, EventRecord event) {
+	private void _commit(MutationRecord mutation, EventRecord event) {
 		// (note that the event is null for certain meta-messages like UPDATE_CONFIG).
 		if (null != event) {
 			_diskManager.commitEvent(event);
 		}
 		// TODO:  We probably want to lock-step the mutation on the event commit since we will be able to detect the broken data, that way, and replay it.
 		_diskManager.commitMutation(mutation);
-		// We are shifting the baseline by doing this.
-		_inFlightMutationOffsetBias += 1;
 		_lastTermNumberRemovedFromInFlight = mutation.termNumber;
 	}
 
@@ -578,25 +572,17 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 			// The term check is done in the case of a leader, to make sure we don't commit mutations from previous terms
 			// until we can commit something from our own term (Section 5.4.2 of the Raft paper).
 			// See if we encounter our current term before we need to stop.
-			for (MutationRecord mutation : _inFlightMutations) {
-				if (mutation.globalOffset <= consensusOffset) {
-					if (_currentTermNumber == mutation.termNumber) {
-						canCommit = true;
-						break;
-					}
-				} else {
-					break;
-				}
-			}
+			canCommit = _inFlightMutations.canCommitUpToMutation(consensusOffset, _currentTermNumber);
 		} else {
 			// The follower always blindly does what it was told.
 			canCommit = true;
 		}
 		if (canCommit) {
-			while ((_inFlightMutationOffsetBias <= consensusOffset) && !_inFlightMutations.isEmpty()) {
-				MutationRecord mutation = _inFlightMutations.remove();
+			MutationRecord mutation = _inFlightMutations.removeFirstElementLessThanOrEqualTo(consensusOffset);
+			while (null != mutation) {
 				EventRecord event = _createEventAndIncrementOffset(mutation);
-				_commitAndUpdateBias(mutation, event);
+				_commit(mutation, event);
+				mutation = _inFlightMutations.removeFirstElementLessThanOrEqualTo(consensusOffset);
 			}
 		}
 	}
@@ -604,12 +590,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 	private MutationRecord _getInFlightMutation(long mutationOffsetToFetch) {
 		Assert.assertTrue(mutationOffsetToFetch <= _selfState.lastMutationOffsetReceived);
 		
-		MutationRecord mutation = null;
-		if (mutationOffsetToFetch >= _inFlightMutationOffsetBias) {
-			int index = (int)(mutationOffsetToFetch - _inFlightMutationOffsetBias);
-			mutation = _inFlightMutations.get(index);
-		}
-		return mutation;
+		return _inFlightMutations.getMutationAtOffset(mutationOffsetToFetch);
 	}
 
 	private MutationRecord _mainFetchMutationIfAvailable(long mutationOffset) {
@@ -672,13 +653,14 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 	private long _getPreviousMutationTermNumber() {
 		return _inFlightMutations.isEmpty()
 				? _lastTermNumberRemovedFromInFlight
-				: _inFlightMutations.getLast().termNumber;
+				: _inFlightMutations.getLastTermNumber();
 	}
 
 	private void _reverseInFlightMutationsBefore(long globalOffset) {
-		while (!_inFlightMutations.isEmpty() && (_inFlightMutations.peekLast().globalOffset >= globalOffset)) {
-			_inFlightMutations.removeLast();
+		MutationRecord removed = _inFlightMutations.removeLastElementGreaterThanOrEqualTo(globalOffset);
+		while (null != removed) {
 			_selfState.lastMutationOffsetReceived -= 1;
+			removed = _inFlightMutations.removeLastElementGreaterThanOrEqualTo(globalOffset);
 		}
 	}
 
