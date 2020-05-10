@@ -6,6 +6,8 @@ import com.jeffdisher.laminar.types.ClientMessage;
 import com.jeffdisher.laminar.types.ClientMessagePayload_Temp;
 import com.jeffdisher.laminar.types.ClientMessagePayload_UpdateConfig;
 import com.jeffdisher.laminar.types.ClusterConfig;
+import com.jeffdisher.laminar.types.EventRecord;
+import com.jeffdisher.laminar.types.EventRecordType;
 import com.jeffdisher.laminar.types.MutationRecord;
 import com.jeffdisher.laminar.types.MutationRecordType;
 import com.jeffdisher.laminar.utils.Assert;
@@ -57,5 +59,33 @@ public class Helpers {
 			break;
 		}
 		return converted;
+	}
+
+	/**
+	 * Converts the given mutation into an EventRecord with eventOffsetToAssign as its local event offset.  Note that
+	 * this method will return null if the MutationRecord does not convert into an EventRecord.
+	 * 
+	 * @param mutation The MutationRecord to convert.
+	 * @param eventOffsetToAssign The local event offset to assign to the new EventRecord.
+	 * @return The corresponding EventRecord or null, if this MutationRecord doesn't convert into an EventRecord.
+	 */
+	public static EventRecord convertMutationToEvent(MutationRecord mutation, long eventOffsetToAssign) {
+		EventRecord eventToReturn;
+		switch (mutation.type) {
+		case INVALID:
+			throw Assert.unimplemented("Invalid message type");
+		case TEMP: {
+			eventToReturn = EventRecord.generateRecord(EventRecordType.TEMP, mutation.termNumber, mutation.globalOffset, eventOffsetToAssign, mutation.clientId, mutation.clientNonce, mutation.payload);
+		}
+			break;
+		case UPDATE_CONFIG: {
+			// There is no event for UPDATE_CONFIG.
+			eventToReturn = null;
+		}
+			break;
+		default:
+			throw Assert.unimplemented("Case missing in mutation processing");
+		}
+		return eventToReturn;
 	}
 }

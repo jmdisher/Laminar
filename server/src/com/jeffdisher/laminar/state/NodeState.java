@@ -22,7 +22,6 @@ import com.jeffdisher.laminar.types.ClientMessageType;
 import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.types.ConfigEntry;
 import com.jeffdisher.laminar.types.EventRecord;
-import com.jeffdisher.laminar.types.EventRecordType;
 import com.jeffdisher.laminar.types.MutationRecord;
 import com.jeffdisher.laminar.utils.Assert;
 import com.jeffdisher.laminar.utils.UninterruptibleQueue;
@@ -74,7 +73,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 	// These must be committed in-order, so they are a queue with a base offset bias.
 	// (note that the Events are synthesized from these mutations at the point of commit and _nextLocalEventOffset is updated then)
 	// Note that we use a LinkedList since we want this to be addressable but also implement Queue.
-	private LinkedList<InFlightTuple> _inFlightMutations;
+	private LinkedList<MutationRecord> _inFlightMutations;
 	private long _inFlightMutationOffsetBias;
 
 	// Information related to the state of the main execution thread.
@@ -206,14 +205,13 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		// (we return the globalMutationOffset it was assigned so the caller can generate correct acks).
 		long mutationOffsetToAssign = _getAndUpdateNextMutationOffset();
 		MutationRecord mutation = Helpers.convertClientMessageToMutation(incoming, _currentTermNumber, clientId, mutationOffsetToAssign);
-		EventRecord event = _processReceivedMutation(mutation);
+		_processReceivedMutation(mutation);
 		if (ClientMessageType.POISON == incoming.type) {
 			// POISON is special in that it is just for testing so it maps to a TEMP, as a mutation, but we still want to preserve this.
 			_clientManager.mainDisconnectAllClientsAndListeners();
 			_clusterManager.mainDisconnectAllPeers();
 		}
-		// Now request that both of these records be committed (event may be null).
-		_enqueueForCommit(mutation, event);
+		_enqueueForCommit(mutation);
 		return mutationOffsetToAssign;
 	}
 
@@ -462,27 +460,19 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 	// </IConsoleManagerBackgroundCallbacks>
 
 
-	private EventRecord _processReceivedMutation(MutationRecord mutation) {
+	private void _processReceivedMutation(MutationRecord mutation) {
 		// Main thread helper.
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		
-		EventRecord eventToReturn = null;
 		switch (mutation.type) {
 		case INVALID:
-			Assert.unimplemented("Invalid message type");
-			break;
+			throw Assert.unimplemented("Invalid message type");
 		case TEMP: {
-			// This is just for initial testing:  send the received, log it, and send the commit.
+			// We don't change any internal state for this - we just log it.
 			System.out.println("GOT TEMP FROM " + mutation.clientId + " nonce " + mutation.clientNonce + " data " + mutation.payload[0]);
-			// Create the event record.
-			long localOffset = _nextLocalEventOffset++;
-			eventToReturn = EventRecord.generateRecord(EventRecordType.TEMP, mutation.termNumber, mutation.globalOffset, localOffset, mutation.clientId, mutation.clientNonce, mutation.payload);
 		}
 			break;
 		case UPDATE_CONFIG: {
-			// Eventually, this will kick-off the joint consensus where we change to having 2 active configs until this commits on all nodes and the local disk.
-			// For now, however, we just send the received ack and enqueue this for commit (note that it DOES NOT generate an event - only a mutation).
-			// The more complex operation happens after the commit completes since that is when we will change our state and broadcast the new config to all clients and listeners.
 			ClusterConfig newConfig = ClusterConfig.deserialize(mutation.payload);
 			System.out.println("GOT UPDATE_CONFIG FROM " + mutation.clientId + ": " + newConfig.entries.length + " entries (nonce " + mutation.clientNonce + ")");
 			
@@ -505,17 +495,14 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 			}
 			// Add this to our pending map of commits so we know when to exit joint consensus.
 			_configsPendingCommit.put(mutation.globalOffset, new SyncProgress(newConfig, nodesInConfig));
-			// There is no event for UPDATE_CONFIG.
-			eventToReturn = null;
 		}
 			break;
 		default:
 			throw Assert.unimplemented("Case missing in mutation processing");
 		}
-		return eventToReturn;
 	}
 
-	private void _enqueueForCommit(MutationRecord mutation, EventRecord event) {
+	private void _enqueueForCommit(MutationRecord mutation) {
 		// Make sure the in-flight queue is consistent.
 		Assert.assertTrue(mutation.globalOffset == (_inFlightMutations.size() + _inFlightMutationOffsetBias));
 		
@@ -524,12 +511,13 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		if (mutation.globalOffset <= consensusOffset) {
 			// Commit, immediately.
 			Assert.assertTrue(_inFlightMutations.isEmpty());
+			EventRecord event = _createEventAndIncrementOffset(mutation);
 			_commitAndUpdateBias(mutation, event);
 		} else {
 			// Store in list for later commit.
-			long previousMutationTermNumber = _getPreviousMutationTermNumber();
-			_inFlightMutations.add(new InFlightTuple(mutation, event));
+			_inFlightMutations.add(mutation);
 			// Notify anyone downstream about this.
+			long previousMutationTermNumber = _getPreviousMutationTermNumber();
 			_clusterManager.mainMutationWasReceivedOrFetched(new StateSnapshot(_currentConfig.config, _lastCommittedMutationOffset, _selfState.lastMutationOffsetReceived, _lastCommittedEventOffset, _currentTermNumber), previousMutationTermNumber, mutation);
 		}
 	}
@@ -590,9 +578,9 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 			// The term check is done in the case of a leader, to make sure we don't commit mutations from previous terms
 			// until we can commit something from our own term (Section 5.4.2 of the Raft paper).
 			// See if we encounter our current term before we need to stop.
-			for (InFlightTuple tuple : _inFlightMutations) {
-				if (tuple.mutation.globalOffset <= consensusOffset) {
-					if (_currentTermNumber == tuple.mutation.termNumber) {
+			for (MutationRecord mutation : _inFlightMutations) {
+				if (mutation.globalOffset <= consensusOffset) {
+					if (_currentTermNumber == mutation.termNumber) {
 						canCommit = true;
 						break;
 					}
@@ -606,21 +594,22 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		}
 		if (canCommit) {
 			while ((_inFlightMutationOffsetBias <= consensusOffset) && !_inFlightMutations.isEmpty()) {
-				InFlightTuple record = _inFlightMutations.remove();
-				_commitAndUpdateBias(record.mutation, record.event);
+				MutationRecord mutation = _inFlightMutations.remove();
+				EventRecord event = _createEventAndIncrementOffset(mutation);
+				_commitAndUpdateBias(mutation, event);
 			}
 		}
 	}
 
-	private InFlightTuple _getInFlightTuple(long mutationOffsetToFetch) {
+	private MutationRecord _getInFlightMutation(long mutationOffsetToFetch) {
 		Assert.assertTrue(mutationOffsetToFetch <= _selfState.lastMutationOffsetReceived);
 		
-		InFlightTuple tuple = null;
+		MutationRecord mutation = null;
 		if (mutationOffsetToFetch >= _inFlightMutationOffsetBias) {
 			int index = (int)(mutationOffsetToFetch - _inFlightMutationOffsetBias);
-			tuple = _inFlightMutations.get(index);
+			mutation = _inFlightMutations.get(index);
 		}
-		return tuple;
+		return mutation;
 	}
 
 	private MutationRecord _mainFetchMutationIfAvailable(long mutationOffset) {
@@ -632,9 +621,9 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		MutationRecord inlineResponse = null;
 		if (mutationOffset <= _selfState.lastMutationOffsetReceived) {
 			// See if this is in-memory.
-			InFlightTuple inFlight = _getInFlightTuple(mutationOffset);
+			MutationRecord inFlight = _getInFlightMutation(mutationOffset);
 			if (null != inFlight) {
-				inlineResponse = inFlight.mutation;
+				inlineResponse = inFlight;
 			} else {
 				// We should have this.
 				_diskManager.fetchMutation(mutationOffset);
@@ -655,20 +644,20 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		IClusterManagerCallbacks.MutationWrapper inlineResponse = null;
 		if (mutationOffset <= _selfState.lastMutationOffsetReceived) {
 			// See if this is in-memory.
-			InFlightTuple inFlight = _getInFlightTuple(mutationOffset);
+			MutationRecord inFlight = _getInFlightMutation(mutationOffset);
 			if (null != inFlight) {
 				// Find the term number of the mutation before this.
 				long previousMutationTermNumber = 0L;
 				if (mutationOffset > 1) {
-					InFlightTuple prior = _getInFlightTuple(mutationOffset - 1);
+					MutationRecord prior = _getInFlightMutation(mutationOffset - 1);
 					if (null != prior) {
-						previousMutationTermNumber = prior.mutation.termNumber;
+						previousMutationTermNumber = prior.termNumber;
 					} else {
 						previousMutationTermNumber = _lastTermNumberRemovedFromInFlight;
 					}
 				}
-				Assert.assertTrue(null != inFlight.mutation);
-				inlineResponse = new IClusterManagerCallbacks.MutationWrapper(previousMutationTermNumber, inFlight.mutation);
+				Assert.assertTrue(null != inFlight);
+				inlineResponse = new IClusterManagerCallbacks.MutationWrapper(previousMutationTermNumber, inFlight);
 			} else {
 				// We should have this.
 				_diskManager.fetchMutation(mutationOffset);
@@ -683,16 +672,13 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 	private long _getPreviousMutationTermNumber() {
 		return _inFlightMutations.isEmpty()
 				? _lastTermNumberRemovedFromInFlight
-				: _inFlightMutations.getLast().mutation.termNumber;
+				: _inFlightMutations.getLast().termNumber;
 	}
 
 	private void _reverseInFlightMutationsBefore(long globalOffset) {
-		while (!_inFlightMutations.isEmpty() && (_inFlightMutations.peekLast().mutation.globalOffset >= globalOffset)) {
-			InFlightTuple tuple = _inFlightMutations.removeLast();
+		while (!_inFlightMutations.isEmpty() && (_inFlightMutations.peekLast().globalOffset >= globalOffset)) {
+			_inFlightMutations.removeLast();
 			_selfState.lastMutationOffsetReceived -= 1;
-			if (null != tuple.event) {
-				_nextLocalEventOffset -= 1;
-			}
 		}
 	}
 
@@ -731,9 +717,8 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		if (_getPreviousMutationTermNumber() == previousMutationTermNumber) {
 			// This is good so we can apply the mutation.
 			_selfState.lastMutationOffsetReceived = record.globalOffset;
-			// Process the mutation into a local event.
-			EventRecord event = _processReceivedMutation(record);
-			_enqueueForCommit(record, event);
+			_processReceivedMutation(record);
+			_enqueueForCommit(record);
 			// We just want the next one.
 			nextMutationToRequest = (record.globalOffset + 1);
 		} else {
@@ -761,14 +746,11 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		}
 	}
 
-
-	private static class InFlightTuple {
-		public final MutationRecord mutation;
-		public final EventRecord event;
-		
-		public InFlightTuple(MutationRecord mutation, EventRecord event) {
-			this.mutation = mutation;
-			this.event = event;
+	private EventRecord _createEventAndIncrementOffset(MutationRecord mutation) {
+		EventRecord event = Helpers.convertMutationToEvent(mutation, _nextLocalEventOffset);
+		if (null != event) {
+			_nextLocalEventOffset += 1;
 		}
+		return event;
 	}
 }
