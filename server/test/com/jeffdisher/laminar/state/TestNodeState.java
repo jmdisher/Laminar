@@ -176,8 +176,13 @@ public class TestNodeState {
 		wrapper = runner.run((snapshot) -> nodeState.mainClusterFetchMutationIfAvailable(3L));
 		Assert.assertEquals(1L, wrapper.previousMutationTermNumber);
 		Assert.assertEquals(2L, wrapper.record.termNumber);
-		// Send it the ack for the new mutation.
+		// Send it the ack for the new mutation (this causes it to immediately commit mutations 2 and 3).
+		F<MutationRecord> commit1 = test.diskManager.get_commitMutation();
+		F<MutationRecord> commit2 = test.diskManager.get_commitMutation();
 		runner.runVoid((snapshot) -> nodeState.mainReceivedAckFromDownstream(upstreamEntry, 3L));
+		Assert.assertEquals(2L, commit1.get().globalOffset);
+		Assert.assertEquals(3L, commit2.get().globalOffset);
+		
 		// Verify all mutations are committed.
 		Assert.assertNull(runner.run((snapshot) -> nodeState.mainClusterFetchMutationIfAvailable(1L)));
 		Assert.assertNull(runner.run((snapshot) -> nodeState.mainClusterFetchMutationIfAvailable(2L)));

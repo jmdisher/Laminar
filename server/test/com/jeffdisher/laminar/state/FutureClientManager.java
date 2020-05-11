@@ -37,7 +37,7 @@ public class FutureClientManager implements IClientManager {
 	public void mainEnterFollowerState(ConfigEntry clusterLeader, StateSnapshot snapshot) {
 		if (null != f_mainEnterFollowerState) {
 			f_mainEnterFollowerState.put(snapshot.lastCommittedMutationOffset);
-			f_mainEnterFollowerState = null;
+			f_mainEnterFollowerState = f_mainEnterFollowerState.nextLink;
 		} else {
 			System.out.println("IClientManager - mainEnterFollowerState");
 		}
@@ -46,7 +46,7 @@ public class FutureClientManager implements IClientManager {
 	public void mainProcessingPendingMessageCommits(long globalOffset) {
 		if (null != f_mainProcessingPendingMessageCommits) {
 			f_mainProcessingPendingMessageCommits.put(globalOffset);
-			f_mainProcessingPendingMessageCommits = null;
+			f_mainProcessingPendingMessageCommits = f_mainProcessingPendingMessageCommits.nextLink;
 		} else {
 			System.out.println("IClientManager - mainProcessingPendingMessageCommits");
 		}

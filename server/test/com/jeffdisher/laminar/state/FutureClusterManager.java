@@ -56,7 +56,7 @@ public class FutureClusterManager implements IClusterManager {
 	public void mainEnterFollowerState() {
 		if (null != f_mainEnterFollowerState) {
 			f_mainEnterFollowerState.put(null);
-			f_mainEnterFollowerState = null;
+			f_mainEnterFollowerState = f_mainEnterFollowerState.nextLink;
 		} else {
 			System.out.println("IClusterManager - mainEnterFollowerState");
 		}
@@ -65,7 +65,7 @@ public class FutureClusterManager implements IClusterManager {
 	public void mainMutationWasCommitted(long globalOffset) {
 		if (null != f_mainMutationWasCommitted) {
 			f_mainMutationWasCommitted.put(globalOffset);
-			f_mainMutationWasCommitted = null;
+			f_mainMutationWasCommitted = f_mainMutationWasCommitted.nextLink;
 		} else {
 			System.out.println("IClusterManager - mainMutationWasCommitted");
 		}
@@ -74,7 +74,7 @@ public class FutureClusterManager implements IClusterManager {
 	public void mainMutationWasReceivedOrFetched(StateSnapshot snapshot, long previousMutationTermNumber, MutationRecord record) {
 		if (null != f_mainMutationWasReceivedOrFetched) {
 			f_mainMutationWasReceivedOrFetched.put(record);
-			f_mainMutationWasReceivedOrFetched = null;
+			f_mainMutationWasReceivedOrFetched = f_mainMutationWasReceivedOrFetched.nextLink;
 		} else {
 			System.out.println("IClusterManager - mainMutationWasReceivedOrFetched");
 		}
@@ -87,7 +87,7 @@ public class FutureClusterManager implements IClusterManager {
 	public void mainEnterLeaderState(StateSnapshot snapshot) {
 		if (null != f_mainEnterLeaderState) {
 			f_mainEnterLeaderState.put(null);
-			f_mainEnterLeaderState = null;
+			f_mainEnterLeaderState = f_mainEnterLeaderState.nextLink;
 		} else {
 			System.out.println("IClusterManager - mainEnterLeaderState");
 		}
@@ -97,7 +97,7 @@ public class FutureClusterManager implements IClusterManager {
 	public void mainEnterCandidateState(long newTermNumber, long previousMutationTerm, long previousMuationOffset) {
 		if (null != f_mainEnterCandidateState) {
 			f_mainEnterCandidateState.put(newTermNumber);
-			f_mainEnterCandidateState = null;
+			f_mainEnterCandidateState = f_mainEnterCandidateState.nextLink;
 		} else {
 			System.out.println("IClusterManager - mainEnterCandidateState");
 		}

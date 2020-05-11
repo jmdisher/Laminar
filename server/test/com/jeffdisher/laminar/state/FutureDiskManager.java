@@ -16,9 +16,17 @@ public class FutureDiskManager implements IDiskManager {
 	private F<EventRecord> f_commitEvent;
 
 	public F<MutationRecord> get_commitMutation() {
-		Assert.assertNull(f_commitMutation);
-		f_commitMutation = new F<MutationRecord>();
-		return f_commitMutation;
+		F<MutationRecord> future = new F<>();
+		if (null != f_commitMutation) {
+			F<MutationRecord> stem = f_commitMutation;
+			while (null != stem.nextLink) {
+				stem = stem.nextLink;
+			}
+			stem.nextLink = future;
+		} else {
+			f_commitMutation = future;
+		}
+		return future;
 	}
 
 	public F<EventRecord> get_commitEvent() {
@@ -39,7 +47,7 @@ public class FutureDiskManager implements IDiskManager {
 	public void commitMutation(MutationRecord mutation) {
 		if (null != f_commitMutation) {
 			f_commitMutation.put(mutation);
-			f_commitMutation = null;
+			f_commitMutation = f_commitMutation.nextLink;
 		} else {
 			System.out.println("IDiskManager - commitMutation");
 		}
@@ -48,7 +56,7 @@ public class FutureDiskManager implements IDiskManager {
 	public void commitEvent(EventRecord event) {
 		if (null != f_commitEvent) {
 			f_commitEvent.put(event);
-			f_commitEvent = null;
+			f_commitEvent = f_commitEvent.nextLink;
 		} else {
 			System.out.println("IDiskManager - commitEvent");
 		}

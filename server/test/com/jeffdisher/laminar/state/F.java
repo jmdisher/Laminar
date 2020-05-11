@@ -12,6 +12,11 @@ import org.junit.Assert;
  * @param <T> The type returned by the future.
  */
 public class F<T> {
+	/**
+	 * Used when chaining a sequence of these together.
+	 */
+	public F<T> nextLink;
+
 	private CountDownLatch _latch = new CountDownLatch(1);
 	private T _result;
 	private volatile boolean _didCall;
