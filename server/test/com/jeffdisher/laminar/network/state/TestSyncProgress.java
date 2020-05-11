@@ -19,7 +19,7 @@ public class TestSyncProgress {
 	@Test
 	public void test1() throws Throwable {
 		ClusterConfig config = _buildConfig(1);
-		DownstreamPeerSyncState state = new DownstreamPeerSyncState();
+		DownstreamPeerSyncState state = new DownstreamPeerSyncState(null);
 		SyncProgress progress = new SyncProgress(config, Collections.singleton(state));
 		Assert.assertEquals(0L, progress.checkCurrentProgress());
 		state.lastMutationOffsetReceived = 1000L;
@@ -29,8 +29,8 @@ public class TestSyncProgress {
 	@Test
 	public void test2() throws Throwable {
 		ClusterConfig config = _buildConfig(2);
-		DownstreamPeerSyncState state1 = new DownstreamPeerSyncState();
-		DownstreamPeerSyncState state2 = new DownstreamPeerSyncState();
+		DownstreamPeerSyncState state1 = new DownstreamPeerSyncState(null);
+		DownstreamPeerSyncState state2 = new DownstreamPeerSyncState(null);
 		SyncProgress progress = new SyncProgress(config, new HashSet<>(Arrays.asList(state1, state2)));
 		Assert.assertEquals(0L, progress.checkCurrentProgress());
 		state1.lastMutationOffsetReceived = 1000L;
@@ -42,9 +42,9 @@ public class TestSyncProgress {
 	@Test
 	public void test3() throws Throwable {
 		ClusterConfig config = _buildConfig(3);
-		DownstreamPeerSyncState state1 = new DownstreamPeerSyncState();
-		DownstreamPeerSyncState state2 = new DownstreamPeerSyncState();
-		DownstreamPeerSyncState state3 = new DownstreamPeerSyncState();
+		DownstreamPeerSyncState state1 = new DownstreamPeerSyncState(null);
+		DownstreamPeerSyncState state2 = new DownstreamPeerSyncState(null);
+		DownstreamPeerSyncState state3 = new DownstreamPeerSyncState(null);
 		SyncProgress progress = new SyncProgress(config, new HashSet<>(Arrays.asList(state1, state2, state3)));
 		Assert.assertEquals(0L, progress.checkCurrentProgress());
 		state1.lastMutationOffsetReceived = 1000L;
@@ -58,7 +58,7 @@ public class TestSyncProgress {
 	@Test
 	public void testSingleElection() throws Throwable {
 		ClusterConfig config = _buildConfig(1);
-		DownstreamPeerSyncState state1 = new DownstreamPeerSyncState();
+		DownstreamPeerSyncState state1 = new DownstreamPeerSyncState(null);
 		SyncProgress progress = new SyncProgress(config, new HashSet<>(Arrays.asList(state1)));
 		state1.termOfLastCastVote = 5L;
 		Assert.assertFalse(progress.isElectedInTerm(4L));
@@ -69,11 +69,11 @@ public class TestSyncProgress {
 	@Test
 	public void testFiveElection() throws Throwable {
 		ClusterConfig config = _buildConfig(5);
-		DownstreamPeerSyncState state1 = new DownstreamPeerSyncState();
-		DownstreamPeerSyncState state2 = new DownstreamPeerSyncState();
-		DownstreamPeerSyncState state3 = new DownstreamPeerSyncState();
-		DownstreamPeerSyncState state4 = new DownstreamPeerSyncState();
-		DownstreamPeerSyncState state5 = new DownstreamPeerSyncState();
+		DownstreamPeerSyncState state1 = new DownstreamPeerSyncState(null);
+		DownstreamPeerSyncState state2 = new DownstreamPeerSyncState(null);
+		DownstreamPeerSyncState state3 = new DownstreamPeerSyncState(null);
+		DownstreamPeerSyncState state4 = new DownstreamPeerSyncState(null);
+		DownstreamPeerSyncState state5 = new DownstreamPeerSyncState(null);
 		SyncProgress progress = new SyncProgress(config, new HashSet<>(Arrays.asList(state1, state2, state3, state4, state5)));
 		state1.termOfLastCastVote = 5L;
 		state2.termOfLastCastVote = 4L;

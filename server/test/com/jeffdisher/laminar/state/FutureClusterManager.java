@@ -15,6 +15,8 @@ public class FutureClusterManager implements IClusterManager {
 	private F<Void> f_mainEnterFollowerState;
 	private F<Long> f_mainMutationWasCommitted;
 	private F<MutationRecord> f_mainMutationWasReceivedOrFetched;
+	private F<ConfigEntry> f_mainOpenDownstreamConnection;
+	private F<ConfigEntry> f_mainCloseDownstreamConnection;
 	private F<Void> f_mainEnterLeaderState;
 	private F<Long> f_mainEnterCandidateState;
 
@@ -34,6 +36,34 @@ public class FutureClusterManager implements IClusterManager {
 		Assert.assertNull(f_mainMutationWasReceivedOrFetched);
 		f_mainMutationWasReceivedOrFetched = new F<MutationRecord>();
 		return f_mainMutationWasReceivedOrFetched;
+	}
+
+	public F<ConfigEntry> get_mainOpenDownstreamConnection() {
+		F<ConfigEntry> future = new F<>();
+		if (null != f_mainOpenDownstreamConnection) {
+			F<ConfigEntry> stem = f_mainOpenDownstreamConnection;
+			while (null != stem.nextLink) {
+				stem = stem.nextLink;
+			}
+			stem.nextLink = future;
+		} else {
+			f_mainOpenDownstreamConnection = future;
+		}
+		return future;
+	}
+
+	public F<ConfigEntry> get_mainCloseDownstreamConnection() {
+		F<ConfigEntry> future = new F<>();
+		if (null != f_mainCloseDownstreamConnection) {
+			F<ConfigEntry> stem = f_mainCloseDownstreamConnection;
+			while (null != stem.nextLink) {
+				stem = stem.nextLink;
+			}
+			stem.nextLink = future;
+		} else {
+			f_mainCloseDownstreamConnection = future;
+		}
+		return future;
 	}
 
 	public F<Void> get_mainEnterLeaderState() {
@@ -81,7 +111,21 @@ public class FutureClusterManager implements IClusterManager {
 	}
 	@Override
 	public void mainOpenDownstreamConnection(ConfigEntry entry) {
-		System.out.println("IClusterManager - mainOpenDownstreamConnection");
+		if (null != f_mainOpenDownstreamConnection) {
+			f_mainOpenDownstreamConnection.put(entry);
+			f_mainOpenDownstreamConnection = f_mainOpenDownstreamConnection.nextLink;
+		} else {
+			System.out.println("IClusterManager - mainOpenDownstreamConnection");
+		}
+	}
+	@Override
+	public void mainCloseDownstreamConnection(ConfigEntry entry) {
+		if (null != f_mainCloseDownstreamConnection) {
+			f_mainCloseDownstreamConnection.put(entry);
+			f_mainCloseDownstreamConnection = f_mainCloseDownstreamConnection.nextLink;
+		} else {
+			System.out.println("IClusterManager - mainCloseDownstreamConnection");
+		}
 	}
 	@Override
 	public void mainEnterLeaderState(StateSnapshot snapshot) {

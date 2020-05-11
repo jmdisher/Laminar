@@ -239,6 +239,97 @@ public class TestNodeState {
 		Assert.assertEquals(2L, startElection.get().longValue());
 	}
 
+	/**
+	 * Tests that nodes no longer referenced in any active config are disconnected once the last config referencing them
+	 * is committed.
+	 * This this, we will interleave config updates into a normal event stream.  The 2 configs will each include 3 nodes
+	 * with the receiver and the "leader" being common among them.
+	 */
+	@Test
+	public void testOldDisconnectOldNodes() throws Throwable {
+		MainThread test = new MainThread();
+		
+		// Create our 2 configs.
+		ConfigEntry self = test.initialConfig.entries[0];
+		ConfigEntry leader = new ConfigEntry(UUID.randomUUID(), new InetSocketAddress(3), new InetSocketAddress(4));
+		ConfigEntry peer1 = new ConfigEntry(UUID.randomUUID(), new InetSocketAddress(5), new InetSocketAddress(6));
+		ConfigEntry peer2 = new ConfigEntry(UUID.randomUUID(), new InetSocketAddress(7), new InetSocketAddress(8));
+		ClusterConfig config1 = ClusterConfig.configFromEntries(new ConfigEntry[] {self, leader, peer1});
+		ClusterConfig config2 = ClusterConfig.configFromEntries(new ConfigEntry[] {self, leader, peer2});
+		
+		// Create the common mutation.
+		MutationRecord record1 = MutationRecord.generateRecord(MutationRecordType.TEMP, 1L, 1L, UUID.randomUUID(), 1, new byte[] {1});
+		
+		// Create the first config change and common mutation.
+		MutationRecord record2 = MutationRecord.generateRecord(MutationRecordType.UPDATE_CONFIG, 1L, 2L, UUID.randomUUID(), 1L, config1.serialize());
+		MutationRecord record3 = MutationRecord.generateRecord(MutationRecordType.TEMP, 1L, 3L, UUID.randomUUID(), 1, new byte[] {2});
+		
+		// Create the second config change and commont mutation.
+		MutationRecord record4 = MutationRecord.generateRecord(MutationRecordType.UPDATE_CONFIG, 1L, 4L, UUID.randomUUID(), 1L, config2.serialize());
+		MutationRecord record5 = MutationRecord.generateRecord(MutationRecordType.TEMP, 1L, 5L, UUID.randomUUID(), 1, new byte[] {3});
+		
+		test.start();
+		test.startLatch.await();
+		Runner runner = new Runner(test.nodeState);
+		
+		// Send all 5 mutations, verifying that the acks are generated.
+		F<Void> becomeFollower = test.clusterManager.get_mainEnterFollowerState();
+		F<MutationRecord> received = test.clusterManager.get_mainMutationWasReceivedOrFetched();
+		long nextToLoad = runner.run((snapshot) -> test.nodeState.mainAppendMutationFromUpstream(leader, 1L, 0L, record1));
+		Assert.assertEquals(2L, nextToLoad);
+		becomeFollower.get();
+		Assert.assertEquals(record1, received.get());
+		
+		// Verify that we open 2 new downstream connections with receiving this config.
+		F<ConfigEntry> downstreamConnect1 = test.clusterManager.get_mainOpenDownstreamConnection();
+		F<ConfigEntry> downstreamConnect2 = test.clusterManager.get_mainOpenDownstreamConnection();
+		received = test.clusterManager.get_mainMutationWasReceivedOrFetched();
+		nextToLoad = runner.run((snapshot) -> test.nodeState.mainAppendMutationFromUpstream(leader, 1L, 1L, record2));
+		Assert.assertEquals(3L, nextToLoad);
+		Assert.assertEquals(record2, received.get());
+		// (we know these are currently sent back in order so we can check these, directly).
+		Assert.assertEquals(leader.nodeUuid, downstreamConnect1.get().nodeUuid);
+		Assert.assertEquals(peer1.nodeUuid, downstreamConnect2.get().nodeUuid);
+		
+		received = test.clusterManager.get_mainMutationWasReceivedOrFetched();
+		nextToLoad = runner.run((snapshot) -> test.nodeState.mainAppendMutationFromUpstream(leader, 1L, 1L, record3));
+		Assert.assertEquals(4L, nextToLoad);
+		Assert.assertEquals(record3, received.get());
+		
+		// Verify that we open the last downstream connection.
+		F<ConfigEntry> downstreamConnect3 = test.clusterManager.get_mainOpenDownstreamConnection();
+		received = test.clusterManager.get_mainMutationWasReceivedOrFetched();
+		nextToLoad = runner.run((snapshot) -> test.nodeState.mainAppendMutationFromUpstream(leader, 1L, 1L, record4));
+		Assert.assertEquals(5L, nextToLoad);
+		Assert.assertEquals(record4, received.get());
+		Assert.assertEquals(peer2.nodeUuid, downstreamConnect3.get().nodeUuid);
+		
+		received = test.clusterManager.get_mainMutationWasReceivedOrFetched();
+		nextToLoad = runner.run((snapshot) -> test.nodeState.mainAppendMutationFromUpstream(leader, 1L, 1L, record5));
+		Assert.assertEquals(6L, nextToLoad);
+		Assert.assertEquals(record5, received.get());
+		
+		// Now send the commit notifications and observe the disconnects as the configs are committed:
+		// -note that the commit processing is only done after the disk returns so we need to send those calls, too
+		// -in this test, the first config change is purely additive but the second does drop one peer.
+		runner.runVoid((snapshot) -> test.nodeState.mainCommittedMutationOffsetFromUpstream(leader, 1L, 1L));
+		runner.runVoid((snapshot) -> test.nodeState.mainMutationWasCommitted(record1));
+		runner.runVoid((snapshot) -> test.nodeState.mainCommittedMutationOffsetFromUpstream(leader, 1L, 2L));
+		runner.runVoid((snapshot) -> test.nodeState.mainMutationWasCommitted(record2));
+		runner.runVoid((snapshot) -> test.nodeState.mainCommittedMutationOffsetFromUpstream(leader, 1L, 3L));
+		runner.runVoid((snapshot) -> test.nodeState.mainMutationWasCommitted(record3));
+		F<ConfigEntry> disconnect = test.clusterManager.get_mainCloseDownstreamConnection();
+		runner.runVoid((snapshot) -> test.nodeState.mainCommittedMutationOffsetFromUpstream(leader, 1L, 4L));
+		runner.runVoid((snapshot) -> test.nodeState.mainMutationWasCommitted(record4));
+		Assert.assertEquals(peer1.nodeUuid, disconnect.get().nodeUuid);
+		runner.runVoid((snapshot) -> test.nodeState.mainCommittedMutationOffsetFromUpstream(leader, 1L, 5L));
+		runner.runVoid((snapshot) -> test.nodeState.mainMutationWasCommitted(record5));
+		
+		// Stop.
+		runner.runVoid((snapshot) -> test.nodeState.mainHandleStopCommand());
+		test.join();
+	}
+
 
 	private static ClusterConfig _createConfig() {
 		return ClusterConfig.configFromEntries(new ConfigEntry[] {new ConfigEntry(UUID.randomUUID(), new InetSocketAddress(1), new InetSocketAddress(2))});

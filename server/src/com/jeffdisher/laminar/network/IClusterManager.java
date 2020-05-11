@@ -51,6 +51,14 @@ public interface IClusterManager {
 	void mainOpenDownstreamConnection(ConfigEntry entry);
 
 	/**
+	 * Requests that the downstream connection for the given entry be closed and all corresponding tracking associated
+	 * with it be removed.
+	 * 
+	 * @param entry Description of the downstream peer.
+	 */
+	void mainCloseDownstreamConnection(ConfigEntry entry);
+
+	/**
 	 * Called to instruct the receiver that the node has entered the LEADER state so it should start syncing to
 	 * downstream nodes.
 	 * 

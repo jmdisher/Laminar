@@ -102,6 +102,16 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 	}
 
 	@Override
+	public void mainCloseDownstreamConnection(ConfigEntry entry) {
+		Assert.assertTrue(Thread.currentThread() == _mainThread);
+		DownstreamPeerState state = _downstreamPeerByUuid.remove(entry.nodeUuid);
+		NetworkManager.NodeToken token = state.token;
+		DownstreamPeerState check = _downstreamPeerByNode.remove(token);
+		Assert.assertTrue(state == check);
+		_networkManager.closeConnection(token);
+	}
+
+	@Override
 	public void mainMutationWasReceivedOrFetched(StateSnapshot snapshot, long previousMutationTermNumber, MutationRecord mutation) {
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		
@@ -157,7 +167,7 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 		}
 		for (DownstreamPeerState state : toReconnect) {
 			// The remove will clean up the maps.
-			_mainRemoveOutboundConnection(state.token);
+			_mainRemoveAndReconnectOutboundConnection(state.token);
 		}
 		
 		// Close the upstream and wait for them to reconnect.
@@ -373,7 +383,7 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 		_callbacks.ioEnqueueClusterCommandForMainThread(new Consumer<StateSnapshot>() {
 			@Override
 			public void accept(StateSnapshot arg0) {
-				_mainRemoveOutboundConnection(node);
+				_mainRemoveAndReconnectOutboundConnection(node);
 			}});
 	}
 
@@ -384,12 +394,12 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 		_callbacks.ioEnqueuePriorityClusterCommandForMainThread(new Consumer<StateSnapshot>() {
 			@Override
 			public void accept(StateSnapshot arg0) {
-				_mainRemoveOutboundConnection(node);
+				_mainRemoveAndReconnectOutboundConnection(node);
 			}}, MILLIS_BETWEEN_CONNECTION_ATTEMPTS);
 	}
 
 
-	private void _mainRemoveOutboundConnection(NetworkManager.NodeToken node) throws AssertionError {
+	private void _mainRemoveAndReconnectOutboundConnection(NetworkManager.NodeToken node) throws AssertionError {
 		// We will be creating a new connection so we need to modify the underlying states and one of the mappings.
 		DownstreamPeerState state = _downstreamPeerByNode.remove(node);
 		// (make sure we didn't already disconnect this).

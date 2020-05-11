@@ -86,7 +86,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		// We rely on the initial config just being "self".
 		Assert.assertTrue(1 == initialConfig.entries.length);
 		_self = initialConfig.entries[0];
-		_selfState = new DownstreamPeerSyncState();
+		_selfState = new DownstreamPeerSyncState(_self);
 		_unionOfDownstreamNodes = new HashMap<>();
 		_unionOfDownstreamNodes.put(_self.nodeUuid, _selfState);
 		_currentConfig = new SyncProgress(initialConfig, Collections.singleton(_selfState));
@@ -401,10 +401,8 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 			_clientManager.mainBroadcastConfigUpdate(newSnapshot, newConfigProgress.config);
 			// We change the config but this would render the snapshot stale so we do it last, to make that clear.
 			_currentConfig = newConfigProgress;
-			// Note that only the leader currently worries about maintaining the downstream peers (we explicitly avoid making those connections until implementing RAFT).
-			if (RaftState.LEADER == _currentState) {
-				_rebuildDownstreamUnionAfterConfigChange();
-			}
+			// Update we may need to purge now-stale downstream connections.
+			_rebuildDownstreamUnionAfterConfigChange();
 		}
 		_clusterManager.mainMutationWasCommitted(completed.globalOffset);
 	}
@@ -481,7 +479,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 				DownstreamPeerSyncState peer = _unionOfDownstreamNodes.get(entry.nodeUuid);
 				if (null == peer) {
 					// This is a new node so start the connection and add it to the map.
-					peer = new DownstreamPeerSyncState();
+					peer = new DownstreamPeerSyncState(entry);
 					_clusterManager.mainOpenDownstreamConnection(entry);
 					_unionOfDownstreamNodes.put(entry.nodeUuid, peer);
 				}
@@ -560,6 +558,12 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		for (SyncProgress pending : _configsPendingCommit.values()) {
 			for (ConfigEntry entry : pending.config.entries) {
 				_unionOfDownstreamNodes.put(entry.nodeUuid, copy.get(entry.nodeUuid));
+			}
+		}
+		// Disconnect any which weren't migrated.
+		for (UUID original : copy.keySet()) {
+			if (!_unionOfDownstreamNodes.containsKey(original)) {
+				_clusterManager.mainCloseDownstreamConnection(copy.get(original).configEntry);
 			}
 		}
 	}
