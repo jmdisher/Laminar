@@ -22,6 +22,7 @@ import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.types.ConfigEntry;
 import com.jeffdisher.laminar.types.EventRecord;
 import com.jeffdisher.laminar.types.MutationRecord;
+import com.jeffdisher.laminar.types.MutationRecordType;
 import com.jeffdisher.laminar.utils.Assert;
 import com.jeffdisher.laminar.utils.UninterruptibleQueue;
 
@@ -486,7 +487,9 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 				nodesInConfig.add(peer);
 			}
 			// Add this to our pending map of commits so we know when to exit joint consensus.
-			_configsPendingCommit.put(mutation.globalOffset, new SyncProgress(newConfig, nodesInConfig));
+			SyncProgress overwrite = _configsPendingCommit.put(mutation.globalOffset, new SyncProgress(newConfig, nodesInConfig));
+			// We should never be overwriting something.
+			Assert.assertTrue(null == overwrite);
 		}
 			break;
 		default:
@@ -664,6 +667,13 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		MutationRecord removed = _inFlightMutations.removeLastElementGreaterThanOrEqualTo(globalOffset);
 		while (null != removed) {
 			_selfState.lastMutationOffsetReceived -= 1;
+			// Only CONFIG_UPDATE results in a change to our own state so revert that change if this is what we removed.
+			if (MutationRecordType.UPDATE_CONFIG == removed.type) {
+				SyncProgress reverted = _configsPendingCommit.remove(removed.globalOffset);
+				Assert.assertTrue(null != reverted);
+				// We just rebuild the downstream union now that this has been removed and it will disconnect anything stale.
+				_rebuildDownstreamUnionAfterConfigChange();
+			}
 			removed = _inFlightMutations.removeLastElementGreaterThanOrEqualTo(globalOffset);
 		}
 	}

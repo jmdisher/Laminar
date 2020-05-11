@@ -1,6 +1,7 @@
 package com.jeffdisher.laminar.state;
 
 import java.net.InetSocketAddress;
+import java.util.HashSet;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 
@@ -324,6 +325,116 @@ public class TestNodeState {
 		Assert.assertEquals(peer1.nodeUuid, disconnect.get().nodeUuid);
 		runner.runVoid((snapshot) -> test.nodeState.mainCommittedMutationOffsetFromUpstream(leader, 1L, 5L));
 		runner.runVoid((snapshot) -> test.nodeState.mainMutationWasCommitted(record5));
+		
+		// Stop.
+		runner.runVoid((snapshot) -> test.nodeState.mainHandleStopCommand());
+		test.join();
+	}
+
+	/**
+	 * Tests that nodes only referenced by a config which did not commit, and which was reverted from in-flight be a new
+	 * leader, are disconnected when the config is dropped from in-flight.
+	 * For this test, we will create 2 streams of mutations, both TEMP-CONFIG-TEMP, overlapping only in the first TEMP.
+	 * The first leader will send the first stream.  The second leader will then send the second stream, causing the
+	 * first CONFIG-TEMP to be dropped.
+	 */
+	@Test
+	public void testDisconnectNodesOnConfigRevert() throws Throwable {
+		MainThread test = new MainThread();
+		
+		// Create our 2 configs - overlapping in self and both leaders but each having another peer.
+		ConfigEntry self = test.initialConfig.entries[0];
+		ConfigEntry leader1 = new ConfigEntry(UUID.randomUUID(), new InetSocketAddress(3), new InetSocketAddress(4));
+		ConfigEntry leader2 = new ConfigEntry(UUID.randomUUID(), new InetSocketAddress(5), new InetSocketAddress(6));
+		ConfigEntry peer1 = new ConfigEntry(UUID.randomUUID(), new InetSocketAddress(7), new InetSocketAddress(8));
+		ConfigEntry peer2 = new ConfigEntry(UUID.randomUUID(), new InetSocketAddress(9), new InetSocketAddress(10));
+		ClusterConfig config1 = ClusterConfig.configFromEntries(new ConfigEntry[] {self, leader1, leader2, peer1});
+		ClusterConfig config2 = ClusterConfig.configFromEntries(new ConfigEntry[] {self, leader1, leader2, peer2});
+		
+		// Create the common mutation.
+		MutationRecord record1 = MutationRecord.generateRecord(MutationRecordType.TEMP, 1L, 1L, UUID.randomUUID(), 1, new byte[] {1});
+		
+		// Create the first config change and TEMP mutation.
+		MutationRecord record12 = MutationRecord.generateRecord(MutationRecordType.UPDATE_CONFIG, 1L, 2L, UUID.randomUUID(), 1L, config1.serialize());
+		MutationRecord record13 = MutationRecord.generateRecord(MutationRecordType.TEMP, 1L, 3L, UUID.randomUUID(), 1, new byte[] {2});
+		
+		// Create the second config change and TEMP mutation.
+		MutationRecord record22 = MutationRecord.generateRecord(MutationRecordType.UPDATE_CONFIG, 2L, 2L, UUID.randomUUID(), 1L, config2.serialize());
+		MutationRecord record23 = MutationRecord.generateRecord(MutationRecordType.TEMP, 2L, 3L, UUID.randomUUID(), 1, new byte[] {3});
+		
+		test.start();
+		test.startLatch.await();
+		Runner runner = new Runner(test.nodeState);
+		
+		// Send the first 3 mutations from stream1, verifying that the acks are generated.
+		F<Void> becomeFollower = test.clusterManager.get_mainEnterFollowerState();
+		F<MutationRecord> received = test.clusterManager.get_mainMutationWasReceivedOrFetched();
+		long nextToLoad = runner.run((snapshot) -> test.nodeState.mainAppendMutationFromUpstream(leader1, 1L, 0L, record1));
+		Assert.assertEquals(2L, nextToLoad);
+		becomeFollower.get();
+		Assert.assertEquals(record1, received.get());
+		
+		// Verify that we open 3 new downstream connections with receiving this config.
+		F<ConfigEntry> downstreamConnect1 = test.clusterManager.get_mainOpenDownstreamConnection();
+		F<ConfigEntry> downstreamConnect2 = test.clusterManager.get_mainOpenDownstreamConnection();
+		F<ConfigEntry> downstreamConnect3 = test.clusterManager.get_mainOpenDownstreamConnection();
+		received = test.clusterManager.get_mainMutationWasReceivedOrFetched();
+		nextToLoad = runner.run((snapshot) -> test.nodeState.mainAppendMutationFromUpstream(leader1, 1L, 1L, record12));
+		Assert.assertEquals(3L, nextToLoad);
+		Assert.assertEquals(record12, received.get());
+		// (we know these are currently sent back in order so we can check these, directly).
+		Assert.assertEquals(leader1.nodeUuid, downstreamConnect1.get().nodeUuid);
+		Assert.assertEquals(leader2.nodeUuid, downstreamConnect2.get().nodeUuid);
+		Assert.assertEquals(peer1.nodeUuid, downstreamConnect3.get().nodeUuid);
+		
+		received = test.clusterManager.get_mainMutationWasReceivedOrFetched();
+		nextToLoad = runner.run((snapshot) -> test.nodeState.mainAppendMutationFromUpstream(leader1, 1L, 1L, record13));
+		Assert.assertEquals(4L, nextToLoad);
+		Assert.assertEquals(record13, received.get());
+		
+		// We now emulate a new leader taking over to send the second stream, rooted at the common mutation 1.
+		// Note that we revert the old mutation before applying the new one so we see 3 disconnects and 3 new connections (even though 2 of them are in both).
+		// We should see peer1 disconnect and peer2 connect.
+		F<ConfigEntry> laterDownstreamDisconnect1 = test.clusterManager.get_mainCloseDownstreamConnection();
+		F<ConfigEntry> laterDownstreamDisconnect2 = test.clusterManager.get_mainCloseDownstreamConnection();
+		F<ConfigEntry> laterDownstreamDisconnect3 = test.clusterManager.get_mainCloseDownstreamConnection();
+		F<ConfigEntry> laterDownstreamConnect1 = test.clusterManager.get_mainOpenDownstreamConnection();
+		F<ConfigEntry> laterDownstreamConnect2 = test.clusterManager.get_mainOpenDownstreamConnection();
+		F<ConfigEntry> laterDownstreamConnect3 = test.clusterManager.get_mainOpenDownstreamConnection();
+		received = test.clusterManager.get_mainMutationWasReceivedOrFetched();
+		nextToLoad = runner.run((snapshot) -> test.nodeState.mainAppendMutationFromUpstream(leader2, 2L, 1L, record22));
+		Assert.assertEquals(3L, nextToLoad);
+		Assert.assertEquals(record22, received.get());
+		// (note that the disconnects don't come in a specific order).
+		HashSet<UUID> disconnectIds = new HashSet<>();
+		Assert.assertTrue(disconnectIds.add(laterDownstreamDisconnect1.get().nodeUuid));
+		Assert.assertTrue(disconnectIds.add(laterDownstreamDisconnect2.get().nodeUuid));
+		Assert.assertTrue(disconnectIds.add(laterDownstreamDisconnect3.get().nodeUuid));
+		Assert.assertTrue(disconnectIds.contains(leader1.nodeUuid));
+		Assert.assertTrue(disconnectIds.contains(leader2.nodeUuid));
+		Assert.assertTrue(disconnectIds.contains(peer1.nodeUuid));
+		// (but we know connects are found in-order).
+		Assert.assertEquals(leader1.nodeUuid, laterDownstreamConnect1.get().nodeUuid);
+		Assert.assertEquals(leader2.nodeUuid, laterDownstreamConnect2.get().nodeUuid);
+		Assert.assertEquals(peer2.nodeUuid, laterDownstreamConnect3.get().nodeUuid);
+		
+		received = test.clusterManager.get_mainMutationWasReceivedOrFetched();
+		nextToLoad = runner.run((snapshot) -> test.nodeState.mainAppendMutationFromUpstream(leader1, 2L, 2L, record23));
+		Assert.assertEquals(4L, nextToLoad);
+		Assert.assertEquals(record23, received.get());
+		
+		// We now send the commits from the new leader and we should observe all 3 commit (note that the leader won't commit 1L, since it didn't send it, but will start at 2L).
+		F<MutationRecord> commit1 = test.diskManager.get_commitMutation();
+		F<MutationRecord> commit2 = test.diskManager.get_commitMutation();
+		F<MutationRecord> commit3 = test.diskManager.get_commitMutation();
+		runner.runVoid((snapshot) -> test.nodeState.mainCommittedMutationOffsetFromUpstream(leader2, 2L, record22.globalOffset));
+		Assert.assertEquals(record1, commit1.get());
+		Assert.assertEquals(record22, commit2.get());
+		runner.runVoid((snapshot) -> test.nodeState.mainMutationWasCommitted(record1));
+		runner.runVoid((snapshot) -> test.nodeState.mainMutationWasCommitted(record22));
+		runner.runVoid((snapshot) -> test.nodeState.mainCommittedMutationOffsetFromUpstream(leader2, 2L, record23.globalOffset));
+		Assert.assertEquals(record23, commit3.get());
+		runner.runVoid((snapshot) -> test.nodeState.mainMutationWasCommitted(record23));
 		
 		// Stop.
 		runner.runVoid((snapshot) -> test.nodeState.mainHandleStopCommand());
