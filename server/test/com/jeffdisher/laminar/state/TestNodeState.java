@@ -441,6 +441,40 @@ public class TestNodeState {
 		test.join();
 	}
 
+	/**
+	 * A node in the CANDIDATE state must become a FOLLOWER if it receives a mutation from a later term.
+	 */
+	@Test
+	public void testCandidateToFollower() throws Throwable {
+		MainThread test = new MainThread();
+		test.start();
+		test.startLatch.await();
+		NodeState nodeState = test.nodeState;
+		Runner runner = new Runner(nodeState);
+		ConfigEntry originalEntry = test.initialConfig.entries[0];
+		ConfigEntry upstreamEntry = new ConfigEntry(UUID.randomUUID(), new InetSocketAddress(3), new InetSocketAddress(4));
+		ClusterConfig newConfig = ClusterConfig.configFromEntries(new ConfigEntry[] {originalEntry, upstreamEntry});
+		
+		// Send the node this mutation so it becomes a FOLLOWER and then we can tell it to become a CANDIDATE (can't start election in empty config).
+		MutationRecord configChangeRecord = MutationRecord.generateRecord(MutationRecordType.UPDATE_CONFIG, 1L, 1L, UUID.randomUUID(), 1L, newConfig.serialize());
+		long nextToLoad = runner.run((snapshot) -> nodeState.mainAppendMutationFromUpstream(upstreamEntry, 1L, 0L, configChangeRecord));
+		Assert.assertEquals(configChangeRecord.globalOffset + 1, nextToLoad);
+		// Tell it the first mutation committed (meaning that config will be active).
+		runner.runVoid((snapshot) -> nodeState.mainCommittedMutationOffsetFromUpstream(upstreamEntry, 1L, 1L));
+		
+		// Force it to enter CANDIDATE state.
+		F<Long> electionStart = test.clusterManager.get_mainEnterCandidateState();
+		runner.runVoid((snapshot) -> nodeState.mainForceLeader());
+		Assert.assertEquals(2L, electionStart.get().longValue());
+		
+		// This node is now holding an election in term 2 so we will need to send it a heart beat from term 3.
+		F<Void> becomeFollower = test.clusterManager.get_mainEnterFollowerState();
+		MutationRecord tempRecord = MutationRecord.generateRecord(MutationRecordType.TEMP, 3L, 2L, UUID.randomUUID(), 1, new byte[] {1});
+		nextToLoad = runner.run((snapshot) -> nodeState.mainAppendMutationFromUpstream(upstreamEntry, tempRecord.termNumber, configChangeRecord.termNumber, tempRecord));
+		becomeFollower.get();
+		Assert.assertEquals(tempRecord.globalOffset + 1, nextToLoad);
+	}
+
 
 	private static ClusterConfig _createConfig() {
 		return ClusterConfig.configFromEntries(new ConfigEntry[] {new ConfigEntry(UUID.randomUUID(), new InetSocketAddress(1), new InetSocketAddress(2))});

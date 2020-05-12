@@ -258,14 +258,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 	public long mainAppendMutationFromUpstream(ConfigEntry peer, long upstreamTermNumber, long previousMutationTermNumber, MutationRecord record) {
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		
-		// We shouldn't receive this if we are the leader, unless the call is invalid or from a later term.
-		if (RaftState.LEADER == _currentState) {
-			// Check to see if the leader has a later term.  If so, we need to update our term number and become follower.
-			if (upstreamTermNumber > _currentTermNumber) {
-				_enterFollowerState(peer, upstreamTermNumber);
-			}
-		}
-		
+		_considerBecomingFollower(peer, upstreamTermNumber);
 		long nextMutationToRequest;
 		// We can only append mutations if we are a follower and this mutation is either from the past or is the next mutation we were waiting for.
 		if ((RaftState.FOLLOWER == _currentState) && (record.globalOffset <= (_selfState.lastMutationOffsetReceived + 1))) {
@@ -290,13 +283,8 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 	@Override
 	public void mainCommittedMutationOffsetFromUpstream(ConfigEntry peer, long upstreamTermNumber, long lastCommittedMutationOffset) {
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
-		if (null == _clusterLeader) {
-			// Check to see if the leader has a later term.  If so, we need to update our term number and become follower.
-			if (upstreamTermNumber > _currentTermNumber) {
-				_enterFollowerState(peer, upstreamTermNumber);
-			}
-		}
 		
+		_considerBecomingFollower(peer, upstreamTermNumber);
 		if (RaftState.FOLLOWER == _currentState) {
 			// Update our consensus offset.
 			// Note that, right after an election, it is possible for the leader to be _behind_ us, in terms of commit offset.  This is still ok as we know we have the same logs up until the later commit point.
@@ -748,5 +736,15 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 			_nextLocalEventOffset += 1;
 		}
 		return event;
+	}
+
+	private void _considerBecomingFollower(ConfigEntry peer, long upstreamTermNumber) {
+		// If we are a LEADER, we will become follower if this message is from a leader in a later term.
+		// If we are a CANDIDATE, we will become follower if this message is from a leader in this term or later.
+		if (((RaftState.LEADER == _currentState) && (upstreamTermNumber > _currentTermNumber))
+				|| ((RaftState.CANDIDATE == _currentState) && (upstreamTermNumber >= _currentTermNumber))
+		) {
+			_enterFollowerState(peer, upstreamTermNumber);
+		}
 	}
 }
