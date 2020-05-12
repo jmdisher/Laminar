@@ -38,8 +38,9 @@ public interface IClusterManager {
 	 * @param snapshot The state of the node during this invocation.
 	 * @param previousMutationTermNumber The term number of the mutation before this one.
 	 * @param mutation The mutation.
+	 * @return True if a the mutation was sent to any downstream peers, false if none were ready.
 	 */
-	void mainMutationWasReceivedOrFetched(StateSnapshot snapshot, long previousMutationTermNumber, MutationRecord mutation);
+	boolean mainMutationWasReceivedOrFetched(StateSnapshot snapshot, long previousMutationTermNumber, MutationRecord mutation);
 
 	/**
 	 * Requests that a downstream connection be created to the peer identified by entry.

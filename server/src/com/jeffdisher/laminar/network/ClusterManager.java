@@ -112,10 +112,11 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 	}
 
 	@Override
-	public void mainMutationWasReceivedOrFetched(StateSnapshot snapshot, long previousMutationTermNumber, MutationRecord mutation) {
+	public boolean mainMutationWasReceivedOrFetched(StateSnapshot snapshot, long previousMutationTermNumber, MutationRecord mutation) {
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		
 		// See if any of our downstream peers were waiting for this mutation and are writable.
+		boolean didSend = false;
 		long mutationOffset = mutation.globalOffset;
 		long nowMillis = System.currentTimeMillis();
 		for (DownstreamPeerState state : _downstreamPeerByNode.values()) {
@@ -125,11 +126,13 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 					&& (state.nextMutationOffsetToSend == mutationOffset)
 			) {
 				_sendMutationToPeer(state, snapshot.currentTermNumber, previousMutationTermNumber, mutation, nowMillis);
+				didSend = true;
 			}
 		}
 		// If this was a fetch, we don't want to revert, but this path is taken by new mutations from a client or leader.
 		// TODO:  Fix this duplication of "RECEIVED" paths.
 		_lastReceivedMutationOffset = Math.max(_lastReceivedMutationOffset, mutation.globalOffset);
+		return didSend;
 	}
 
 	@Override

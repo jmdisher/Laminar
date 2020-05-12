@@ -101,13 +101,15 @@ public class FutureClusterManager implements IClusterManager {
 		}
 	}
 	@Override
-	public void mainMutationWasReceivedOrFetched(StateSnapshot snapshot, long previousMutationTermNumber, MutationRecord record) {
+	public boolean mainMutationWasReceivedOrFetched(StateSnapshot snapshot, long previousMutationTermNumber, MutationRecord record) {
 		if (null != f_mainMutationWasReceivedOrFetched) {
 			f_mainMutationWasReceivedOrFetched.put(record);
 			f_mainMutationWasReceivedOrFetched = f_mainMutationWasReceivedOrFetched.nextLink;
 		} else {
 			System.out.println("IClusterManager - mainMutationWasReceivedOrFetched");
 		}
+		// For now, we just always say no.
+		return false;
 	}
 	@Override
 	public void mainOpenDownstreamConnection(ConfigEntry entry) {

@@ -420,7 +420,8 @@ public class TestClusterManager {
 			return toReturn;
 		}
 		public static void sendNewMutation(ClusterManager manager, TestClusterCallbacks callbacks, StateSnapshot stateSnapshot, long previousMutationNumber, MutationRecord record) throws InterruptedException {
-			manager.mainMutationWasReceivedOrFetched(stateSnapshot, previousMutationNumber, record);
+			boolean didSend = manager.mainMutationWasReceivedOrFetched(stateSnapshot, previousMutationNumber, record);
+			Assert.assertTrue(didSend);
 			// -1 nodeWriteReady
 			callbacks.runOneCommand();
 		}
