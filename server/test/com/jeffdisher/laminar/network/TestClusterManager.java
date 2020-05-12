@@ -131,51 +131,26 @@ public class TestClusterManager {
 		downstreamManager.startAndWaitForReady();
 		
 		// Initial handshake.
-		// Open the connection and run commands:
-		upstreamManager.mainOpenDownstreamConnection(downstreamEntry);
-		// -1 outboundNodeConnected (triggers send of IDENTITY)
-		upstreamCallbacks.runOneCommand();
-		// -2 nodeDidConnect
-		downstreamCallbacks.runOneCommand();
-		// -2 nodeReadReady (reads IDENTITY and sends PEER_STATE)
-		downstreamCallbacks.runOneCommand();
-		// -1 nodeWriteReady
-		upstreamCallbacks.runOneCommand();
-		// -2 nodeWriteReady
-		downstreamCallbacks.runOneCommand();
+		TestingCommands.openConnectionAndSendIdentity(upstreamManager, upstreamCallbacks, downstreamEntry);
+		TestingCommands.acceptConnectionAndSendState(downstreamManager, downstreamCallbacks);
 		
 		// When we run the readReady on upstreamCallbacks, it will try to fetch the mutation to send.
 		long offset1 = 1L;
 		UUID clientId1 = UUID.randomUUID();
 		long nonce1 = 1L;
 		byte[] payload1 = new byte[] {1,2,3};
-		upstreamCallbacks.nextMutationToReturn = MutationRecord.generateRecord(MutationRecordType.TEMP, 1L, offset1, clientId1, nonce1, payload1);
-		// -1 nodeReadReady (reads PEER_STATE - picks up mutation - sends APPEND).
-		upstreamCallbacks.runOneCommand();
-		Assert.assertNull(upstreamCallbacks.nextMutationToReturn);
+		MutationRecord record1 = MutationRecord.generateRecord(MutationRecordType.TEMP, 1L, offset1, clientId1, nonce1, payload1);
+		TestingCommands.readPeerStateAndSendMutation(upstreamManager, upstreamCallbacks, record1);
 		
 		// We need to set the downstream to FOLLOWER state so that it can send acks - this normally happens in inside
 		// the processing of the first message but we need to do it before it tries to ack so do it before.
 		downstreamManager.mainEnterFollowerState();
-		// Running readReady on downstream callbacks will give us the mutation so we will see who this is.
-		// -2 nodeReadReady (reads APPEND - provides callback - sends ACK).
-		Assert.assertNull(downstreamCallbacks.upstreamPeer);
-		Assert.assertNull(downstreamCallbacks.upstreamMutation);
-		Assert.assertEquals(0L, downstreamCallbacks.upstreamCommitOffset);
-		downstreamCallbacks.runOneCommand();
-		Assert.assertEquals(upstreamEntry.nodeUuid, downstreamCallbacks.upstreamPeer.nodeUuid);
-		Assert.assertNotNull(downstreamCallbacks.upstreamMutation);
-		Assert.assertEquals(offset1, downstreamCallbacks.upstreamMutation.globalOffset);
-		// -1 nodeWriteReady
-		upstreamCallbacks.runOneCommand();
+		MutationRecord incoming = TestingCommands.readIncomingMutation(downstreamManager, downstreamCallbacks, upstreamEntry);
+		Assert.assertEquals(offset1, incoming.globalOffset);
 		
 		// Running the readReady on upstream will observe the ack so we will see the callback.
-		Assert.assertNull(upstreamCallbacks.downstreamPeer);
-		Assert.assertEquals(0L, upstreamCallbacks.downstreamReceivedMutation);
-		// -1 nodeReadReady (provides callback).
-		upstreamCallbacks.runOneCommand();
-		Assert.assertEquals(downstreamEntry, upstreamCallbacks.downstreamPeer);
-		Assert.assertEquals(offset1, upstreamCallbacks.downstreamReceivedMutation);
+		long ackReceived = TestingCommands.receiveAckFromDownstream(upstreamManager, upstreamCallbacks, downstreamEntry);
+		Assert.assertEquals(offset1, ackReceived);
 		
 		downstreamManager.stopAndWaitForTermination();
 		upstreamManager.stopAndWaitForTermination();
@@ -203,95 +178,46 @@ public class TestClusterManager {
 		downstreamManager.startAndWaitForReady();
 		
 		// Initial handshake.
-		// Open the connection and run commands:
-		upstreamManager.mainOpenDownstreamConnection(downstreamEntry);
-		// -1 outboundNodeConnected (triggers send of IDENTITY)
-		upstreamCallbacks.runOneCommand();
-		// -2 nodeDidConnect
-		downstreamCallbacks.runOneCommand();
-		// -2 nodeReadReady (reads IDENTITY and sends PEER_STATE)
-		downstreamCallbacks.runOneCommand();
-		// -1 nodeWriteReady
-		upstreamCallbacks.runOneCommand();
-		// -2 nodeWriteReady
-		downstreamCallbacks.runOneCommand();
+		TestingCommands.openConnectionAndSendIdentity(upstreamManager, upstreamCallbacks, downstreamEntry);
+		TestingCommands.acceptConnectionAndSendState(downstreamManager, downstreamCallbacks);
 		
 		// We need to set the downstream to FOLLOWER state so that it can send acks - this normally happens in inside
 		// the processing of the first message but we need to do it before it tries to ack so do it before.
 		downstreamManager.mainEnterFollowerState();
-		// When we run the readReady on upstreamCallbacks, it will try to fetch the mutation to send.
 		MutationRecord record1 = MutationRecord.generateRecord(MutationRecordType.TEMP, 1L, 1L, UUID.randomUUID(), 1L, new byte[] {1,2,3});
-		upstreamCallbacks.nextMutationToReturn = record1;
-		// -1 nodeReadReady (reads PEER_STATE - picks up mutation - sends APPEND).
-		upstreamCallbacks.runOneCommand();
-		Assert.assertNull(upstreamCallbacks.nextMutationToReturn);
-		// -1 nodeWriteReady
-		upstreamCallbacks.runOneCommand();
+		TestingCommands.readPeerStateAndSendMutation(upstreamManager, upstreamCallbacks, record1);
 		
-		// Running readReady on downstream callbacks will give us the mutation so we will see who this is.
-		// -2 nodeReadReady (reads APPEND - provides callback - sends ACK).
 		Assert.assertNull(downstreamCallbacks.upstreamPeer);
-		Assert.assertNull(downstreamCallbacks.upstreamMutation);
 		Assert.assertEquals(0L, downstreamCallbacks.upstreamCommitOffset);
-		downstreamCallbacks.runOneCommand();
-		Assert.assertEquals(upstreamEntry.nodeUuid, downstreamCallbacks.upstreamPeer.nodeUuid);
-		Assert.assertNotNull(downstreamCallbacks.upstreamMutation);
-		downstreamCallbacks.upstreamMutation = null;
+		MutationRecord incoming = TestingCommands.readIncomingMutation(downstreamManager, downstreamCallbacks, upstreamEntry);
+		Assert.assertNotNull(incoming);
 		
 		// Running the readReady on upstream will observe the ack so we will see the callback.
-		Assert.assertNull(upstreamCallbacks.downstreamPeer);
-		Assert.assertEquals(0L, upstreamCallbacks.downstreamReceivedMutation);
-		// -1 nodeReadReady (provides callback).
-		upstreamCallbacks.runOneCommand();
-		Assert.assertEquals(downstreamEntry, upstreamCallbacks.downstreamPeer);
-		Assert.assertEquals(1L, upstreamCallbacks.downstreamReceivedMutation);
-		// -2 nodeWriteReady
-		downstreamCallbacks.runOneCommand();
+		long receivedAckNumber = TestingCommands.receiveAckFromDownstream(upstreamManager, upstreamCallbacks, downstreamEntry);
+		Assert.assertEquals(1L, receivedAckNumber);
 		
 		// Now, send another message which will invalidate the term number of the last one we sent.
 		MutationRecord record2 = MutationRecord.generateRecord(MutationRecordType.TEMP, 2L, 2L, record1.clientId, 2L, new byte[] {2});
 		// (this 2L is what should cause the downstream to drop record1).
-		upstreamManager.mainMutationWasReceivedOrFetched(new StateSnapshot(null, 0L, 0L, 0L, 2L), 2L, record2);
-		// -1 nodeWriteReady
-		upstreamCallbacks.runOneCommand();
-		// -2 nodeReadReady (this will cause them to send a new PEER_STATE to the upstream).
-		downstreamCallbacks.runOneCommand();
-		// -2 nodeWriteReady
-		downstreamCallbacks.runOneCommand();
+		TestingCommands.sendNewMutation(upstreamManager, upstreamCallbacks, new StateSnapshot(null, 0L, 0L, 0L, 2L), 2L, record2);
+		// Receiving this will result in a PEER_STATE response.
+		incoming = TestingCommands.readIncomingMutation(downstreamManager, downstreamCallbacks, upstreamEntry);
+		Assert.assertNull(incoming);
 		
 		// Upstream now receives the PEER_STATE and tries to restart so set up the corrected mutation (term is still 0).
 		MutationRecord record1_fix = MutationRecord.generateRecord(record1.type, 2L, record1.globalOffset, record1.clientId, record1.clientNonce, new byte[] {1,2,3, 4, 5, 6});
-		upstreamCallbacks.nextMutationToReturn = record1_fix;
-		// -1 nodeReadReady (the receive PEER_STATE and send the new mutation).
-		upstreamCallbacks.runOneCommand();
-		// -1 nodeWriteReady.
-		upstreamCallbacks.runOneCommand();
-		// -2 nodeReadReady (this will cause them to revert and ack).
-		downstreamCallbacks.runOneCommand();
-		Assert.assertArrayEquals(record1_fix.payload, downstreamCallbacks.upstreamMutation.payload);
-		downstreamCallbacks.upstreamMutation = null;
-		// -2 nodeWriteReady.
-		downstreamCallbacks.runOneCommand();
+		TestingCommands.readPeerStateAndSendMutation(upstreamManager, upstreamCallbacks, record1_fix);
+		incoming = TestingCommands.readIncomingMutation(downstreamManager, downstreamCallbacks, upstreamEntry);
+		Assert.assertArrayEquals(record1_fix.payload, incoming.payload);
 		
 		// Upstream receives the ack and tries to send the next mutation so give them the last one we sent, new term.
-		upstreamCallbacks.nextMutationToReturn = record2;
-		upstreamCallbacks.nextPreviousTermNumberToReturn = record1_fix.termNumber;
-		// -1 nodeReadReady (the receive ack and send the new mutation).
-		upstreamCallbacks.downstreamReceivedMutation = 0L;
-		upstreamCallbacks.runOneCommand();
-		Assert.assertEquals(record1_fix.globalOffset, upstreamCallbacks.downstreamReceivedMutation);
-		// -1 nodeWriteReady.
-		upstreamCallbacks.runOneCommand();
-		// -2 nodeReadReady (this will cause them to accept and ack).
-		downstreamCallbacks.runOneCommand();
-		// -2 nodeWriteReady.
-		downstreamCallbacks.runOneCommand();
-		Assert.assertArrayEquals(record2.payload, downstreamCallbacks.upstreamMutation.payload);
-		downstreamCallbacks.upstreamMutation = null;
-		// -1 nodeReadReady (receive ack).
-		upstreamCallbacks.downstreamReceivedMutation = 0L;
-		upstreamCallbacks.runOneCommand();
-		Assert.assertEquals(record2.globalOffset, upstreamCallbacks.downstreamReceivedMutation);
+		receivedAckNumber = TestingCommands.receiveAckAndSend(upstreamManager, upstreamCallbacks, record1_fix.termNumber, record2);
+		Assert.assertEquals(record1_fix.globalOffset, receivedAckNumber);
+		
+		incoming = TestingCommands.readIncomingMutation(downstreamManager, downstreamCallbacks, upstreamEntry);
+		Assert.assertArrayEquals(record2.payload, incoming.payload);
+		receivedAckNumber = TestingCommands.receiveAckFromDownstream(upstreamManager, upstreamCallbacks, downstreamEntry);
+		Assert.assertEquals(record2.globalOffset, receivedAckNumber);
 		
 		downstreamManager.stopAndWaitForTermination();
 		upstreamManager.stopAndWaitForTermination();
@@ -427,6 +353,76 @@ public class TestClusterManager {
 		@Override
 		public void mainUpstreamMessageDidTimeout() {
 			Assert.fail("Not used");
+		}
+	}
+
+
+	private static class TestingCommands {
+		public static void openConnectionAndSendIdentity(ClusterManager manager, TestClusterCallbacks callbacks, ConfigEntry peer) throws InterruptedException {
+			manager.mainOpenDownstreamConnection(peer);
+			// -1 outboundNodeConnected (triggers send of IDENTITY)
+			callbacks.runOneCommand();
+			// -1 nodeWriteReady
+			callbacks.runOneCommand();
+			
+		}
+		public static long receiveAckFromDownstream(ClusterManager manager, TestClusterCallbacks callbacks, ConfigEntry downstreamEntry) throws InterruptedException {
+			Assert.assertEquals(0L, callbacks.downstreamReceivedMutation);
+			Assert.assertNull(callbacks.downstreamPeer);
+			// -1 nodeReadReady (provides callback).
+			callbacks.runOneCommand();
+			Assert.assertEquals(downstreamEntry, callbacks.downstreamPeer);
+			long toReturn = callbacks.downstreamReceivedMutation;
+			callbacks.downstreamReceivedMutation = 0L;
+			callbacks.downstreamPeer = null;
+			return toReturn;
+		}
+		public static long receiveAckAndSend(ClusterManager manager, TestClusterCallbacks callbacks, long previousMutationNumber, MutationRecord record) throws InterruptedException {
+			Assert.assertEquals(0L, callbacks.downstreamReceivedMutation);
+			callbacks.nextMutationToReturn = record;
+			callbacks.nextPreviousTermNumberToReturn = previousMutationNumber;
+			// -1 nodeReadReady (the receive ack and send the new mutation).
+			callbacks.runOneCommand();
+			// -1 nodeWriteReady.
+			callbacks.runOneCommand();
+			long toReturn = callbacks.downstreamReceivedMutation;
+			callbacks.downstreamReceivedMutation = 0L;
+			callbacks.downstreamPeer = null;
+			return toReturn;
+		}
+		public static void acceptConnectionAndSendState(ClusterManager manager, TestClusterCallbacks callbacks) throws InterruptedException {
+			// -2 nodeDidConnect
+			callbacks.runOneCommand();
+			// -2 nodeReadReady (reads IDENTITY and sends PEER_STATE)
+			callbacks.runOneCommand();
+			// -2 nodeWriteReady
+			callbacks.runOneCommand();
+		}
+		public static void readPeerStateAndSendMutation(ClusterManager manager, TestClusterCallbacks callbacks, MutationRecord record) throws InterruptedException {
+			// When we run the readReady on upstreamCallbacks, it will try to fetch the mutation to send.
+			callbacks.nextMutationToReturn = record;
+			// -1 nodeReadReady (reads PEER_STATE - picks up mutation - sends APPEND).
+			callbacks.runOneCommand();
+			Assert.assertNull(callbacks.nextMutationToReturn);
+			// -1 nodeWriteReady
+			callbacks.runOneCommand();
+		}
+		public static MutationRecord readIncomingMutation(ClusterManager manager, TestClusterCallbacks callbacks, ConfigEntry expectedSender) throws InterruptedException {
+			// Running readReady on downstream callbacks will give us the mutation so we will see who this is.
+			// -2 nodeReadReady (reads APPEND - provides callback - sends ACK or PEER_STATE).
+			Assert.assertNull(callbacks.upstreamMutation);
+			callbacks.runOneCommand();
+			MutationRecord toReturn = callbacks.upstreamMutation;
+			callbacks.upstreamMutation = null;
+			// -2 nodeWriteReady
+			callbacks.runOneCommand();
+			Assert.assertEquals(expectedSender.nodeUuid, callbacks.upstreamPeer.nodeUuid);
+			return toReturn;
+		}
+		public static void sendNewMutation(ClusterManager manager, TestClusterCallbacks callbacks, StateSnapshot stateSnapshot, long previousMutationNumber, MutationRecord record) throws InterruptedException {
+			manager.mainMutationWasReceivedOrFetched(stateSnapshot, previousMutationNumber, record);
+			// -1 nodeWriteReady
+			callbacks.runOneCommand();
 		}
 	}
 }
