@@ -225,6 +225,60 @@ public class TestClusterManager {
 		upstreamSocket.close();
 	}
 
+	/**
+	 * Creates 2 ClusterManagers and demonstrates what happens if the upstream attempts to send 2 mutations before the
+	 * downstream can ack either of them.
+	 * We expect that only the first will be sent since the upstream should lock-step on the mutation acks before
+	 * sending another.  It will do this by deciding that the downstream wasn't yet available to receive the mutation
+	 * being offered.
+	 * Reason why this is important:  The state machines related to how both sides synchronize is not currently able to
+	 * handle multiple in-flight in the case where they are sending contradictory information:  move forward and move
+	 * backward.  We use this test to verify such cases won't be introduced until the state machine logic is explicitly
+	 * changed to handle those situations.
+	 */
+	@Test
+	public void testSendTooQuickly() throws Throwable {
+		int upstreamPort = PORT_BASE + 10;
+		int downstreamPort = PORT_BASE + 11;
+		ServerSocketChannel upstreamSocket = TestingHelpers.createServerSocket(upstreamPort);
+		ServerSocketChannel downstreamSocket = TestingHelpers.createServerSocket(downstreamPort);
+		ConfigEntry upstreamEntry = new ConfigEntry(UUID.randomUUID(), new InetSocketAddress(upstreamPort), new InetSocketAddress(9999));
+		ConfigEntry downstreamEntry = new ConfigEntry(UUID.randomUUID(), new InetSocketAddress(downstreamPort), new InetSocketAddress(9999));
+		TestClusterCallbacks upstreamCallbacks = new TestClusterCallbacks();
+		TestClusterCallbacks downstreamCallbacks = new TestClusterCallbacks();
+		ClusterManager upstreamManager = new ClusterManager(upstreamEntry, upstreamSocket, upstreamCallbacks);
+		ClusterManager downstreamManager = new ClusterManager(downstreamEntry, downstreamSocket, downstreamCallbacks);
+		upstreamManager.startAndWaitForReady();
+		downstreamManager.startAndWaitForReady();
+		
+		// Initial handshake.
+		TestingCommands.openConnectionAndSendIdentity(upstreamManager, upstreamCallbacks, downstreamEntry);
+		TestingCommands.acceptConnectionAndSendState(downstreamManager, downstreamCallbacks);
+		
+		// Provide a mutation in direct response to the PEER_STATE.
+		downstreamManager.mainEnterFollowerState();
+		MutationRecord record1 = MutationRecord.generateRecord(MutationRecordType.TEMP, 1L, 1L, UUID.randomUUID(), 1L, new byte[] {1,2,3});
+		TestingCommands.readPeerStateAndSendMutation(upstreamManager, upstreamCallbacks, record1);
+		
+		// Process the mutation on the downstream, which should result in an ack being sent back.
+		MutationRecord received = TestingCommands.readIncomingMutation(downstreamManager, downstreamCallbacks, upstreamEntry);
+		Assert.assertEquals(record1.globalOffset, received.globalOffset);
+		
+		// Immediately send another mutation before accepting the ack and observe that it FAILS to send (see the failSendNewMutation command).
+		MutationRecord record2 = MutationRecord.generateRecord(MutationRecordType.TEMP, 1L, 2L, record1.clientId, 2L, new byte[] {2});
+		TestingCommands.failSendNewMutation(upstreamManager, upstreamCallbacks, new StateSnapshot(null, 0L, 0L, 0L, 2L), 1L, record2);
+		
+		// Process the ack on the upstream and demonstrate that it now wants to send the message it failed to send.
+		long receivedMutation = TestingCommands.receiveAckFromDownstream(upstreamManager, upstreamCallbacks, downstreamEntry);
+		Assert.assertEquals(record1.globalOffset, receivedMutation);
+		TestingCommands.sendNewMutation(upstreamManager, upstreamCallbacks, new StateSnapshot(null, 0L, 0L, 0L, 2L), 1L, record2);
+		
+		downstreamManager.stopAndWaitForTermination();
+		upstreamManager.stopAndWaitForTermination();
+		downstreamSocket.close();
+		upstreamSocket.close();
+	}
+
 
 	private static ConfigEntry _buildSelf() throws UnknownHostException {
 		InetAddress localhost = InetAddress.getLocalHost();
@@ -424,6 +478,11 @@ public class TestClusterManager {
 			Assert.assertTrue(didSend);
 			// -1 nodeWriteReady
 			callbacks.runOneCommand();
+		}
+		public static void failSendNewMutation(ClusterManager manager, TestClusterCallbacks callbacks, StateSnapshot stateSnapshot, long previousMutationNumber, MutationRecord record) throws InterruptedException {
+			boolean didSend = manager.mainMutationWasReceivedOrFetched(stateSnapshot, previousMutationNumber, record);
+			Assert.assertFalse(didSend);
+			// No waiting for write-ready since we didn't send.
 		}
 	}
 }

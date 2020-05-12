@@ -302,6 +302,7 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 						// long as the network is writable) but the NodeState uses it for consensus offset.
 						DownstreamPeerState peer = _downstreamPeerByNode.get(node);
 						_callbacks.mainReceivedAckFromDownstream(peer.entry, lastReceivedMutationOffset);
+						peer.nextMutationOffsetToSend = lastReceivedMutationOffset + 1;
 						
 						// See if we can send them anything right away.
 						_tryFetchOrSend(arg0.currentTermNumber, peer);
@@ -433,6 +434,7 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 				&& peer.isConnectionUp
 				&& peer.didHandshake
 				&& peer.isWritable
+				&& (peer.nextMutationOffsetToSend > 0)
 		) {
 			if (_isLeader) {
 				// Normal mutation sends happen when leader.
@@ -491,7 +493,8 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 		if (_isLeader) {
 			DownstreamMessage message = DownstreamMessage.appendMutations(currentTermNumber, previousMutationTermNumber, mutation, _lastCommittedMutationOffset);
 			_sendDownstreamMessage(peer, message, nowMillis);
-			peer.nextMutationOffsetToSend += 1;
+			// Clear the next mutation until they ack it.
+			peer.nextMutationOffsetToSend = -1L;
 		}
 	}
 
