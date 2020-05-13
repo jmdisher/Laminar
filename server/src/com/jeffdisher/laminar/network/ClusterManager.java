@@ -58,9 +58,9 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 	private final Map<UUID, DownstreamPeerState> _downstreamPeerByUuid;
 	private final Map<NetworkManager.NodeToken, DownstreamPeerState> _downstreamPeerByNode;
 	// The last mutation offset received by _THIS_ node (either from a client or peer).
-	private long _lastReceivedMutationOffset;
+	private long _lastReceivedMutationOffset = DownstreamPeerState.NO_NEXT_MUTATION;
 	// The last mutation offset committed on _THIS_ node.
-	private long _lastCommittedMutationOffset;
+	private long _lastCommittedMutationOffset = DownstreamPeerState.NO_NEXT_MUTATION;
 
 	// These elements are relevant when _THIS_ node is a FOLLOWER.
 	// Much like ClientManager, we store new upstream peers until we get the handshake from them to know their state.
@@ -434,7 +434,7 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 				&& peer.isConnectionUp
 				&& peer.didHandshake
 				&& peer.isWritable
-				&& (peer.nextMutationOffsetToSend > 0)
+				&& (DownstreamPeerState.NO_NEXT_MUTATION != peer.nextMutationOffsetToSend)
 		) {
 			if (_isLeader) {
 				// Normal mutation sends happen when leader.
@@ -494,7 +494,7 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 			DownstreamMessage message = DownstreamMessage.appendMutations(currentTermNumber, previousMutationTermNumber, mutation, _lastCommittedMutationOffset);
 			_sendDownstreamMessage(peer, message, nowMillis);
 			// Clear the next mutation until they ack it.
-			peer.nextMutationOffsetToSend = -1L;
+			peer.nextMutationOffsetToSend = DownstreamPeerState.NO_NEXT_MUTATION;
 		}
 	}
 

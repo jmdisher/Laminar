@@ -16,6 +16,13 @@ import com.jeffdisher.laminar.types.ConfigEntry;
  * timeout.
  */
 public class DownstreamPeerState {
+	/**
+	 * We define this sentinel constant for nextMutationOffsetToSend since there was confusion between 0L and -1L and
+	 * this value is logical, not arithmetic, whenever it is set.
+	 */
+	public static final long NO_NEXT_MUTATION = 0L;
+
+
 	public final ConfigEntry entry;
 	public final NetworkManager.NodeToken token;
 	/**
@@ -44,7 +51,7 @@ public class DownstreamPeerState {
 	 * it should send a copy to the peer.
 	 * This value starts at 0L since we don't know what their state is until we receive a PEER_STATE.
 	 */
-	public long nextMutationOffsetToSend = 0L;
+	public long nextMutationOffsetToSend = NO_NEXT_MUTATION;
 	/**
 	 * The millisecond clock the last time we sent a message to this peer.  This is tracked for heartbeat.
 	 */
