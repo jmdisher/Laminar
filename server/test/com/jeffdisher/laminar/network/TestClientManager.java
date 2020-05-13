@@ -4,7 +4,6 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.net.Socket;
-import java.nio.ByteBuffer;
 import java.nio.channels.ServerSocketChannel;
 import java.util.UUID;
 import java.util.function.Consumer;
@@ -17,6 +16,8 @@ import com.jeffdisher.laminar.state.StateSnapshot;
 import com.jeffdisher.laminar.types.ClientMessage;
 import com.jeffdisher.laminar.types.ClientMessagePayload_Temp;
 import com.jeffdisher.laminar.types.ClientResponse;
+import com.jeffdisher.laminar.types.ClientResponsePayload_ClusterConfig;
+import com.jeffdisher.laminar.types.ClientResponsePayload_ConfigEntry;
 import com.jeffdisher.laminar.types.ClientResponseType;
 import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.types.ConfigEntry;
@@ -69,7 +70,7 @@ public class TestClientManager {
 			Assert.assertEquals(ClientResponseType.CLIENT_READY, ready.type);
 			Assert.assertEquals(0L, ready.lastCommitGlobalOffset);
 			Assert.assertEquals(1L, ready.nonce);
-			Assert.assertNotNull(ClusterConfig.deserialize(ready.extraData));
+			Assert.assertEquals(1, ((ClientResponsePayload_ClusterConfig)ready.payload).config.entries.length);
 			
 			// Write the message.
 			TestingHelpers.writeMessageInFrame(toServer, message.serialize());
@@ -125,7 +126,7 @@ public class TestClientManager {
 			Assert.assertEquals(ClientResponseType.CLIENT_READY, ready.type);
 			Assert.assertEquals(0L, ready.lastCommitGlobalOffset);
 			Assert.assertEquals(1L, ready.nonce);
-			Assert.assertNotNull(ClusterConfig.deserialize(ready.extraData));
+			Assert.assertEquals(1, ((ClientResponsePayload_ClusterConfig)ready.payload).config.entries.length);
 			
 			// Write the message and read the RECEIVED.
 			TestingHelpers.writeMessageInFrame(toServer, message.serialize());
@@ -239,7 +240,7 @@ public class TestClientManager {
 			Assert.assertEquals(ClientResponseType.REDIRECT, redirect.type);
 			Assert.assertEquals(-1L, redirect.nonce);
 			Assert.assertEquals(0L, redirect.lastCommitGlobalOffset);
-			Assert.assertEquals(entry.nodeUuid, ConfigEntry.deserializeFrom(ByteBuffer.wrap(redirect.extraData)).nodeUuid);
+			Assert.assertEquals(entry.nodeUuid, ((ClientResponsePayload_ConfigEntry)redirect.payload).entry.nodeUuid);
 		}
 		NetworkManager.NodeToken noNode = callbacks.runRunnableAndGetNewClientNode(manager);
 		Assert.assertNull(noNode);
@@ -281,7 +282,7 @@ public class TestClientManager {
 			Assert.assertEquals(ClientResponseType.REDIRECT, redirect.type);
 			Assert.assertEquals(-1L, redirect.nonce);
 			Assert.assertEquals(0L, redirect.lastCommitGlobalOffset);
-			Assert.assertEquals(entry.nodeUuid, ConfigEntry.deserializeFrom(ByteBuffer.wrap(redirect.extraData)).nodeUuid);
+			Assert.assertEquals(entry.nodeUuid, ((ClientResponsePayload_ConfigEntry)redirect.payload).entry.nodeUuid);
 		}
 		NetworkManager.NodeToken noNode = callbacks.runRunnableAndGetNewClientNode(manager);
 		Assert.assertNull(noNode);

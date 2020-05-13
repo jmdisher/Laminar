@@ -4,7 +4,6 @@ import java.io.Closeable;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
-import java.nio.ByteBuffer;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Queue;
@@ -18,6 +17,8 @@ import com.jeffdisher.laminar.components.INetworkManagerBackgroundCallbacks;
 import com.jeffdisher.laminar.components.NetworkManager;
 import com.jeffdisher.laminar.types.ClientMessage;
 import com.jeffdisher.laminar.types.ClientResponse;
+import com.jeffdisher.laminar.types.ClientResponsePayload_ClusterConfig;
+import com.jeffdisher.laminar.types.ClientResponsePayload_ConfigEntry;
 import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.types.ConfigEntry;
 import com.jeffdisher.laminar.utils.Assert;
@@ -429,7 +430,7 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 			
 			// The CLIENT_READY includes the cluster's active config so we want to read this and verify it is consistent.
 			// This just means checking that we are connected to something in it.
-			ClusterConfig currentConfig = ClusterConfig.deserialize(deserialized.extraData);
+			ClusterConfig currentConfig = ((ClientResponsePayload_ClusterConfig)deserialized.payload).config;
 			boolean didFind =false;
 			for (ConfigEntry entry : currentConfig.entries) {
 				didFind = _serverAddress.equals(entry.client);
@@ -476,7 +477,7 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 			// This is an out-of-band config update.  This has a -1 nonce so make sure we didn't find a message.
 			Assert.assertTrue(null == result);
 			// Now, just deserialize and set the config (whether our exising one was null, or not).
-			_currentClusterConfig = ClusterConfig.deserialize(deserialized.extraData);
+			_currentClusterConfig = ((ClientResponsePayload_ClusterConfig)deserialized.payload).config;
 			// Build our queue of reconnect targets.
 			_nextReconnectAttempts = new LinkedList<>();
 			for (ConfigEntry entry : _currentClusterConfig.entries) {
@@ -485,7 +486,7 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 			break;
 		case REDIRECT:
 			// We need to shut down our current connection and establish a new one to this new cluster leader.
-			ConfigEntry newLeader = ConfigEntry.deserializeFrom(ByteBuffer.wrap(deserialized.extraData));
+			ConfigEntry newLeader = ((ClientResponsePayload_ConfigEntry)deserialized.payload).entry;
 			// We will do this by changing the server address and simulating a dropped connection.
 			_redirectAddress = newLeader.client;
 			_network.closeConnection(_connection);

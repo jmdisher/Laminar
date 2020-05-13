@@ -2,6 +2,8 @@ package com.jeffdisher.laminar.types;
 
 import java.nio.ByteBuffer;
 
+import com.jeffdisher.laminar.utils.Assert;
+
 
 /**
  * High-level representation of a message to be sent FROM the server TO a client.
@@ -17,7 +19,7 @@ public class ClientResponse {
 	 * @return A new ClientResponse instance.
 	 */
 	public static ClientResponse error(long nonce, long lastCommitGlobalOffset) {
-		return new ClientResponse(ClientResponseType.ERROR, nonce, lastCommitGlobalOffset, new byte[0]);
+		return new ClientResponse(ClientResponseType.ERROR, nonce, lastCommitGlobalOffset, ClientResponsePayload_Empty.create());
 	}
 
 	/**
@@ -31,7 +33,7 @@ public class ClientResponse {
 	 * @return A new ClientResponse instance.
 	 */
 	public static ClientResponse clientReady(long expectedNextNonce, long lastCommitGlobalOffset, ClusterConfig activeConfig) {
-		return new ClientResponse(ClientResponseType.CLIENT_READY, expectedNextNonce, lastCommitGlobalOffset, activeConfig.serialize());
+		return new ClientResponse(ClientResponseType.CLIENT_READY, expectedNextNonce, lastCommitGlobalOffset, ClientResponsePayload_ClusterConfig.create(activeConfig));
 	}
 
 	/**
@@ -44,7 +46,7 @@ public class ClientResponse {
 	 * @return A new ClientResponse instance.
 	 */
 	public static ClientResponse received(long nonce, long lastCommitGlobalOffset) {
-		return new ClientResponse(ClientResponseType.RECEIVED, nonce, lastCommitGlobalOffset, new byte[0]);
+		return new ClientResponse(ClientResponseType.RECEIVED, nonce, lastCommitGlobalOffset, ClientResponsePayload_Empty.create());
 	}
 
 	/**
@@ -59,7 +61,7 @@ public class ClientResponse {
 	 * @return A new ClientResponse instance.
 	 */
 	public static ClientResponse committed(long nonce, long lastCommitGlobalOffset) {
-		return new ClientResponse(ClientResponseType.COMMITTED, nonce, lastCommitGlobalOffset, new byte[0]);
+		return new ClientResponse(ClientResponseType.COMMITTED, nonce, lastCommitGlobalOffset, ClientResponsePayload_Empty.create());
 	}
 
 	/**
@@ -72,7 +74,7 @@ public class ClientResponse {
 	 * @return A new ClientResponse instance.
 	 */
 	public static ClientResponse updateConfig(long lastCommitGlobalOffset, ClusterConfig newConfig) {
-		return new ClientResponse(ClientResponseType.UPDATE_CONFIG, -1L, lastCommitGlobalOffset, newConfig.serialize());
+		return new ClientResponse(ClientResponseType.UPDATE_CONFIG, -1L, lastCommitGlobalOffset, ClientResponsePayload_ClusterConfig.create(newConfig));
 	}
 
 	/**
@@ -84,9 +86,7 @@ public class ClientResponse {
 	 * @return A new ClientResponse instance.
 	 */
 	public static ClientResponse redirect(ConfigEntry clusterLeader, long lastCommittedMutationOffset) {
-		ByteBuffer buffer = ByteBuffer.allocate(clusterLeader.serializedSize());
-		clusterLeader.serializeInto(buffer);
-		return new ClientResponse(ClientResponseType.REDIRECT, -1L, lastCommittedMutationOffset, buffer.array());
+		return new ClientResponse(ClientResponseType.REDIRECT, -1L, lastCommittedMutationOffset, ClientResponsePayload_ConfigEntry.create(clusterLeader));
 	}
 
 	/**
@@ -100,22 +100,47 @@ public class ClientResponse {
 		ClientResponseType type = ClientResponseType.values()[(int)wrapper.get()];
 		long nonce = wrapper.getLong();
 		long lastCommitGlobalOffset = wrapper.getLong();
-		byte[] extraData = new byte[wrapper.remaining()];
-		wrapper.get(extraData);
-		return new ClientResponse(type, nonce, lastCommitGlobalOffset, extraData);
+		
+		IClientResponsePayload payload;
+		switch (type) {
+		case INVALID:
+			throw Assert.unimplemented("Handle invalid deserialization");
+		case ERROR:
+			payload = ClientResponsePayload_Empty.deserialize(wrapper);
+			break;
+		case CLIENT_READY:
+			payload = ClientResponsePayload_ClusterConfig.deserialize(wrapper);
+			break;
+		case RECEIVED:
+			payload = ClientResponsePayload_Empty.deserialize(wrapper);
+			break;
+		case COMMITTED:
+			payload = ClientResponsePayload_Empty.deserialize(wrapper);
+			break;
+		case UPDATE_CONFIG:
+			payload = ClientResponsePayload_ClusterConfig.deserialize(wrapper);
+			break;
+		case REDIRECT:
+			payload = ClientResponsePayload_ConfigEntry.deserialize(wrapper);
+			break;
+		default:
+			throw Assert.unreachable("Unmatched deserialization type");
+		}
+		
+		return new ClientResponse(type, nonce, lastCommitGlobalOffset, payload);
 	}
 
 
 	public final ClientResponseType type;
 	public final long nonce;
 	public final long lastCommitGlobalOffset;
-	public final byte[] extraData;
+	public final IClientResponsePayload payload;
 
-	private ClientResponse(ClientResponseType type, long nonce, long lastCommitGlobalOffset, byte[] extraData) {
+	private ClientResponse(ClientResponseType type, long nonce, long lastCommitGlobalOffset, IClientResponsePayload payload) {
 		this.type = type;
 		this.nonce = nonce;
 		this.lastCommitGlobalOffset = lastCommitGlobalOffset;
-		this.extraData = extraData;
+		this.payload = payload;
 	}
 
 	/**
@@ -124,12 +149,13 @@ public class ClientResponse {
 	 * @return The serialized representation of the receiver.
 	 */
 	public byte[] serialize() {
-		ByteBuffer buffer = ByteBuffer.allocate(Byte.BYTES + Long.BYTES + Long.BYTES + this.extraData.length);
-		return buffer
+		ByteBuffer buffer = ByteBuffer.allocate(Byte.BYTES + Long.BYTES + Long.BYTES + this.payload.serializedSize());
+		buffer
 				.put((byte)this.type.ordinal())
 				.putLong(this.nonce)
 				.putLong(this.lastCommitGlobalOffset)
-				.put(this.extraData)
-				.array();
+		;
+		this.payload.serializeInto(buffer);
+		return buffer.array();
 	}
 }
