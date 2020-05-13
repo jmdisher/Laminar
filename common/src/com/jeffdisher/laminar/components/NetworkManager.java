@@ -719,7 +719,14 @@ public class NetworkManager {
 	public static class NodeToken {
 		private final SelectionKey actualKey;
 		private NodeToken(SelectionKey actualKey) {
+			Assert.assertTrue(null != actualKey);
 			this.actualKey = actualKey;
+		}
+		/**
+		 * The default constructor is only provided for testing purposes.
+		 */
+		protected NodeToken() {
+			this.actualKey = null;
 		}
 	}
 }
