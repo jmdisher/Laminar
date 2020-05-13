@@ -40,7 +40,8 @@ public class TestClientsAndListeners {
 		try (ClientConnection client = ClientConnection.open(new InetSocketAddress(InetAddress.getLocalHost(), 2002))) {
 			ClientResult result = client.sendTemp("Hello World!".getBytes());
 			result.waitForReceived();
-			result.waitForCommitted();
+			long commitOffset = result.waitForCommitted();
+			Assert.assertEquals(1L, commitOffset);
 		}
 		Assert.assertEquals(0, wrapper.stop());
 	}
@@ -61,7 +62,8 @@ public class TestClientsAndListeners {
 		try (ClientConnection client = ClientConnection.open(address)) {
 			ClientResult result = client.sendTemp(message);
 			result.waitForReceived();
-			result.waitForCommitted();
+			long commitOffset = result.waitForCommitted();
+			Assert.assertEquals(1L, commitOffset);
 		}
 		
 		// Start a listener after the client begins.
@@ -154,7 +156,8 @@ public class TestClientsAndListeners {
 			client.waitForConnection();
 			result.waitForReceived();
 			client.waitForConnection();
-			result.waitForCommitted();
+			long commitOffset = result.waitForCommitted();
+			Assert.assertEquals(1L, commitOffset);
 			client.waitForConnection();
 		}
 		Assert.assertEquals(0, wrapper.stop());
@@ -270,7 +273,8 @@ public class TestClientsAndListeners {
 			}
 			for (int i = 0; i < results.length; ++i) {
 				results[i].waitForReceived();
-				results[i].waitForCommitted();
+				long commitOffset = results[i].waitForCommitted();
+				Assert.assertEquals((long)(1 + i), commitOffset);
 			}
 			// By this point, the client must have received the config (since it gets that before any received/committed).
 			Assert.assertNotNull(client.getCurrentConfig());
@@ -318,7 +322,8 @@ public class TestClientsAndListeners {
 					followerEntry,
 					start,
 			});
-			client.sendUpdateConfig(newConfig).waitForCommitted();
+			long commitOffset = client.sendUpdateConfig(newConfig).waitForCommitted();
+			Assert.assertEquals(1L, commitOffset);
 		}
 		try (ClientConnection client = ClientConnection.open(address)) {
 			client.waitForConnection();
@@ -387,8 +392,10 @@ public class TestClientsAndListeners {
 			clientUuid = client.getClientId();
 			timingListener.skipNonceCheck(clientUuid, 1L);
 			client.waitForConnection();
-			client.sendUpdateConfig(config).waitForCommitted();
-			client.sendTemp(new byte[] {1}).waitForCommitted();
+			long commitOffset = client.sendUpdateConfig(config).waitForCommitted();
+			Assert.assertEquals(1L, commitOffset);
+			commitOffset = client.sendTemp(new byte[] {1}).waitForCommitted();
+			Assert.assertEquals(2L, commitOffset);
 			
 			// Stop the leader and ask another node to become leader then see if we can continue sending messages.
 			timingListener.waitForTerminate();
@@ -400,8 +407,10 @@ public class TestClientsAndListeners {
 				adhoc.getInputStream().read();
 			}
 			
-			client.sendTemp(new byte[] {2}).waitForCommitted();
-			client.sendTemp(new byte[] {3}).waitForCommitted();
+			commitOffset = client.sendTemp(new byte[] {2}).waitForCommitted();
+			Assert.assertEquals(3L, commitOffset);
+			commitOffset = client.sendTemp(new byte[] {3}).waitForCommitted();
+			Assert.assertEquals(4L, commitOffset);
 		}
 		CaptureListener counting = new CaptureListener(server2Address, 3);
 		counting.skipNonceCheck(clientUuid, 1L);

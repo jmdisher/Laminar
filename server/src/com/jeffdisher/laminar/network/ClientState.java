@@ -25,6 +25,10 @@ public class ClientState {
 	 * since then) so we just record the nonces and synthesize the commits when the reconnect is done.
 	 */
 	public List<Long> noncesCommittedDuringReconnect;
+	/**
+	 * We also store the commit offsets of the commits we observed during reconnect.
+	 */
+	public List<Long> correspondingCommitOffsets;
 
 	/**
 	 * Creates a new normal client state with the given clientId and nextNonce.  The nonce is typically set to 1L but

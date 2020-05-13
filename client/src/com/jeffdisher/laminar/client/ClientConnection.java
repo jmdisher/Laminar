@@ -18,6 +18,7 @@ import com.jeffdisher.laminar.components.NetworkManager;
 import com.jeffdisher.laminar.types.ClientMessage;
 import com.jeffdisher.laminar.types.ClientResponse;
 import com.jeffdisher.laminar.types.ClientResponsePayload_ClusterConfig;
+import com.jeffdisher.laminar.types.ClientResponsePayload_Commit;
 import com.jeffdisher.laminar.types.ClientResponsePayload_ConfigEntry;
 import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.types.ConfigEntry;
@@ -468,10 +469,12 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 		case RECEIVED:
 			result.setReceived();
 			break;
-		case COMMITTED:
-			result.setCommitted();
+		case COMMITTED: {
+			long committedOffset = ((ClientResponsePayload_Commit)deserialized.payload).committedAsMutationOffset;
+			result.setCommitted(committedOffset);
 			// If the message has committed, we will no longer re-send it.
 			_inFlightMessages.remove(deserialized.nonce);
+		}
 			break;
 		case UPDATE_CONFIG:
 			// This is an out-of-band config update.  This has a -1 nonce so make sure we didn't find a message.

@@ -5,6 +5,7 @@ import java.nio.ByteBuffer;
 import java.nio.channels.ServerSocketChannel;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
@@ -604,11 +605,18 @@ public class ClientManager implements IClientManager, INetworkManagerBackgroundC
 		
 		// Synthesize commit messages for any nonces which accumulated during reconnect.
 		Assert.assertTrue(null != state.noncesCommittedDuringReconnect);
-		for (long nonceToCommit : state.noncesCommittedDuringReconnect) {
-			ClientResponse synthesizedCommit = ClientResponse.committed(nonceToCommit, lastCommittedMutationOffset);
+		Assert.assertTrue(null != state.correspondingCommitOffsets);
+		Iterator<Long> nonces = state.noncesCommittedDuringReconnect.iterator();
+		Iterator<Long> correspondingCommits = state.correspondingCommitOffsets.iterator();
+		while (nonces.hasNext()) {
+			long nonceToCommit = nonces.next();
+			long commitOffsetOfMessage = correspondingCommits.next();
+			ClientResponse synthesizedCommit = ClientResponse.committed(nonceToCommit, lastCommittedMutationOffset, commitOffsetOfMessage);
 			_mainEnqueueMessageToClient(state.clientId, synthesizedCommit);
 		}
+		Assert.assertTrue(!correspondingCommits.hasNext());
 		state.noncesCommittedDuringReconnect = null;
+		state.correspondingCommitOffsets = null;
 	}
 
 	private MutationRecord _mainReplayMutationAndFetchNext(StateSnapshot snapshot, MutationRecord record, boolean isCommitted) {
@@ -636,7 +644,7 @@ public class ClientManager implements IClientManager, INetworkManagerBackgroundC
 							: state.mostRecentlySentServerCommitOffset;
 					_mainEnqueueMessageToClient(state.clientId, ClientResponse.received(record.clientNonce, lastCommitGlobalOffset));
 					if (willSendCommitted) {
-						_mainEnqueueMessageToClient(state.clientId, ClientResponse.committed(record.clientNonce, lastCommitGlobalOffset));
+						_mainEnqueueMessageToClient(state.clientId, ClientResponse.committed(record.clientNonce, lastCommitGlobalOffset, record.globalOffset));
 						state.mostRecentlySentServerCommitOffset = lastCommitGlobalOffset;
 					}
 					// Make sure to bump ahead the expected nonce, if this is later.
@@ -720,10 +728,12 @@ public class ClientManager implements IClientManager, INetworkManagerBackgroundC
 	private void _mainProcessTupleForCommit(long globalOffsetOfCommit, ClientCommitTuple tuple) {
 		if (_normalClientsById.containsKey(tuple.clientId) && (null != _normalClientsById.get(tuple.clientId).noncesCommittedDuringReconnect)) {
 			// Note that we can't allow already in-flight messages from before the reconnect to go to the client before the reconnect is done so enqueue nonces to commit here and we will synthesize them, later.
-			_normalClientsById.get(tuple.clientId).noncesCommittedDuringReconnect.add(tuple.clientNonce);
+			ClientState state = _normalClientsById.get(tuple.clientId);
+			state.noncesCommittedDuringReconnect.add(tuple.clientNonce);
+			state.correspondingCommitOffsets.add(globalOffsetOfCommit);
 		} else {
 			// Create the commit from the information in the tuple and send it to the client.
-			ClientResponse commit = ClientResponse.committed(tuple.clientNonce, globalOffsetOfCommit);
+			ClientResponse commit = ClientResponse.committed(tuple.clientNonce, globalOffsetOfCommit, globalOffsetOfCommit);
 			_mainEnqueueMessageToClient(tuple.clientId, commit);
 		}
 	}
@@ -735,6 +745,7 @@ public class ClientManager implements IClientManager, INetworkManagerBackgroundC
 		ClientState state = _createAndInstallNewClient(client, reconnect.clientId, -1L);
 		// This is a reconnecting client so set the buffer for old messages trying to commit back to this client.
 		state.noncesCommittedDuringReconnect = new LinkedList<>();
+		state.correspondingCommitOffsets = new LinkedList<>();
 		
 		// We still use a specific ReconnectionState to track the progress of the sync.
 		// We don't add them to our map of _normalClients until they finish syncing so we put them into our map of

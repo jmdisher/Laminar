@@ -79,6 +79,7 @@ public class TestClientConnection {
 			// Wait for it on the client.
 			result.waitForReceived();
 			// Send the commit on the server.
+			lastCommitGlobalOffset += 1L;
 			_sendCommitted(server, observed.nonce, lastCommitGlobalOffset);
 			// Wait for it on the client.
 			result.waitForCommitted();
@@ -273,7 +274,7 @@ public class TestClientConnection {
 	}
 
 	private void _sendCommitted(SocketChannel server, long nonce, long lastCommitGlobalOffset) throws IOException {
-		ClientResponse committed = ClientResponse.committed(nonce, lastCommitGlobalOffset);
+		ClientResponse committed = ClientResponse.committed(nonce, lastCommitGlobalOffset, lastCommitGlobalOffset);
 		byte[] raw = committed.serialize();
 		ByteBuffer writeBuffer = ByteBuffer.allocate(Short.BYTES + raw.length);
 		writeBuffer.putShort((short)raw.length).put(raw);
@@ -337,12 +338,14 @@ public class TestClientConnection {
 			if (received) {
 				_sendResponse(ClientResponse.received(message.nonce, _mostRecentCommitOffset));
 				if (store) {
-					ClientMessage old = this.messageByMutationOffset.put(_nextMutationOffset++, message);
+					long thisMutationOffset = _nextMutationOffset;
+					ClientMessage old = this.messageByMutationOffset.put(thisMutationOffset, message);
 					Assert.assertNull(old);
 					if (committed) {
-						_mostRecentCommitOffset = _nextMutationOffset - 1L;
-						_sendResponse(ClientResponse.committed(message.nonce, _mostRecentCommitOffset));
+						_mostRecentCommitOffset = thisMutationOffset;
+						_sendResponse(ClientResponse.committed(message.nonce, _mostRecentCommitOffset, thisMutationOffset));
 					}
+					_nextMutationOffset += 1L;
 				}
 			}
 		}
@@ -373,7 +376,7 @@ public class TestClientConnection {
 				ClientMessage oneToSendBack = this.messageByMutationOffset.get(globalMutationToLoad);
 				Assert.assertNotNull(oneToSendBack);
 				_sendResponse(ClientResponse.received(oneToSendBack.nonce, _mostRecentCommitOffset));
-				_sendResponse(ClientResponse.committed(oneToSendBack.nonce, _mostRecentCommitOffset));
+				_sendResponse(ClientResponse.committed(oneToSendBack.nonce, _mostRecentCommitOffset, globalMutationToLoad));
 				// We can also verify that they next nonce they gave us is for this message.
 				Assert.assertEquals(_clientNextNonce, oneToSendBack.nonce);
 				_clientNextNonce += 1L;
