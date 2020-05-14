@@ -23,6 +23,7 @@ import com.jeffdisher.laminar.types.ConfigEntry;
 import com.jeffdisher.laminar.types.EventRecord;
 import com.jeffdisher.laminar.types.MutationRecord;
 import com.jeffdisher.laminar.types.MutationRecordType;
+import com.jeffdisher.laminar.types.TopicName;
 import com.jeffdisher.laminar.utils.Assert;
 import com.jeffdisher.laminar.utils.UninterruptibleQueue;
 
@@ -219,11 +220,14 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 	}
 
 	@Override
-	public void mainRequestEventFetch(long nextLocalEventToFetch) {
+	public void mainRequestEventFetch(TopicName topic, long nextLocalEventToFetch) {
 		// Called on main thread.
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
+		// This should not be a synthetic event (they are never stored).
+		Assert.assertTrue(topic.string.length() > 0);
+		// Events are 1-indexed, within a topic.
 		Assert.assertTrue(nextLocalEventToFetch > 0L);
-		_diskManager.fetchEvent(nextLocalEventToFetch);
+		_diskManager.fetchEvent(topic, nextLocalEventToFetch);
 	}
 
 	@Override

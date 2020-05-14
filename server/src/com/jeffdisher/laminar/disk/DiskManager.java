@@ -2,11 +2,14 @@ package com.jeffdisher.laminar.disk;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
 
 import com.jeffdisher.laminar.types.EventRecord;
 import com.jeffdisher.laminar.types.MutationRecord;
+import com.jeffdisher.laminar.types.TopicName;
 import com.jeffdisher.laminar.utils.Assert;
 
 
@@ -29,18 +32,15 @@ public class DiskManager implements IDiskManager {
 	// These are all accessed under monitor.
 	private boolean _keepRunning;
 	// We track the incoming commits in 2 lists:  one for the "global" mutations and one for the "local" events.
-	// NOTE:  In the future, the events need to be organized by topic (they don't store their topic, internally).
 	private final List<MutationRecord> _incomingCommitMutations;
 	private final List<EventRecord> _incomingCommitEvents;
 	// We track fetch requests in 2 lists:  one for the "global" mutations and one for the "local" events.
-	// NOTE:  In the future, the events need to be organized by topic (since they are stored in different topics).
 	private final List<Long> _incomingFetchMutationRequests;
-	private final List<Long> _incomingFetchEventRequests;
+	private final List<FetchEventTuple> _incomingFetchEventRequests;
 
 	// Only accessed by background thread (current virtual "disk").
-	// NOTE:  In the future, the events need to be organized by topic.
 	private final List<MutationRecord> _committedMutationVirtualDisk;
-	private final List<EventRecord> _committedEventVirtualDisk;
+	private final Map<TopicName, List<EventRecord>> _committedEventVirtualDisk;
 
 	public DiskManager(File dataDirectory, IDiskManagerBackgroundCallbacks callbackTarget) {
 		// For now, we ignore the given directory as we are just going to be faking the disk in-memory.
@@ -64,11 +64,15 @@ public class DiskManager implements IDiskManager {
 		_incomingFetchMutationRequests = new LinkedList<>();
 		_incomingFetchEventRequests = new LinkedList<>();
 		_committedMutationVirtualDisk = new LinkedList<>();
-		_committedEventVirtualDisk = new LinkedList<>();
+		_committedEventVirtualDisk = new HashMap<>();
 		
 		// (we introduce a null to all virtual disk extents since they must be 1-indexed)
 		_committedMutationVirtualDisk.add(null);
-		_committedEventVirtualDisk.add(null);
+		// For this sixth step, we eagerly create the fake topic.
+		TopicName topic = TopicName.fromString("fake");
+		LinkedList<EventRecord> topicContent = new LinkedList<>();
+		topicContent.add(null);
+		_committedEventVirtualDisk.put(topic, topicContent);
 	}
 
 	/**
@@ -121,10 +125,10 @@ public class DiskManager implements IDiskManager {
 	}
 
 	@Override
-	public synchronized void fetchEvent(long localOffset) {
+	public synchronized void fetchEvent(TopicName topic, long localOffset) {
 		// Make sure this isn't reentrant.
 		Assert.assertTrue(Thread.currentThread() != _background);
-		_incomingFetchEventRequests.add(localOffset);
+		_incomingFetchEventRequests.add(new FetchEventTuple(topic, localOffset));
 		this.notifyAll();
 	}
 
@@ -140,7 +144,7 @@ public class DiskManager implements IDiskManager {
 				_callbackTarget.ioEnqueueDiskCommandForMainThread((snapshot) -> _callbackTarget.mainMutationWasCommitted(record));
 			}
 			else if (null != work.commitEvent) {
-				_committedEventVirtualDisk.add(work.commitEvent);
+				_committedEventVirtualDisk.get(work.commitEvent.topic).add(work.commitEvent);
 				EventRecord record = work.commitEvent;
 				_callbackTarget.ioEnqueueDiskCommandForMainThread((snapshot) -> _callbackTarget.mainEventWasCommitted(record));
 			}
@@ -161,10 +165,11 @@ public class DiskManager implements IDiskManager {
 						: 0L;
 				_callbackTarget.ioEnqueueDiskCommandForMainThread((snapshot) -> _callbackTarget.mainMutationWasFetched(snapshot, previousMutationTermNumber, record));
 			}
-			else if (0L != work.fetchEvent) {
+			else if (null != work.fetchEvent) {
+				List<EventRecord> topicStore = _committedEventVirtualDisk.get(work.fetchEvent.topic);
 				// These indexing errors should be intercepted at a higher level, before we get to the disk.
-				Assert.assertTrue((int)work.fetchEvent < _committedEventVirtualDisk.size());
-				EventRecord record = _committedEventVirtualDisk.get((int)work.fetchEvent);
+				Assert.assertTrue((int)work.fetchEvent.offset < topicStore.size());
+				EventRecord record = topicStore.get((int)work.fetchEvent.offset);
 				_callbackTarget.ioEnqueueDiskCommandForMainThread((snapshot) -> _callbackTarget.mainEventWasFetched(record));
 			}
 			work = _backgroundWaitForWork();
@@ -201,28 +206,39 @@ public class DiskManager implements IDiskManager {
 	 */
 	private static class Work {
 		public static Work commitMutation(MutationRecord toCommit) {
-			return new Work(toCommit, null, 0L, 0L);
+			return new Work(toCommit, null, 0L, null);
 		}
 		public static Work commitEvent(EventRecord toCommit) {
-			return new Work(null, toCommit, 0L, 0L);
+			return new Work(null, toCommit, 0L, null);
 		}
 		public static Work fetchMutation(long toFetch) {
-			return new Work(null, null, toFetch, 0L);
+			return new Work(null, null, toFetch, null);
 		}
-		public static Work fetchEvent(long toFetch) {
+		public static Work fetchEvent(FetchEventTuple toFetch) {
 			return new Work(null, null, 0L, toFetch);
 		}
 		
 		public final MutationRecord commitMutation;
 		public final EventRecord commitEvent;
 		public final long fetchMutation;
-		public final long fetchEvent;
+		public final FetchEventTuple fetchEvent;
 		
-		private Work(MutationRecord commitMutation, EventRecord commitEvent, long fetchMutation, long fetchEvent) {
+		private Work(MutationRecord commitMutation, EventRecord commitEvent, long fetchMutation, FetchEventTuple fetchEvent) {
 			this.commitMutation = commitMutation;
 			this.commitEvent = commitEvent;
 			this.fetchMutation = fetchMutation;
 			this.fetchEvent = fetchEvent;
+		}
+	}
+
+
+	private static class FetchEventTuple {
+		public final TopicName topic;
+		public final long offset;
+		
+		public FetchEventTuple(TopicName topic, long offset) {
+			this.topic = topic;
+			this.offset = offset;
 		}
 	}
 }

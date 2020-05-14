@@ -342,7 +342,7 @@ public class TestClientManager {
 		}
 
 		@Override
-		public void mainRequestEventFetch(long nextLocalEventToFetch) {
+		public void mainRequestEventFetch(TopicName topic, long nextLocalEventToFetch) {
 			Assert.fail("Not used in test");
 		}
 

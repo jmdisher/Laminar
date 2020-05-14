@@ -6,6 +6,7 @@ import java.util.function.Consumer;
 import com.jeffdisher.laminar.state.StateSnapshot;
 import com.jeffdisher.laminar.types.ClientMessage;
 import com.jeffdisher.laminar.types.MutationRecord;
+import com.jeffdisher.laminar.types.TopicName;
 
 
 public interface IClientManagerCallbacks {
@@ -34,7 +35,7 @@ public interface IClientManagerCallbacks {
 	 */
 	MutationRecord mainClientFetchMutationIfAvailable(long mutationOffset);
 
-	void mainRequestEventFetch(long nextLocalEventToFetch);
+	void mainRequestEventFetch(TopicName topic, long nextLocalEventToFetch);
 
 	/**
 	 * A testing method to force the node to start an election in response to a testing message.

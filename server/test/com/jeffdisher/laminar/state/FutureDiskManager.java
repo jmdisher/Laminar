@@ -5,6 +5,7 @@ import org.junit.Assert;
 import com.jeffdisher.laminar.disk.IDiskManager;
 import com.jeffdisher.laminar.types.EventRecord;
 import com.jeffdisher.laminar.types.MutationRecord;
+import com.jeffdisher.laminar.types.TopicName;
 
 
 /**
@@ -40,7 +41,7 @@ public class FutureDiskManager implements IDiskManager {
 		System.out.println("IDiskManager - fetchMutation");
 	}
 	@Override
-	public void fetchEvent(long eventToFetch) {
+	public void fetchEvent(TopicName topic, long eventToFetch) {
 		System.out.println("IDiskManager - fetchEvent");
 	}
 	@Override

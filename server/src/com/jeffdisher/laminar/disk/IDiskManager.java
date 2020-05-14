@@ -2,6 +2,7 @@ package com.jeffdisher.laminar.disk;
 
 import com.jeffdisher.laminar.types.EventRecord;
 import com.jeffdisher.laminar.types.MutationRecord;
+import com.jeffdisher.laminar.types.TopicName;
 
 
 /**
@@ -10,11 +11,11 @@ import com.jeffdisher.laminar.types.MutationRecord;
 public interface IDiskManager {
 	/**
 	 * Requests that the event with the associated localOffset offset be asynchronously fetched.
-	 * NOTE:  This will be changed to per-topic fetch, in the future.
 	 * 
+	 * @param topic The topic where to search.
 	 * @param localOffset The offset of the event to load.
 	 */
-	void fetchEvent(long localOffset);
+	void fetchEvent(TopicName topic, long localOffset);
 
 	/**
 	 * Request that the given event be asynchronously committed.

@@ -28,8 +28,9 @@ public class TestDiskManager {
 	 */
 	@Test
 	public void testSimpleWriteAndFetch() throws Throwable {
-		EventRecord event1 = EventRecord.generateRecord(EventRecordType.TEMP, 1L, 1L, TopicName.fromString("test"), 1L, UUID.randomUUID(), 1L, new byte[] {1});
-		EventRecord event2 = EventRecord.generateRecord(EventRecordType.TEMP, 1L, 2L, TopicName.fromString("test"), 2L, UUID.randomUUID(), 2L, new byte[] {1});
+		TopicName topic = TopicName.fromString("fake");
+		EventRecord event1 = EventRecord.generateRecord(EventRecordType.TEMP, 1L, 1L, topic, 1L, UUID.randomUUID(), 1L, new byte[] {1});
+		EventRecord event2 = EventRecord.generateRecord(EventRecordType.TEMP, 1L, 2L,topic, 2L, UUID.randomUUID(), 2L, new byte[] {1});
 		LatchedCallbacks callbacks = new LatchedCallbacks();
 		DiskManager manager = new DiskManager(null, callbacks);
 		manager.startAndWaitForReady();
@@ -39,7 +40,7 @@ public class TestDiskManager {
 		manager.commitEvent(event2);
 		while (callbacks.commitEventCount < 2) { callbacks.runOneCommand(); }
 		callbacks.expectedEvent = event2;
-		manager.fetchEvent(2L);
+		manager.fetchEvent(topic, 2L);
 		while (callbacks.fetchEventCount < 1) { callbacks.runOneCommand(); }
 		
 		manager.stopAndWaitForTermination();
@@ -50,11 +51,11 @@ public class TestDiskManager {
 	 */
 	@Test
 	public void testMutationAndEventCommitAndFetch() throws Throwable {
-		TopicName topic = TopicName.fromString("test");
+		TopicName topic = TopicName.fromString("fake");
 		MutationRecord mutation1 = MutationRecord.generateRecord(MutationRecordType.TEMP, 1L, 1L, topic, UUID.randomUUID(), 1L, new byte[] {1});
 		MutationRecord mutation2 = MutationRecord.generateRecord(MutationRecordType.TEMP, 1L, 2L, topic, UUID.randomUUID(), 2L, new byte[] {1});
-		EventRecord event1 = EventRecord.generateRecord(EventRecordType.TEMP, 1L, 1L, TopicName.fromString("test"), 1L, UUID.randomUUID(), 1L, new byte[] {1});
-		EventRecord event2 = EventRecord.generateRecord(EventRecordType.TEMP, 1L, 2L, TopicName.fromString("test"), 2L, UUID.randomUUID(), 2L, new byte[] {1});
+		EventRecord event1 = EventRecord.generateRecord(EventRecordType.TEMP, 1L, 1L, topic, 1L, UUID.randomUUID(), 1L, new byte[] {1});
+		EventRecord event2 = EventRecord.generateRecord(EventRecordType.TEMP, 1L, 2L, topic, 2L, UUID.randomUUID(), 2L, new byte[] {1});
 		
 		LatchedCallbacks callbacks = new LatchedCallbacks();
 		DiskManager manager = new DiskManager(null, callbacks);
@@ -73,7 +74,7 @@ public class TestDiskManager {
 		callbacks.expectedEvent = event2;
 		
 		manager.fetchMutation(1L);
-		manager.fetchEvent(2L);
+		manager.fetchEvent(topic, 2L);
 		while (callbacks.fetchMutationCount < 1) { callbacks.runOneCommand(); }
 		while (callbacks.fetchEventCount < 1) { callbacks.runOneCommand(); }
 		

@@ -350,7 +350,7 @@ public class ClientManager implements IClientManager, INetworkManagerBackgroundC
 						// Normal syncing operation so either load or wait for the next event for this listener.
 						long nextLocalEventToFetch = _mainSetupListenerForNextEvent(node, listenerState, arg.lastCommittedEventOffset);
 						if (-1 != nextLocalEventToFetch) {
-							_callbacks.mainRequestEventFetch(nextLocalEventToFetch);
+							_callbacks.mainRequestEventFetch(listenerState.topic, nextLocalEventToFetch);
 						}
 					}
 				} else if (isClosing) {
