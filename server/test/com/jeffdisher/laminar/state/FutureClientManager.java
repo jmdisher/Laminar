@@ -7,6 +7,7 @@ import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.types.ConfigEntry;
 import com.jeffdisher.laminar.types.EventRecord;
 import com.jeffdisher.laminar.types.MutationRecord;
+import com.jeffdisher.laminar.types.TopicName;
 
 
 /**
@@ -56,7 +57,7 @@ public class FutureClientManager implements IClientManager {
 		System.out.println("IClientManager - mainBroadcastConfigUpdate");
 	}
 	@Override
-	public void mainSendRecordToListeners(EventRecord completed) {
+	public void mainSendRecordToListeners(TopicName topic, EventRecord completed) {
 		System.out.println("IClientManager - mainSendRecordToListeners");
 	}
 	@Override

@@ -78,7 +78,7 @@ public class Helpers {
 		case INVALID:
 			throw Assert.unimplemented("Invalid message type");
 		case TEMP: {
-			eventToReturn = EventRecord.generateRecord(EventRecordType.TEMP, mutation.termNumber, mutation.globalOffset, mutation.topic, eventOffsetToAssign, mutation.clientId, mutation.clientNonce, mutation.payload);
+			eventToReturn = EventRecord.generateRecord(EventRecordType.TEMP, mutation.termNumber, mutation.globalOffset, eventOffsetToAssign, mutation.clientId, mutation.clientNonce, mutation.payload);
 		}
 			break;
 		case UPDATE_CONFIG: {

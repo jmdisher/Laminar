@@ -26,6 +26,7 @@ import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.types.ConfigEntry;
 import com.jeffdisher.laminar.types.EventRecord;
 import com.jeffdisher.laminar.types.MutationRecord;
+import com.jeffdisher.laminar.types.TopicName;
 import com.jeffdisher.laminar.utils.Assert;
 
 
@@ -196,10 +197,10 @@ public class ClientManager implements IClientManager, INetworkManagerBackgroundC
 	}
 
 	@Override
-	public void mainSendRecordToListeners(EventRecord record) {
+	public void mainSendRecordToListeners(TopicName topic, EventRecord record) {
 		// Called on main thread.
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
-		_mainSendRecordToListeners(record);
+		_mainSendRecordToListeners(topic, record);
 	}
 
 	@Override
@@ -550,7 +551,7 @@ public class ClientManager implements IClientManager, INetworkManagerBackgroundC
 		return nextLocalEventToFetch;
 	}
 
-	private void _mainSendRecordToListeners(EventRecord record) {
+	private void _mainSendRecordToListeners(TopicName topic, EventRecord record) {
 		// Main thread helper.
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		List<NetworkManager.NodeToken> waitingList = _listenersWaitingOnLocalOffset.remove(record.localOffset);
@@ -559,7 +560,7 @@ public class ClientManager implements IClientManager, INetworkManagerBackgroundC
 				ListenerState listenerState = _listenerClients.get(node);
 				// (make sure this is still connected)
 				// Only send this event to the listener if they are listening to that topic.
-				if ((null != listenerState) && listenerState.topic.equals(record.topic)) {
+				if ((null != listenerState) && listenerState.topic.equals(topic)) {
 					_sendEventToListener(node, record);
 					// Update the state to be the offset of this event.
 					listenerState.lastSentLocalOffset = record.localOffset;

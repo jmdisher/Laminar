@@ -401,14 +401,14 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 	}
 
 	@Override
-	public void mainEventWasCommitted(EventRecord completed) {
+	public void mainEventWasCommitted(TopicName topic, EventRecord completed) {
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		// Update our global commit offset (set this first since other methods we are calling might want to read for common state).
 		// We setup this commit so it must be sequential (this is a good check to make sure the commits aren't being re-ordered in the disk layer, too).
 		Assert.assertTrue((_lastCommittedEventOffset + 1) == completed.localOffset);
 		_lastCommittedEventOffset = completed.localOffset;
 		// See if any listeners want this.
-		_clientManager.mainSendRecordToListeners(completed);
+		_clientManager.mainSendRecordToListeners(topic, completed);
 	}
 
 	@Override
@@ -423,10 +423,10 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 	}
 
 	@Override
-	public void mainEventWasFetched(EventRecord record) {
+	public void mainEventWasFetched(TopicName topic, EventRecord record) {
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		// See what listeners requested this.
-		_clientManager.mainSendRecordToListeners(record);
+		_clientManager.mainSendRecordToListeners(topic, record);
 	}
 	// </IDiskManagerBackgroundCallbacks>
 
@@ -498,8 +498,9 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		if (mutation.globalOffset <= consensusOffset) {
 			// Commit, immediately.
 			Assert.assertTrue(_inFlightMutations.isEmpty());
+			TopicName topic = mutation.topic;
 			EventRecord event = _createEventAndIncrementOffset(mutation);
-			_commit(mutation, event);
+			_commit(mutation, topic, event);
 			// We also need to tell the in-flight mutations to increment its bias since it won't see this mutation.
 			_inFlightMutations.updateBiasForDirectCommit(mutation.globalOffset);
 		} else {
@@ -534,10 +535,10 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		return _selfState.lastMutationOffsetReceived;
 	}
 
-	private void _commit(MutationRecord mutation, EventRecord event) {
+	private void _commit(MutationRecord mutation, TopicName topic, EventRecord event) {
 		// (note that the event is null for certain meta-messages like UPDATE_CONFIG).
 		if (null != event) {
-			_diskManager.commitEvent(event);
+			_diskManager.commitEvent(topic, event);
 		}
 		// TODO:  We probably want to lock-step the mutation on the event commit since we will be able to detect the broken data, that way, and replay it.
 		_diskManager.commitMutation(mutation);
@@ -579,8 +580,9 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		if (canCommit) {
 			MutationRecord mutation = _inFlightMutations.removeFirstElementLessThanOrEqualTo(consensusOffset);
 			while (null != mutation) {
+				TopicName topic = mutation.topic;
 				EventRecord event = _createEventAndIncrementOffset(mutation);
-				_commit(mutation, event);
+				_commit(mutation, topic, event);
 				mutation = _inFlightMutations.removeFirstElementLessThanOrEqualTo(consensusOffset);
 			}
 		}

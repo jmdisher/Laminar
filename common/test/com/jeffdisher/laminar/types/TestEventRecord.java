@@ -14,12 +14,11 @@ public class TestEventRecord {
 	public void testBasic() throws Throwable {
 		long termNumber = 1L;
 		long globalOffset = 1L;
-		TopicName topic = TopicName.fromString("test");
 		long localOffset = 1L;
 		UUID clientId = UUID.randomUUID();
 		long clientNonce = 1L;
 		byte[] payload = new byte[] { 1, 2, 3 };
-		EventRecord record = EventRecord.generateRecord(EventRecordType.TEMP, termNumber, globalOffset, topic, localOffset, clientId, clientNonce, payload);
+		EventRecord record = EventRecord.generateRecord(EventRecordType.TEMP, termNumber, globalOffset, localOffset, clientId, clientNonce, payload);
 		byte[] serialized = record.serialize();
 		EventRecord deserialized = EventRecord.deserialize(serialized);
 		Assert.assertEquals(record.type, deserialized.type);

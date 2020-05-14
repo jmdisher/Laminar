@@ -161,7 +161,7 @@ public class TestClientManager {
 	public void testSendEvent() throws Throwable {
 		// Create an event record.
 		TopicName topic = TopicName.fromString("test");
-		EventRecord record = EventRecord.generateRecord(EventRecordType.TEMP, 1L, 1L, topic, 1L, UUID.randomUUID(), 1L, new byte[] { 1, 2, 3});
+		EventRecord record = EventRecord.generateRecord(EventRecordType.TEMP, 1L, 1L, 1L, UUID.randomUUID(), 1L, new byte[] { 1, 2, 3});
 		// Create a server.
 		int port = PORT_BASE + 3;
 		ServerSocketChannel socket = TestingHelpers.createServerSocket(port);
@@ -184,7 +184,7 @@ public class TestClientManager {
 			// Run the next callback so the listener becomes writable.
 			callbacks.runRunnableAndGetNewClientNode(manager);
 			
-			manager.mainSendRecordToListeners(record);
+			manager.mainSendRecordToListeners(topic, record);
 			// Allocate the frame for the full buffer we know we are going to read.
 			byte[] serialized = record.serialize();
 			byte[] raw = TestingHelpers.readMessageInFrame(fromServer);

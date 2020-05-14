@@ -5,6 +5,7 @@ import java.util.function.Consumer;
 import com.jeffdisher.laminar.state.StateSnapshot;
 import com.jeffdisher.laminar.types.EventRecord;
 import com.jeffdisher.laminar.types.MutationRecord;
+import com.jeffdisher.laminar.types.TopicName;
 
 
 /**
@@ -23,9 +24,10 @@ public interface IDiskManagerBackgroundCallbacks {
 	/**
 	 * A previously requested event commit operation has completed.
 	 * 
+	 * @param topic The topic to which the event was committed.
 	 * @param completed The record which has now committed.
 	 */
-	void mainEventWasCommitted(EventRecord completed);
+	void mainEventWasCommitted(TopicName topic, EventRecord completed);
 
 	/**
 	 * A previously requested mutation record has been fetched.
@@ -39,7 +41,8 @@ public interface IDiskManagerBackgroundCallbacks {
 	/**
 	 * A previously requested event record has been fetched.
 	 * 
+	 * @param topic The topic from which the event was fetched.
 	 * @param record The record which was fetched from storage.
 	 */
-	void mainEventWasFetched(EventRecord record);
+	void mainEventWasFetched(TopicName topic, EventRecord record);
 }

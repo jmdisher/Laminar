@@ -33,10 +33,10 @@ public class DiskManager implements IDiskManager {
 	private boolean _keepRunning;
 	// We track the incoming commits in 2 lists:  one for the "global" mutations and one for the "local" events.
 	private final List<MutationRecord> _incomingCommitMutations;
-	private final List<EventRecord> _incomingCommitEvents;
+	private final List<EventCommitTuple> _incomingCommitEvents;
 	// We track fetch requests in 2 lists:  one for the "global" mutations and one for the "local" events.
 	private final List<Long> _incomingFetchMutationRequests;
-	private final List<FetchEventTuple> _incomingFetchEventRequests;
+	private final List<EventFetchTuple> _incomingFetchEventRequests;
 
 	// Only accessed by background thread (current virtual "disk").
 	private final List<MutationRecord> _committedMutationVirtualDisk;
@@ -109,10 +109,10 @@ public class DiskManager implements IDiskManager {
 	}
 
 	@Override
-	public synchronized void commitEvent(EventRecord event) {
+	public synchronized void commitEvent(TopicName topic, EventRecord event) {
 		// Make sure this isn't reentrant.
 		Assert.assertTrue(Thread.currentThread() != _background);
-		_incomingCommitEvents.add(event);
+		_incomingCommitEvents.add(new EventCommitTuple(topic, event));
 		this.notifyAll();
 	}
 
@@ -128,7 +128,7 @@ public class DiskManager implements IDiskManager {
 	public synchronized void fetchEvent(TopicName topic, long localOffset) {
 		// Make sure this isn't reentrant.
 		Assert.assertTrue(Thread.currentThread() != _background);
-		_incomingFetchEventRequests.add(new FetchEventTuple(topic, localOffset));
+		_incomingFetchEventRequests.add(new EventFetchTuple(topic, localOffset));
 		this.notifyAll();
 	}
 
@@ -144,9 +144,10 @@ public class DiskManager implements IDiskManager {
 				_callbackTarget.ioEnqueueDiskCommandForMainThread((snapshot) -> _callbackTarget.mainMutationWasCommitted(record));
 			}
 			else if (null != work.commitEvent) {
-				_committedEventVirtualDisk.get(work.commitEvent.topic).add(work.commitEvent);
-				EventRecord record = work.commitEvent;
-				_callbackTarget.ioEnqueueDiskCommandForMainThread((snapshot) -> _callbackTarget.mainEventWasCommitted(record));
+				TopicName topic = work.commitEvent.topic;
+				EventRecord record = work.commitEvent.event;
+				_committedEventVirtualDisk.get(topic).add(record);
+				_callbackTarget.ioEnqueueDiskCommandForMainThread((snapshot) -> _callbackTarget.mainEventWasCommitted(topic, record));
 			}
 			else if (0L != work.fetchMutation) {
 				// This design might change but we currently "push" the fetched data over the background callback instead
@@ -166,11 +167,13 @@ public class DiskManager implements IDiskManager {
 				_callbackTarget.ioEnqueueDiskCommandForMainThread((snapshot) -> _callbackTarget.mainMutationWasFetched(snapshot, previousMutationTermNumber, record));
 			}
 			else if (null != work.fetchEvent) {
-				List<EventRecord> topicStore = _committedEventVirtualDisk.get(work.fetchEvent.topic);
+				TopicName topic = work.fetchEvent.topic;
+				int offset = (int) work.fetchEvent.offset;
+				List<EventRecord> topicStore = _committedEventVirtualDisk.get(topic);
 				// These indexing errors should be intercepted at a higher level, before we get to the disk.
-				Assert.assertTrue((int)work.fetchEvent.offset < topicStore.size());
-				EventRecord record = topicStore.get((int)work.fetchEvent.offset);
-				_callbackTarget.ioEnqueueDiskCommandForMainThread((snapshot) -> _callbackTarget.mainEventWasFetched(record));
+				Assert.assertTrue(offset < topicStore.size());
+				EventRecord record = topicStore.get(offset);
+				_callbackTarget.ioEnqueueDiskCommandForMainThread((snapshot) -> _callbackTarget.mainEventWasFetched(topic, record));
 			}
 			work = _backgroundWaitForWork();
 		}
@@ -208,22 +211,22 @@ public class DiskManager implements IDiskManager {
 		public static Work commitMutation(MutationRecord toCommit) {
 			return new Work(toCommit, null, 0L, null);
 		}
-		public static Work commitEvent(EventRecord toCommit) {
+		public static Work commitEvent(EventCommitTuple toCommit) {
 			return new Work(null, toCommit, 0L, null);
 		}
 		public static Work fetchMutation(long toFetch) {
 			return new Work(null, null, toFetch, null);
 		}
-		public static Work fetchEvent(FetchEventTuple toFetch) {
+		public static Work fetchEvent(EventFetchTuple toFetch) {
 			return new Work(null, null, 0L, toFetch);
 		}
 		
 		public final MutationRecord commitMutation;
-		public final EventRecord commitEvent;
+		public final EventCommitTuple commitEvent;
 		public final long fetchMutation;
-		public final FetchEventTuple fetchEvent;
+		public final EventFetchTuple fetchEvent;
 		
-		private Work(MutationRecord commitMutation, EventRecord commitEvent, long fetchMutation, FetchEventTuple fetchEvent) {
+		private Work(MutationRecord commitMutation, EventCommitTuple commitEvent, long fetchMutation, EventFetchTuple fetchEvent) {
 			this.commitMutation = commitMutation;
 			this.commitEvent = commitEvent;
 			this.fetchMutation = fetchMutation;
@@ -232,13 +235,24 @@ public class DiskManager implements IDiskManager {
 	}
 
 
-	private static class FetchEventTuple {
+	private static class EventFetchTuple {
 		public final TopicName topic;
 		public final long offset;
 		
-		public FetchEventTuple(TopicName topic, long offset) {
+		public EventFetchTuple(TopicName topic, long offset) {
 			this.topic = topic;
 			this.offset = offset;
+		}
+	}
+
+
+	private static class EventCommitTuple {
+		public final TopicName topic;
+		public final EventRecord event;
+		
+		public EventCommitTuple(TopicName topic, EventRecord event) {
+			this.topic = topic;
+			this.event = event;
 		}
 	}
 }

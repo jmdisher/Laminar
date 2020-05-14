@@ -54,7 +54,7 @@ public class FutureDiskManager implements IDiskManager {
 		}
 	}
 	@Override
-	public void commitEvent(EventRecord event) {
+	public void commitEvent(TopicName topic, EventRecord event) {
 		if (null != f_commitEvent) {
 			f_commitEvent.put(event);
 			f_commitEvent = f_commitEvent.nextLink;

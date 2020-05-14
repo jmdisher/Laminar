@@ -5,6 +5,7 @@ import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.types.ConfigEntry;
 import com.jeffdisher.laminar.types.EventRecord;
 import com.jeffdisher.laminar.types.MutationRecord;
+import com.jeffdisher.laminar.types.TopicName;
 
 
 /**
@@ -49,9 +50,10 @@ public interface IClientManager {
 	 * Broadcast the given EventRecord to all attached listeners who were waiting for it.
 	 * This is called when a new EventRecord is committed.
 	 * 
+	 * @param topic The topic where the event occurred.
 	 * @param record The committed EventRecord.
 	 */
-	void mainSendRecordToListeners(EventRecord record);
+	void mainSendRecordToListeners(TopicName topic, EventRecord record);
 
 	/**
 	 * Replay the given MutationRecord to any clients which were waiting for it during a reconnect.  Called when a

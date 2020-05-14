@@ -21,9 +21,10 @@ public interface IDiskManager {
 	 * Request that the given event be asynchronously committed.
 	 * NOTE:  This will be changed to per-topic commit, in the future.
 	 * 
+	 * @param topic The topic where the event occurred.
 	 * @param event The event to commit.
 	 */
-	void commitEvent(EventRecord event);
+	void commitEvent(TopicName topic, EventRecord event);
 
 	/**
 	 * Request that the given mutation be asynchronously committed.
