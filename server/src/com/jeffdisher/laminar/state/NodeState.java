@@ -92,9 +92,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		_configsPendingCommit = new HashMap<>();
 		
 		// Global offsets are 1-indexed so the first one is 1L.
-		// For this eighth step in introducing topics, we will eagerly create the "fake" topic.
 		_nextEventOffsetByTopic = new HashMap<>();
-		_nextEventOffsetByTopic.put(TopicName.fromString("fake"), 1L);
 		
 		_inFlightMutations = new InFlightMutations();
 		
@@ -733,9 +731,8 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 
 	private EventRecord _createEventAndIncrementOffset(TopicName topic, MutationRecord mutation) {
 		boolean isSynthetic = topic.string.isEmpty();
-		long offsetToPropose = isSynthetic
-				? 1L
-				: _nextEventOffsetByTopic.get(topic);
+		// TODO:  Change this when event topics are no longer implicitly created.
+		long offsetToPropose = _nextEventOffsetByTopic.getOrDefault(topic, 1L);
 		EventRecord event = Helpers.convertMutationToEvent(mutation, offsetToPropose);
 		// Note that mutations to synthetic topics cannot be converted to events.
 		Assert.assertTrue(isSynthetic == (null == event));

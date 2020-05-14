@@ -68,11 +68,6 @@ public class DiskManager implements IDiskManager {
 		
 		// (we introduce a null to all virtual disk extents since they must be 1-indexed)
 		_committedMutationVirtualDisk.add(null);
-		// For this sixth step, we eagerly create the fake topic.
-		TopicName topic = TopicName.fromString("fake");
-		LinkedList<EventRecord> topicContent = new LinkedList<>();
-		topicContent.add(null);
-		_committedEventVirtualDisk.put(topic, topicContent);
 	}
 
 	/**
@@ -146,7 +141,7 @@ public class DiskManager implements IDiskManager {
 			else if (null != work.commitEvent) {
 				TopicName topic = work.commitEvent.topic;
 				EventRecord record = work.commitEvent.event;
-				_committedEventVirtualDisk.get(topic).add(record);
+				getOrCreateTopicList(topic).add(record);
 				_callbackTarget.ioEnqueueDiskCommandForMainThread((snapshot) -> _callbackTarget.mainEventWasCommitted(topic, record));
 			}
 			else if (0L != work.fetchMutation) {
@@ -169,7 +164,7 @@ public class DiskManager implements IDiskManager {
 			else if (null != work.fetchEvent) {
 				TopicName topic = work.fetchEvent.topic;
 				int offset = (int) work.fetchEvent.offset;
-				List<EventRecord> topicStore = _committedEventVirtualDisk.get(topic);
+				List<EventRecord> topicStore = getOrCreateTopicList(topic);
 				// These indexing errors should be intercepted at a higher level, before we get to the disk.
 				Assert.assertTrue(offset < topicStore.size());
 				EventRecord record = topicStore.get(offset);
@@ -201,6 +196,18 @@ public class DiskManager implements IDiskManager {
 			}
 		}
 		return todo;
+	}
+
+	private List<EventRecord> getOrCreateTopicList(TopicName topic) {
+		// TODO:  Change this when event topics are no longer implicitly created.
+		List<EventRecord> list = _committedEventVirtualDisk.get(topic);
+		if (null == list) {
+			list = new LinkedList<>();
+			_committedEventVirtualDisk.put(topic, list);
+			// (we introduce a null to all virtual disk extents since they must be 1-indexed)
+			list.add(null);
+		}
+		return list;
 	}
 
 
