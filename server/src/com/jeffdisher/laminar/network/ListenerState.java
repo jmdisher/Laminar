@@ -1,6 +1,7 @@
 package com.jeffdisher.laminar.network;
 
 import com.jeffdisher.laminar.types.EventRecord;
+import com.jeffdisher.laminar.types.TopicName;
 
 
 /**
@@ -10,15 +11,18 @@ import com.jeffdisher.laminar.types.EventRecord;
  * matter if the listener misses some of these, so long as they get the latest one).
  */
 public class ListenerState {
+	public final TopicName topic;
 	public long lastSentLocalOffset;
 	public EventRecord highPriorityMessage;
 
 	/**
 	 * Creates a new object for tracking the state of a single connected listener.
 	 * 
+	 * @param topic The topic from which this listener will consume events.
 	 * @param lastSentLocalOffset The last offset the listener has already seen (often 0L if this is a new connection).
 	 */
-	public ListenerState(long lastSentLocalOffset) {
+	public ListenerState(TopicName topic, long lastSentLocalOffset) {
+		this.topic = topic;
 		this.lastSentLocalOffset = lastSentLocalOffset;
 		this.highPriorityMessage = null;
 	}

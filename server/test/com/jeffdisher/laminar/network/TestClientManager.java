@@ -96,7 +96,7 @@ public class TestClientManager {
 	@Test
 	public void testSendCommitResponse() throws Throwable {
 		// Create a message.
-		ClientMessage message = ClientMessage.temp(1L, TopicName.fromString("test"), new byte[] {0,1,2,3});
+		ClientMessage message = ClientMessage.temp(1L, TopicName.fromString("fake"), new byte[] {0,1,2,3});
 		// Create a server.
 		int port = PORT_BASE + 2;
 		ServerSocketChannel socket = TestingHelpers.createServerSocket(port);
@@ -160,7 +160,7 @@ public class TestClientManager {
 	@Test
 	public void testSendEvent() throws Throwable {
 		// Create an event record.
-		EventRecord record = EventRecord.generateRecord(EventRecordType.TEMP, 1L, 1L, TopicName.fromString("test"), 1L, UUID.randomUUID(), 1L, new byte[] { 1, 2, 3});
+		EventRecord record = EventRecord.generateRecord(EventRecordType.TEMP, 1L, 1L, TopicName.fromString("fake"), 1L, UUID.randomUUID(), 1L, new byte[] { 1, 2, 3});
 		// Create a server.
 		int port = PORT_BASE + 3;
 		ServerSocketChannel socket = TestingHelpers.createServerSocket(port);

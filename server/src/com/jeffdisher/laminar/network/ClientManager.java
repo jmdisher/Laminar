@@ -25,6 +25,7 @@ import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.types.ConfigEntry;
 import com.jeffdisher.laminar.types.EventRecord;
 import com.jeffdisher.laminar.types.MutationRecord;
+import com.jeffdisher.laminar.types.TopicName;
 import com.jeffdisher.laminar.utils.Assert;
 
 
@@ -465,7 +466,9 @@ public class ClientManager implements IClientManager, INetworkManagerBackgroundC
 			}
 			
 			// Create the new state and change the connection state in the maps.
-			ListenerState state = new ListenerState(lastReceivedLocalOffset);
+			// For this fourth step, we just use a fake topic from the listener.
+			TopicName topic = TopicName.fromString("fake");
+			ListenerState state = new ListenerState(topic, lastReceivedLocalOffset);
 			boolean didRemove = _newClients.remove(client);
 			Assert.assertTrue(didRemove);
 			_listenerClients.put(client, state);
@@ -556,7 +559,8 @@ public class ClientManager implements IClientManager, INetworkManagerBackgroundC
 			for (NetworkManager.NodeToken node : waitingList) {
 				ListenerState listenerState = _listenerClients.get(node);
 				// (make sure this is still connected)
-				if (null != listenerState) {
+				// Only send this event to the listener if they are listening to that topic.
+				if ((null != listenerState) && listenerState.topic.equals(record.topic)) {
 					_sendEventToListener(node, record);
 					// Update the state to be the offset of this event.
 					listenerState.lastSentLocalOffset = record.localOffset;
