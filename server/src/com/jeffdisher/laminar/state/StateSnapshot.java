@@ -18,14 +18,12 @@ public class StateSnapshot {
 	 * so the nonce check won't protect us).
 	 */
 	public final long lastReceivedMutationOffset;
-	public final long lastCommittedEventOffset;
 	public final long currentTermNumber;
 
-	public StateSnapshot(ClusterConfig currentConfig, long lastCommittedMutationOffset, long lastReceivedMutationOffset, long lastCommittedEventOffset, long currentTermNumber) {
+	public StateSnapshot(ClusterConfig currentConfig, long lastCommittedMutationOffset, long lastReceivedMutationOffset, long currentTermNumber) {
 		this.currentConfig = currentConfig;
 		this.lastCommittedMutationOffset = lastCommittedMutationOffset;
 		this.lastReceivedMutationOffset = lastReceivedMutationOffset;
-		this.lastCommittedEventOffset = lastCommittedEventOffset;
 		this.currentTermNumber = currentTermNumber;
 	}
 }

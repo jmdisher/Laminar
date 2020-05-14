@@ -203,7 +203,7 @@ public class TestClusterManager {
 		// Now, send another message which will invalidate the term number of the last one we sent.
 		MutationRecord record2 = MutationRecord.generateRecord(MutationRecordType.TEMP, 2L, 2L, topic, record1.clientId, 2L, new byte[] {2});
 		// (this 2L is what should cause the downstream to drop record1).
-		TestingCommands.sendNewMutation(upstreamManager, upstreamCallbacks, new StateSnapshot(null, 0L, 0L, 0L, 2L), 2L, record2);
+		TestingCommands.sendNewMutation(upstreamManager, upstreamCallbacks, new StateSnapshot(null, 0L, 0L, 2L), 2L, record2);
 		// Receiving this will result in a PEER_STATE response.
 		incoming = TestingCommands.readIncomingMutation(downstreamManager, downstreamCallbacks, upstreamEntry);
 		Assert.assertNull(incoming);
@@ -271,12 +271,12 @@ public class TestClusterManager {
 		
 		// Immediately send another mutation before accepting the ack and observe that it FAILS to send (see the failSendNewMutation command).
 		MutationRecord record2 = MutationRecord.generateRecord(MutationRecordType.TEMP, 1L, 2L, topic, record1.clientId, 2L, new byte[] {2});
-		TestingCommands.failSendNewMutation(upstreamManager, upstreamCallbacks, new StateSnapshot(null, 0L, 0L, 0L, 2L), 1L, record2);
+		TestingCommands.failSendNewMutation(upstreamManager, upstreamCallbacks, new StateSnapshot(null, 0L, 0L, 2L), 1L, record2);
 		
 		// Process the ack on the upstream and demonstrate that it now wants to send the message it failed to send.
 		long receivedMutation = TestingCommands.receiveAckFromDownstream(upstreamManager, upstreamCallbacks, downstreamEntry);
 		Assert.assertEquals(record1.globalOffset, receivedMutation);
-		TestingCommands.sendNewMutation(upstreamManager, upstreamCallbacks, new StateSnapshot(null, 0L, 0L, 0L, 2L), 1L, record2);
+		TestingCommands.sendNewMutation(upstreamManager, upstreamCallbacks, new StateSnapshot(null, 0L, 0L, 2L), 1L, record2);
 		
 		downstreamManager.stopAndWaitForTermination();
 		upstreamManager.stopAndWaitForTermination();
@@ -308,7 +308,7 @@ public class TestClusterManager {
 			while (null == _command) {
 				this.wait();
 			}
-			_command.accept(new StateSnapshot(null, 0L, 0L, 0L, 1L));
+			_command.accept(new StateSnapshot(null, 0L, 0L, 1L));
 			_command = null;
 			this.notifyAll();
 		}

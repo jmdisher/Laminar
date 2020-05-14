@@ -66,8 +66,6 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 	private long _lastCommittedMutationOffset;
 	// The term number of the mutation most recently removed from in-flight (used to avoid conflict in sync).
 	private long _lastTermNumberRemovedFromInFlight;
-	// Note that event offsets will eventually need to be per-topic.
-	private long _lastCommittedEventOffset;
 
 	// Tracking of in-flight mutations ready to be committed when the cluster agrees.
 	// (note that the Events are synthesized from these mutations at the point of commit and _nextLocalEventOffset is updated then)
@@ -123,7 +121,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 			// Poll for the next work item.
 			Consumer<StateSnapshot> next = _commandQueue.blockingGet();
 			// Create the state snapshot and pass it to the consumer.
-			StateSnapshot snapshot = new StateSnapshot(_currentConfig.config, _lastCommittedMutationOffset, _selfState.lastMutationOffsetReceived, _lastCommittedEventOffset, _currentTermNumber);
+			StateSnapshot snapshot = new StateSnapshot(_currentConfig.config, _lastCommittedMutationOffset, _selfState.lastMutationOffsetReceived, _currentTermNumber);
 			next.accept(snapshot);
 		}
 	}
@@ -390,7 +388,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		SyncProgress newConfigProgress = _configsPendingCommit.remove(completed.globalOffset);
 		if (null != newConfigProgress) {
 			// We need a new snapshot since we just changed state in this command, above.
-			StateSnapshot newSnapshot = new StateSnapshot(_currentConfig.config, _lastCommittedMutationOffset, _selfState.lastMutationOffsetReceived, _lastCommittedEventOffset, _currentTermNumber);
+			StateSnapshot newSnapshot = new StateSnapshot(_currentConfig.config, _lastCommittedMutationOffset, _selfState.lastMutationOffsetReceived, _currentTermNumber);
 			// This requires that we broadcast the config update to the connected clients and listeners.
 			_clientManager.mainBroadcastConfigUpdate(newSnapshot, newConfigProgress.config);
 			// We change the config but this would render the snapshot stale so we do it last, to make that clear.
@@ -404,10 +402,6 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 	@Override
 	public void mainEventWasCommitted(TopicName topic, EventRecord completed) {
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
-		// Update our global commit offset (set this first since other methods we are calling might want to read for common state).
-		// We setup this commit so it must be sequential (this is a good check to make sure the commits aren't being re-ordered in the disk layer, too).
-		Assert.assertTrue((_lastCommittedEventOffset + 1) == completed.localOffset);
-		_lastCommittedEventOffset = completed.localOffset;
 		// See if any listeners want this.
 		_clientManager.mainSendRecordToListeners(topic, completed);
 	}
@@ -509,7 +503,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 			_inFlightMutations.add(mutation);
 			// Notify anyone downstream about this.
 			long previousMutationTermNumber = _getPreviousMutationTermNumber();
-			_clusterManager.mainMutationWasReceivedOrFetched(new StateSnapshot(_currentConfig.config, _lastCommittedMutationOffset, _selfState.lastMutationOffsetReceived, _lastCommittedEventOffset, _currentTermNumber), previousMutationTermNumber, mutation);
+			_clusterManager.mainMutationWasReceivedOrFetched(new StateSnapshot(_currentConfig.config, _lastCommittedMutationOffset, _selfState.lastMutationOffsetReceived, _currentTermNumber), previousMutationTermNumber, mutation);
 		}
 	}
 
@@ -677,7 +671,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		_currentState = RaftState.FOLLOWER;
 		_clusterLeader = peer;
 		_currentTermNumber = termNumber;
-		StateSnapshot snapshot = new StateSnapshot(_currentConfig.config, _lastCommittedMutationOffset, _selfState.lastMutationOffsetReceived, _lastCommittedEventOffset, _currentTermNumber);
+		StateSnapshot snapshot = new StateSnapshot(_currentConfig.config, _lastCommittedMutationOffset, _selfState.lastMutationOffsetReceived, _currentTermNumber);
 		_clientManager.mainEnterFollowerState(_clusterLeader, snapshot);
 		_clusterManager.mainEnterFollowerState();
 	}
@@ -731,7 +725,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		if (isElected) {
 			// We won the election so enter the leader state.
 			_currentState = RaftState.LEADER;
-			StateSnapshot snapshot = new StateSnapshot(_currentConfig.config, _lastCommittedMutationOffset, _selfState.lastMutationOffsetReceived, _lastCommittedEventOffset, _currentTermNumber);
+			StateSnapshot snapshot = new StateSnapshot(_currentConfig.config, _lastCommittedMutationOffset, _selfState.lastMutationOffsetReceived, _currentTermNumber);
 			_clientManager.mainEnterLeaderState(snapshot);
 			_clusterManager.mainEnterLeaderState(snapshot);
 		}
