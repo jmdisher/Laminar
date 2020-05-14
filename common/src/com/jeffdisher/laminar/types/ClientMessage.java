@@ -71,7 +71,7 @@ public class ClientMessage {
 	 * @return A new ClientMessage instance.
 	 */
 	public static ClientMessage forceLeader() {
-		return new ClientMessage(ClientMessageType.FORCE_LEADER, -1L, ClientMessagePayload_Temp.create(new byte[0]));
+		return new ClientMessage(ClientMessageType.FORCE_LEADER, -1L, ClientMessagePayload_Empty.create());
 	}
 
 	/**
@@ -83,7 +83,7 @@ public class ClientMessage {
 	 * @return A new ClientMessage instance.
 	 */
 	public static ClientMessage getUuid() {
-		return new ClientMessage(ClientMessageType.GET_UUID, -1L, ClientMessagePayload_Temp.create(new byte[0]));
+		return new ClientMessage(ClientMessageType.GET_UUID, -1L, ClientMessagePayload_Empty.create());
 	}
 
 	/**
@@ -157,10 +157,10 @@ public class ClientMessage {
 			payload = ClientMessagePayload_Listen.deserialize(buffer);
 			break;
 		case FORCE_LEADER:
-			payload = ClientMessagePayload_Temp.deserialize(buffer);
+			payload = ClientMessagePayload_Empty.deserialize(buffer);
 			break;
 		case GET_UUID:
-			payload = ClientMessagePayload_Temp.deserialize(buffer);
+			payload = ClientMessagePayload_Empty.deserialize(buffer);
 			break;
 		case TEMP:
 			payload = ClientMessagePayload_Temp.deserialize(buffer);
