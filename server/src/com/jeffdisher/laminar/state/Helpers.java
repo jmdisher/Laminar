@@ -31,6 +31,8 @@ public class Helpers {
 	 */
 	public static MutationRecord convertClientMessageToMutation(ClientMessage message, long termNumber, UUID clientId, long mutationOffsetToAssign) {
 		MutationRecord converted = null;
+		// For this second step, we just use a fake topic in the mutation.
+		TopicName topic = TopicName.fromString("fake");
 		switch (message.type) {
 		case INVALID:
 			Assert.unimplemented("Invalid message type");
@@ -38,13 +40,13 @@ public class Helpers {
 		case TEMP: {
 			// This is just for initial testing:  send the received, log it, and send the commit.
 			byte[] contents = ((ClientMessagePayload_Temp)message.payload).contents;
-			converted = MutationRecord.generateRecord(MutationRecordType.TEMP, termNumber, mutationOffsetToAssign, clientId, message.nonce, contents);
+			converted = MutationRecord.generateRecord(MutationRecordType.TEMP, termNumber, mutationOffsetToAssign, topic, clientId, message.nonce, contents);
 		}
 			break;
 		case POISON: {
 			// This is just for initial testing:  send the received, log it, and send the commit.
 			byte[] contents = ((ClientMessagePayload_Temp)message.payload).contents;
-			converted = MutationRecord.generateRecord(MutationRecordType.TEMP, termNumber, mutationOffsetToAssign, clientId, message.nonce, contents);
+			converted = MutationRecord.generateRecord(MutationRecordType.TEMP, termNumber, mutationOffsetToAssign, topic, clientId, message.nonce, contents);
 		}
 			break;
 		case UPDATE_CONFIG: {
@@ -52,7 +54,7 @@ public class Helpers {
 			// For now, however, we just send the received ack and enqueue this for commit (note that it DOES NOT generate an event - only a mutation).
 			// The more complex operation happens after the commit completes since that is when we will change our state and broadcast the new config to all clients and listeners.
 			ClusterConfig newConfig = ((ClientMessagePayload_UpdateConfig)message.payload).config;
-			converted = MutationRecord.generateRecord(MutationRecordType.UPDATE_CONFIG, termNumber, mutationOffsetToAssign, clientId, message.nonce, newConfig.serialize());
+			converted = MutationRecord.generateRecord(MutationRecordType.UPDATE_CONFIG, termNumber, mutationOffsetToAssign, topic, clientId, message.nonce, newConfig.serialize());
 		}
 			break;
 		default:
@@ -76,9 +78,7 @@ public class Helpers {
 		case INVALID:
 			throw Assert.unimplemented("Invalid message type");
 		case TEMP: {
-			// For this first step, we just use a fake topic.
-			TopicName topic = TopicName.fromString("fake");
-			eventToReturn = EventRecord.generateRecord(EventRecordType.TEMP, mutation.termNumber, mutation.globalOffset, topic, eventOffsetToAssign, mutation.clientId, mutation.clientNonce, mutation.payload);
+			eventToReturn = EventRecord.generateRecord(EventRecordType.TEMP, mutation.termNumber, mutation.globalOffset, mutation.topic, eventOffsetToAssign, mutation.clientId, mutation.clientNonce, mutation.payload);
 		}
 			break;
 		case UPDATE_CONFIG: {

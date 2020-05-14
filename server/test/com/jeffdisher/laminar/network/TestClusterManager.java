@@ -21,6 +21,7 @@ import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.types.ConfigEntry;
 import com.jeffdisher.laminar.types.MutationRecord;
 import com.jeffdisher.laminar.types.MutationRecordType;
+import com.jeffdisher.laminar.types.TopicName;
 import com.jeffdisher.laminar.utils.TestingHelpers;
 
 
@@ -85,7 +86,8 @@ public class TestClusterManager {
 		// Run the write-ready.
 		callbacks.runOneCommand();
 		// Before the read-ready (which will observe the peer state and try to start sync), we need to set up some data to sync.
-		callbacks.nextMutationToReturn = MutationRecord.generateRecord(MutationRecordType.TEMP, 1L, 1L, UUID.randomUUID(), 1L, new byte[] {1,2,3});
+		TopicName topic = TopicName.fromString("test");
+		callbacks.nextMutationToReturn = MutationRecord.generateRecord(MutationRecordType.TEMP, 1L, 1L, topic, UUID.randomUUID(), 1L, new byte[] {1,2,3});
 		// Now run the read-ready.
 		callbacks.runOneCommand();
 		
@@ -139,7 +141,8 @@ public class TestClusterManager {
 		UUID clientId1 = UUID.randomUUID();
 		long nonce1 = 1L;
 		byte[] payload1 = new byte[] {1,2,3};
-		MutationRecord record1 = MutationRecord.generateRecord(MutationRecordType.TEMP, 1L, offset1, clientId1, nonce1, payload1);
+		TopicName topic = TopicName.fromString("test");
+		MutationRecord record1 = MutationRecord.generateRecord(MutationRecordType.TEMP, 1L, offset1, topic, clientId1, nonce1, payload1);
 		TestingCommands.readPeerStateAndSendMutation(upstreamManager, upstreamCallbacks, record1);
 		
 		// We need to set the downstream to FOLLOWER state so that it can send acks - this normally happens in inside
@@ -164,6 +167,7 @@ public class TestClusterManager {
 	 */
 	@Test
 	public void testTermMismatchInSync() throws Throwable {
+		TopicName topic = TopicName.fromString("test");
 		int upstreamPort = PORT_BASE + 8;
 		int downstreamPort = PORT_BASE + 9;
 		ServerSocketChannel upstreamSocket = TestingHelpers.createServerSocket(upstreamPort);
@@ -184,7 +188,7 @@ public class TestClusterManager {
 		// We need to set the downstream to FOLLOWER state so that it can send acks - this normally happens in inside
 		// the processing of the first message but we need to do it before it tries to ack so do it before.
 		downstreamManager.mainEnterFollowerState();
-		MutationRecord record1 = MutationRecord.generateRecord(MutationRecordType.TEMP, 1L, 1L, UUID.randomUUID(), 1L, new byte[] {1,2,3});
+		MutationRecord record1 = MutationRecord.generateRecord(MutationRecordType.TEMP, 1L, 1L, topic, UUID.randomUUID(), 1L, new byte[] {1,2,3});
 		TestingCommands.readPeerStateAndSendMutation(upstreamManager, upstreamCallbacks, record1);
 		
 		Assert.assertNull(downstreamCallbacks.upstreamPeer);
@@ -197,7 +201,7 @@ public class TestClusterManager {
 		Assert.assertEquals(1L, receivedAckNumber);
 		
 		// Now, send another message which will invalidate the term number of the last one we sent.
-		MutationRecord record2 = MutationRecord.generateRecord(MutationRecordType.TEMP, 2L, 2L, record1.clientId, 2L, new byte[] {2});
+		MutationRecord record2 = MutationRecord.generateRecord(MutationRecordType.TEMP, 2L, 2L, topic, record1.clientId, 2L, new byte[] {2});
 		// (this 2L is what should cause the downstream to drop record1).
 		TestingCommands.sendNewMutation(upstreamManager, upstreamCallbacks, new StateSnapshot(null, 0L, 0L, 0L, 2L), 2L, record2);
 		// Receiving this will result in a PEER_STATE response.
@@ -205,7 +209,7 @@ public class TestClusterManager {
 		Assert.assertNull(incoming);
 		
 		// Upstream now receives the PEER_STATE and tries to restart so set up the corrected mutation (term is still 0).
-		MutationRecord record1_fix = MutationRecord.generateRecord(record1.type, 2L, record1.globalOffset, record1.clientId, record1.clientNonce, new byte[] {1,2,3, 4, 5, 6});
+		MutationRecord record1_fix = MutationRecord.generateRecord(record1.type, 2L, record1.globalOffset, topic, record1.clientId, record1.clientNonce, new byte[] {1,2,3, 4, 5, 6});
 		TestingCommands.readPeerStateAndSendMutation(upstreamManager, upstreamCallbacks, record1_fix);
 		incoming = TestingCommands.readIncomingMutation(downstreamManager, downstreamCallbacks, upstreamEntry);
 		Assert.assertArrayEquals(record1_fix.payload, incoming.payload);
@@ -238,6 +242,7 @@ public class TestClusterManager {
 	 */
 	@Test
 	public void testSendTooQuickly() throws Throwable {
+		TopicName topic = TopicName.fromString("test");
 		int upstreamPort = PORT_BASE + 10;
 		int downstreamPort = PORT_BASE + 11;
 		ServerSocketChannel upstreamSocket = TestingHelpers.createServerSocket(upstreamPort);
@@ -257,7 +262,7 @@ public class TestClusterManager {
 		
 		// Provide a mutation in direct response to the PEER_STATE.
 		downstreamManager.mainEnterFollowerState();
-		MutationRecord record1 = MutationRecord.generateRecord(MutationRecordType.TEMP, 1L, 1L, UUID.randomUUID(), 1L, new byte[] {1,2,3});
+		MutationRecord record1 = MutationRecord.generateRecord(MutationRecordType.TEMP, 1L, 1L, topic, UUID.randomUUID(), 1L, new byte[] {1,2,3});
 		TestingCommands.readPeerStateAndSendMutation(upstreamManager, upstreamCallbacks, record1);
 		
 		// Process the mutation on the downstream, which should result in an ack being sent back.
@@ -265,7 +270,7 @@ public class TestClusterManager {
 		Assert.assertEquals(record1.globalOffset, received.globalOffset);
 		
 		// Immediately send another mutation before accepting the ack and observe that it FAILS to send (see the failSendNewMutation command).
-		MutationRecord record2 = MutationRecord.generateRecord(MutationRecordType.TEMP, 1L, 2L, record1.clientId, 2L, new byte[] {2});
+		MutationRecord record2 = MutationRecord.generateRecord(MutationRecordType.TEMP, 1L, 2L, topic, record1.clientId, 2L, new byte[] {2});
 		TestingCommands.failSendNewMutation(upstreamManager, upstreamCallbacks, new StateSnapshot(null, 0L, 0L, 0L, 2L), 1L, record2);
 		
 		// Process the ack on the upstream and demonstrate that it now wants to send the message it failed to send.

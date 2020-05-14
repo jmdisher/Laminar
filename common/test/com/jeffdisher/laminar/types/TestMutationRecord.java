@@ -15,10 +15,11 @@ public class TestMutationRecord {
 	public void testBasic() throws Throwable {
 		long termNumber = 1L;
 		long globalOffset = 1L;
+		TopicName topic = TopicName.fromString("test");
 		UUID clientId = UUID.randomUUID();
 		long clientNonce = 1L;
 		byte[] payload = new byte[] { 1, 2, 3 };
-		MutationRecord record = MutationRecord.generateRecord(MutationRecordType.TEMP, termNumber, globalOffset, clientId, clientNonce, payload);
+		MutationRecord record = MutationRecord.generateRecord(MutationRecordType.TEMP, termNumber, globalOffset, topic, clientId, clientNonce, payload);
 		byte[] serialized = record.serialize();
 		MutationRecord deserialized = MutationRecord.deserialize(serialized);
 		Assert.assertEquals(record.type, deserialized.type);
@@ -33,10 +34,11 @@ public class TestMutationRecord {
 	public void testInto() throws Throwable {
 		long termNumber = 1L;
 		long globalOffset = 1L;
+		TopicName topic = TopicName.fromString("test");
 		UUID clientId = UUID.randomUUID();
 		long clientNonce = 1L;
 		byte[] payload = new byte[] { 1, 2, 3 };
-		MutationRecord record = MutationRecord.generateRecord(MutationRecordType.TEMP, termNumber, globalOffset, clientId, clientNonce, payload);
+		MutationRecord record = MutationRecord.generateRecord(MutationRecordType.TEMP, termNumber, globalOffset, topic, clientId, clientNonce, payload);
 		ByteBuffer buffer = ByteBuffer.allocate(record.serializedSize());
 		record.serializeInto(buffer);
 		buffer.flip();

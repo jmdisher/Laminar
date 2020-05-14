@@ -14,6 +14,7 @@ import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.types.ConfigEntry;
 import com.jeffdisher.laminar.types.MutationRecord;
 import com.jeffdisher.laminar.types.MutationRecordType;
+import com.jeffdisher.laminar.types.TopicName;
 
 
 public class TestDownstreamMessage {
@@ -36,7 +37,8 @@ public class TestDownstreamMessage {
 
 	@Test
 	public void testAppendMutations() throws Throwable {
-		MutationRecord mutation = MutationRecord.generateRecord(MutationRecordType.TEMP, 1L, 1L, UUID.randomUUID(), 1L, new byte[] {1,2,3});
+		TopicName topic = TopicName.fromString("test");
+		MutationRecord mutation = MutationRecord.generateRecord(MutationRecordType.TEMP, 1L, 1L, topic, UUID.randomUUID(), 1L, new byte[] {1,2,3});
 		long lastCommittedMutationOffset = 1L;
 		DownstreamMessage message = DownstreamMessage.appendMutations(1L, 0L, mutation, lastCommittedMutationOffset);
 		int size = message.serializedSize();

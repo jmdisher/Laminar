@@ -9,6 +9,7 @@ import com.jeffdisher.laminar.components.NetworkManager;
 import com.jeffdisher.laminar.types.ConfigEntry;
 import com.jeffdisher.laminar.types.MutationRecord;
 import com.jeffdisher.laminar.types.MutationRecordType;
+import com.jeffdisher.laminar.types.TopicName;
 
 
 
@@ -49,7 +50,8 @@ public class TestDownstreamPeerManager {
 		Assert.assertEquals(1, manager.immutablePeersReadyToReceiveMutation(5L).size());
 		
 		// Use one of these and see that it is no longer here.
-		MutationRecord mutation = MutationRecord.generateRecord(MutationRecordType.TEMP, 1L, 4L, UUID.randomUUID(), 1, new byte[0]);
+		TopicName topic = TopicName.fromString("test");
+		MutationRecord mutation = MutationRecord.generateRecord(MutationRecordType.TEMP, 1L, 4L, topic, UUID.randomUUID(), 1, new byte[0]);
 		manager.immutablePeersReadyToReceiveMutation(4L).iterator().next().commitToSendMutations(1L, 1L, mutation, 1L, 1L);
 		Assert.assertEquals(0, manager.immutablePeersReadyToReceiveMutation(4L).size());
 		

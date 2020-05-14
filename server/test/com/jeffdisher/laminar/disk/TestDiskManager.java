@@ -50,8 +50,9 @@ public class TestDiskManager {
 	 */
 	@Test
 	public void testMutationAndEventCommitAndFetch() throws Throwable {
-		MutationRecord mutation1 = MutationRecord.generateRecord(MutationRecordType.TEMP, 1L, 1L, UUID.randomUUID(), 1L, new byte[] {1});
-		MutationRecord mutation2 = MutationRecord.generateRecord(MutationRecordType.TEMP, 1L, 2L, UUID.randomUUID(), 2L, new byte[] {1});
+		TopicName topic = TopicName.fromString("test");
+		MutationRecord mutation1 = MutationRecord.generateRecord(MutationRecordType.TEMP, 1L, 1L, topic, UUID.randomUUID(), 1L, new byte[] {1});
+		MutationRecord mutation2 = MutationRecord.generateRecord(MutationRecordType.TEMP, 1L, 2L, topic, UUID.randomUUID(), 2L, new byte[] {1});
 		EventRecord event1 = EventRecord.generateRecord(EventRecordType.TEMP, 1L, 1L, TopicName.fromString("test"), 1L, UUID.randomUUID(), 1L, new byte[] {1});
 		EventRecord event2 = EventRecord.generateRecord(EventRecordType.TEMP, 1L, 2L, TopicName.fromString("test"), 2L, UUID.randomUUID(), 2L, new byte[] {1});
 		
