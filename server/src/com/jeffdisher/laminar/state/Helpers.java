@@ -10,6 +10,7 @@ import com.jeffdisher.laminar.types.EventRecord;
 import com.jeffdisher.laminar.types.EventRecordType;
 import com.jeffdisher.laminar.types.MutationRecord;
 import com.jeffdisher.laminar.types.MutationRecordType;
+import com.jeffdisher.laminar.types.TopicName;
 import com.jeffdisher.laminar.utils.Assert;
 
 
@@ -75,7 +76,9 @@ public class Helpers {
 		case INVALID:
 			throw Assert.unimplemented("Invalid message type");
 		case TEMP: {
-			eventToReturn = EventRecord.generateRecord(EventRecordType.TEMP, mutation.termNumber, mutation.globalOffset, eventOffsetToAssign, mutation.clientId, mutation.clientNonce, mutation.payload);
+			// For this first step, we just use a fake topic.
+			TopicName topic = TopicName.fromString("fake");
+			eventToReturn = EventRecord.generateRecord(EventRecordType.TEMP, mutation.termNumber, mutation.globalOffset, topic, eventOffsetToAssign, mutation.clientId, mutation.clientNonce, mutation.payload);
 		}
 			break;
 		case UPDATE_CONFIG: {

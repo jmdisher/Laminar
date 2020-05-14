@@ -24,6 +24,7 @@ import com.jeffdisher.laminar.types.ConfigEntry;
 import com.jeffdisher.laminar.types.EventRecord;
 import com.jeffdisher.laminar.types.EventRecordType;
 import com.jeffdisher.laminar.types.MutationRecord;
+import com.jeffdisher.laminar.types.TopicName;
 import com.jeffdisher.laminar.utils.TestingHelpers;
 
 
@@ -159,7 +160,7 @@ public class TestClientManager {
 	@Test
 	public void testSendEvent() throws Throwable {
 		// Create an event record.
-		EventRecord record = EventRecord.generateRecord(EventRecordType.TEMP, 1L, 1L, 1L, UUID.randomUUID(), 1L, new byte[] { 1, 2, 3});
+		EventRecord record = EventRecord.generateRecord(EventRecordType.TEMP, 1L, 1L, TopicName.fromString("test"), 1L, UUID.randomUUID(), 1L, new byte[] { 1, 2, 3});
 		// Create a server.
 		int port = PORT_BASE + 3;
 		ServerSocketChannel socket = TestingHelpers.createServerSocket(port);
