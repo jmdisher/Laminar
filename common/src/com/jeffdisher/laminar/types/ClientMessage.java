@@ -91,11 +91,12 @@ public class ClientMessage {
 	 * Note that, as the name implies, this only exists for temporary testing of the flow and will be removed, later.
 	 * 
 	 * @param nonce Per-client nonce.
+	 * @param topic The topic to which this message must be posted.
 	 * @param message A message payload.
 	 * @return A new ClientMessage instance.
 	 */
-	public static ClientMessage temp(long nonce, byte[] message) {
-		return new ClientMessage(ClientMessageType.TEMP, nonce, ClientMessagePayload_Temp.create(message));
+	public static ClientMessage temp(long nonce, TopicName topic, byte[] message) {
+		return new ClientMessage(ClientMessageType.TEMP, nonce, ClientMessagePayload_Temp.create(topic, message));
 	}
 
 	/**
@@ -105,12 +106,13 @@ public class ClientMessage {
 	 * proceed to commit the message so the re-send won't cause the same thing to happen again.
 	 * 
 	 * @param nonce Per-client nonce.
+	 * @param topic The topic to which this message must be posted.
 	 * @param message A message payload.
 	 * @return A new ClientMessage instance.
 	 */
-	public static ClientMessage poison(long nonce, byte[] message) {
+	public static ClientMessage poison(long nonce, TopicName topic, byte[] message) {
 		// Note that poison uses the TEMP payload since it is just a nameless buffer for testing in both cases.
-		return new ClientMessage(ClientMessageType.POISON, nonce, ClientMessagePayload_Temp.create(message));
+		return new ClientMessage(ClientMessageType.POISON, nonce, ClientMessagePayload_Temp.create(topic, message));
 	}
 
 	/**

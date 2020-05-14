@@ -21,6 +21,7 @@ import com.jeffdisher.laminar.types.ClientMessageType;
 import com.jeffdisher.laminar.types.ClientResponse;
 import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.types.ConfigEntry;
+import com.jeffdisher.laminar.types.TopicName;
 
 
 public class TestClientConnection {
@@ -63,8 +64,10 @@ public class TestClientConnection {
 			
 			// Send the message.
 			ClientResult result = connection.sendTemp(payload);
+			// (we know that this is currently "fake")
+			int topicSize = TopicName.fromString("fake").serializedSize();
 			// Receive the message on the emulated server.
-			ByteBuffer readBuffer = ByteBuffer.allocate(Short.BYTES + Byte.BYTES + Long.BYTES + payload.length);
+			ByteBuffer readBuffer = ByteBuffer.allocate(Short.BYTES + Byte.BYTES + Long.BYTES + topicSize + payload.length);
 			didRead = server.read(readBuffer);
 			Assert.assertEquals(readBuffer.position(), didRead);
 			readBuffer.flip();

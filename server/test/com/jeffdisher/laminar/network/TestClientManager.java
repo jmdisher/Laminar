@@ -39,7 +39,7 @@ public class TestClientManager {
 	@Test
 	public void testReceiveTempMessage() throws Throwable {
 		// Create a message.
-		ClientMessage message = ClientMessage.temp(1L, new byte[] {0,1,2,3});
+		ClientMessage message = ClientMessage.temp(1L, TopicName.fromString("test"), new byte[] {0,1,2,3});
 		// Create a server.
 		int port = PORT_BASE + 1;
 		ServerSocketChannel socket = TestingHelpers.createServerSocket(port);
@@ -96,7 +96,7 @@ public class TestClientManager {
 	@Test
 	public void testSendCommitResponse() throws Throwable {
 		// Create a message.
-		ClientMessage message = ClientMessage.temp(1L, new byte[] {0,1,2,3});
+		ClientMessage message = ClientMessage.temp(1L, TopicName.fromString("test"), new byte[] {0,1,2,3});
 		// Create a server.
 		int port = PORT_BASE + 2;
 		ServerSocketChannel socket = TestingHelpers.createServerSocket(port);

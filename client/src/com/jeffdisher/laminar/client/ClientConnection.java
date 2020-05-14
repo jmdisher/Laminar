@@ -22,6 +22,7 @@ import com.jeffdisher.laminar.types.ClientResponsePayload_Commit;
 import com.jeffdisher.laminar.types.ClientResponsePayload_ConfigEntry;
 import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.types.ConfigEntry;
+import com.jeffdisher.laminar.types.TopicName;
 import com.jeffdisher.laminar.utils.Assert;
 import com.jeffdisher.laminar.utils.UninterruptibleQueue;
 
@@ -160,12 +161,16 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 
 	public ClientResult sendTemp(byte[] payload) {
 		Assert.assertTrue(Thread.currentThread() != _internalThread);
-		return _externalWaitForMessageSetup((nonce) -> ClientMessage.temp(nonce, payload));
+		// For this third step, we just use a fake topic in the ClientMessage.
+		TopicName topic = TopicName.fromString("fake");
+		return _externalWaitForMessageSetup((nonce) -> ClientMessage.temp(nonce, topic, payload));
 	}
 
 	public ClientResult sendPoison(byte[] payload) {
 		Assert.assertTrue(Thread.currentThread() != _internalThread);
-		return _externalWaitForMessageSetup((nonce) -> ClientMessage.poison(nonce, payload));
+		// For this third step, we just use a fake topic in the ClientMessage.
+		TopicName topic = TopicName.fromString("fake");
+		return _externalWaitForMessageSetup((nonce) -> ClientMessage.poison(nonce, topic, payload));
 	}
 
 	public ClientResult sendUpdateConfig(ClusterConfig config) {

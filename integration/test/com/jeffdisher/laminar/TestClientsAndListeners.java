@@ -23,6 +23,7 @@ import com.jeffdisher.laminar.types.ClientResponseType;
 import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.types.ConfigEntry;
 import com.jeffdisher.laminar.types.EventRecord;
+import com.jeffdisher.laminar.types.TopicName;
 import com.jeffdisher.laminar.utils.TestingHelpers;
 
 
@@ -181,7 +182,7 @@ public class TestClientsAndListeners {
 		_sendMessage(outbound, ClientMessage.handshake(clientId));
 		ClientResponse ready = _readResponse(outbound);
 		Assert.assertEquals(ClientResponseType.CLIENT_READY, ready.type);
-		ClientMessage temp = ClientMessage.temp(1L, new byte[] {1});
+		ClientMessage temp = ClientMessage.temp(1L, TopicName.fromString("test"), new byte[] {1});
 		_sendMessage(outbound, temp);
 		ClientResponse received = _readResponse(outbound);
 		ClientResponse committed = _readResponse(outbound);
@@ -211,9 +212,9 @@ public class TestClientsAndListeners {
 		_sendMessage(outbound, ClientMessage.handshake(clientId));
 		ClientResponse ready = _readResponse(outbound);
 		Assert.assertEquals(ClientResponseType.CLIENT_READY, ready.type);
-		ClientMessage temp1 = ClientMessage.temp(1L, new byte[] {1});
-		ClientMessage temp2 = ClientMessage.temp(2L, new byte[] {2});
-		ClientMessage temp3 = ClientMessage.temp(3L, new byte[] {3});
+		ClientMessage temp1 = ClientMessage.temp(1L, TopicName.fromString("test"), new byte[] {1});
+		ClientMessage temp2 = ClientMessage.temp(2L, TopicName.fromString("test"), new byte[] {2});
+		ClientMessage temp3 = ClientMessage.temp(3L, TopicName.fromString("test"), new byte[] {3});
 		_sendMessage(outbound, temp1);
 		_readResponse(outbound);
 		long lastCommitGlobalOffset = _readResponse(outbound).lastCommitGlobalOffset;
@@ -238,7 +239,7 @@ public class TestClientsAndListeners {
 		// Followed by the ready.
 		ready = _readResponse(outbound);
 		Assert.assertEquals(ClientResponseType.CLIENT_READY, ready.type);
-		ClientMessage temp4 = ClientMessage.temp(4L, new byte[] {4});
+		ClientMessage temp4 = ClientMessage.temp(4L, TopicName.fromString("test"), new byte[] {4});
 		_sendMessage(outbound, temp4);
 		_readResponse(outbound);
 		ClientResponse commit4 = _readResponse(outbound);
