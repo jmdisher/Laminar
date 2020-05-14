@@ -61,8 +61,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 	private SyncProgress _currentConfig;
 	// This map is usually empty but contains any ClusterConfigs which haven't yet committed (meaning they are part of joint consensus).
 	private final Map<Long, SyncProgress> _configsPendingCommit;
-	// Note that "local" event offsets will eventually need to be per-topic.
-	private long _nextLocalEventOffset;
+	private final Map<TopicName, Long> _nextEventOffsetByTopic;
 	// The offset of the mutation most recently committed to disk (used to keep both the clients and other nodes in sync).
 	private long _lastCommittedMutationOffset;
 	// The term number of the mutation most recently removed from in-flight (used to avoid conflict in sync).
@@ -95,7 +94,9 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		_configsPendingCommit = new HashMap<>();
 		
 		// Global offsets are 1-indexed so the first one is 1L.
-		_nextLocalEventOffset = 1L;
+		// For this eighth step in introducing topics, we will eagerly create the "fake" topic.
+		_nextEventOffsetByTopic = new HashMap<>();
+		_nextEventOffsetByTopic.put(TopicName.fromString("fake"), 1L);
 		
 		_inFlightMutations = new InFlightMutations();
 		
@@ -499,7 +500,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 			// Commit, immediately.
 			Assert.assertTrue(_inFlightMutations.isEmpty());
 			TopicName topic = mutation.topic;
-			EventRecord event = _createEventAndIncrementOffset(mutation);
+			EventRecord event = _createEventAndIncrementOffset(topic, mutation);
 			_commit(mutation, topic, event);
 			// We also need to tell the in-flight mutations to increment its bias since it won't see this mutation.
 			_inFlightMutations.updateBiasForDirectCommit(mutation.globalOffset);
@@ -581,7 +582,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 			MutationRecord mutation = _inFlightMutations.removeFirstElementLessThanOrEqualTo(consensusOffset);
 			while (null != mutation) {
 				TopicName topic = mutation.topic;
-				EventRecord event = _createEventAndIncrementOffset(mutation);
+				EventRecord event = _createEventAndIncrementOffset(topic, mutation);
 				_commit(mutation, topic, event);
 				mutation = _inFlightMutations.removeFirstElementLessThanOrEqualTo(consensusOffset);
 			}
@@ -736,10 +737,16 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		}
 	}
 
-	private EventRecord _createEventAndIncrementOffset(MutationRecord mutation) {
-		EventRecord event = Helpers.convertMutationToEvent(mutation, _nextLocalEventOffset);
+	private EventRecord _createEventAndIncrementOffset(TopicName topic, MutationRecord mutation) {
+		boolean isSynthetic = topic.string.isEmpty();
+		long offsetToPropose = isSynthetic
+				? 1L
+				: _nextEventOffsetByTopic.get(topic);
+		EventRecord event = Helpers.convertMutationToEvent(mutation, offsetToPropose);
+		// Note that mutations to synthetic topics cannot be converted to events.
+		Assert.assertTrue(isSynthetic == (null == event));
 		if (null != event) {
-			_nextLocalEventOffset += 1;
+			_nextEventOffsetByTopic.put(topic, offsetToPropose + 1L);
 		}
 		return event;
 	}

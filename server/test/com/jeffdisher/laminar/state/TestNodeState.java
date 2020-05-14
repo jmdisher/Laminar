@@ -59,7 +59,7 @@ public class TestNodeState {
 		// Send the ClientMessage.
 		F<MutationRecord> mutation = test.diskManager.get_commitMutation();
 		F<EventRecord> event = test.diskManager.get_commitEvent();
-		long mutationNumber = runner.run((snapshot) -> test.nodeState.mainHandleValidClientMessage(UUID.randomUUID(), ClientMessage.temp(1L, TopicName.fromString("test"), new byte[] {1})));
+		long mutationNumber = runner.run((snapshot) -> test.nodeState.mainHandleValidClientMessage(UUID.randomUUID(), ClientMessage.temp(1L, TopicName.fromString("fake"), new byte[] {1})));
 		Assert.assertEquals(1L, mutationNumber);
 		Assert.assertEquals(mutationNumber, mutation.get().globalOffset);
 		Assert.assertEquals(mutationNumber, event.get().globalOffset);
@@ -86,7 +86,7 @@ public class TestNodeState {
 		test.start();
 		test.startLatch.await();
 		Runner runner = new Runner(test.nodeState);
-		TopicName topic = TopicName.fromString("test");
+		TopicName topic = TopicName.fromString("fake");
 		ConfigEntry upstream = new ConfigEntry(UUID.randomUUID(), new InetSocketAddress(3), new InetSocketAddress(4));
 		MutationRecord record1 = MutationRecord.generateRecord(MutationRecordType.TEMP, 1L, 1L, topic, UUID.randomUUID(), 1, new byte[] {1});
 		MutationRecord record2 = MutationRecord.generateRecord(MutationRecordType.TEMP, 2L, 2L, topic, UUID.randomUUID(), 1, new byte[] {2});
@@ -138,12 +138,12 @@ public class TestNodeState {
 		test.startLatch.await();
 		NodeState nodeState = test.nodeState;
 		Runner runner = new Runner(nodeState);
-		TopicName topic = TopicName.fromString("test");
+		TopicName topic = TopicName.fromString("fake");
 		ConfigEntry originalEntry = test.initialConfig.entries[0];
 		ConfigEntry upstreamEntry = new ConfigEntry(UUID.randomUUID(), new InetSocketAddress(3), new InetSocketAddress(4));
 		ClusterConfig newConfig = ClusterConfig.configFromEntries(new ConfigEntry[] {originalEntry, upstreamEntry});
 		// Send it 2 mutations (first one is 2-node config).
-		MutationRecord configChangeRecord = MutationRecord.generateRecord(MutationRecordType.UPDATE_CONFIG, 1L, 1L, topic, UUID.randomUUID(), 1L, newConfig.serialize());
+		MutationRecord configChangeRecord = MutationRecord.generateRecord(MutationRecordType.UPDATE_CONFIG, 1L, 1L, TopicName.syntheticTopic(), UUID.randomUUID(), 1L, newConfig.serialize());
 		// (note that this will cause them to become a FOLLOWER).
 		long nextToLoad = runner.run((snapshot) -> nodeState.mainAppendMutationFromUpstream(upstreamEntry, 1L, 0L, configChangeRecord));
 		Assert.assertEquals(configChangeRecord.globalOffset + 1, nextToLoad);
@@ -173,7 +173,7 @@ public class TestNodeState {
 		MutationRecord mutation = runner.run((snapshot) -> nodeState.mainClientFetchMutationIfAvailable(2L));
 		Assert.assertEquals(tempRecord, mutation);
 		// Create new mutation (3).
-		ClientMessage newTemp = ClientMessage.temp(1L, TopicName.fromString("test"), new byte[]{2});
+		ClientMessage newTemp = ClientMessage.temp(1L, TopicName.fromString("fake"), new byte[]{2});
 		long mutationOffset = runner.run((snapshot) -> nodeState.mainHandleValidClientMessage(UUID.randomUUID(), newTemp));
 		Assert.assertEquals(3L, mutationOffset);
 		// Ask it to send the new mutation downstream.
@@ -260,17 +260,17 @@ public class TestNodeState {
 		ConfigEntry peer2 = new ConfigEntry(UUID.randomUUID(), new InetSocketAddress(7), new InetSocketAddress(8));
 		ClusterConfig config1 = ClusterConfig.configFromEntries(new ConfigEntry[] {self, leader, peer1});
 		ClusterConfig config2 = ClusterConfig.configFromEntries(new ConfigEntry[] {self, leader, peer2});
-		TopicName topic = TopicName.fromString("test");
+		TopicName topic = TopicName.fromString("fake");
 		
 		// Create the common mutation.
 		MutationRecord record1 = MutationRecord.generateRecord(MutationRecordType.TEMP, 1L, 1L, topic, UUID.randomUUID(), 1, new byte[] {1});
 		
 		// Create the first config change and common mutation.
-		MutationRecord record2 = MutationRecord.generateRecord(MutationRecordType.UPDATE_CONFIG, 1L, 2L, topic, UUID.randomUUID(), 1L, config1.serialize());
+		MutationRecord record2 = MutationRecord.generateRecord(MutationRecordType.UPDATE_CONFIG, 1L, 2L, TopicName.syntheticTopic(), UUID.randomUUID(), 1L, config1.serialize());
 		MutationRecord record3 = MutationRecord.generateRecord(MutationRecordType.TEMP, 1L, 3L, topic, UUID.randomUUID(), 1, new byte[] {2});
 		
 		// Create the second config change and commont mutation.
-		MutationRecord record4 = MutationRecord.generateRecord(MutationRecordType.UPDATE_CONFIG, 1L, 4L, topic, UUID.randomUUID(), 1L, config2.serialize());
+		MutationRecord record4 = MutationRecord.generateRecord(MutationRecordType.UPDATE_CONFIG, 1L, 4L, TopicName.syntheticTopic(), UUID.randomUUID(), 1L, config2.serialize());
 		MutationRecord record5 = MutationRecord.generateRecord(MutationRecordType.TEMP, 1L, 5L, topic, UUID.randomUUID(), 1, new byte[] {3});
 		
 		test.start();
@@ -354,17 +354,17 @@ public class TestNodeState {
 		ConfigEntry peer2 = new ConfigEntry(UUID.randomUUID(), new InetSocketAddress(9), new InetSocketAddress(10));
 		ClusterConfig config1 = ClusterConfig.configFromEntries(new ConfigEntry[] {self, leader1, leader2, peer1});
 		ClusterConfig config2 = ClusterConfig.configFromEntries(new ConfigEntry[] {self, leader1, leader2, peer2});
-		TopicName topic = TopicName.fromString("test");
+		TopicName topic = TopicName.fromString("fake");
 		
 		// Create the common mutation.
 		MutationRecord record1 = MutationRecord.generateRecord(MutationRecordType.TEMP, 1L, 1L, topic, UUID.randomUUID(), 1, new byte[] {1});
 		
 		// Create the first config change and TEMP mutation.
-		MutationRecord record12 = MutationRecord.generateRecord(MutationRecordType.UPDATE_CONFIG, 1L, 2L, topic, UUID.randomUUID(), 1L, config1.serialize());
+		MutationRecord record12 = MutationRecord.generateRecord(MutationRecordType.UPDATE_CONFIG, 1L, 2L, TopicName.syntheticTopic(), UUID.randomUUID(), 1L, config1.serialize());
 		MutationRecord record13 = MutationRecord.generateRecord(MutationRecordType.TEMP, 1L, 3L, topic, UUID.randomUUID(), 1, new byte[] {2});
 		
 		// Create the second config change and TEMP mutation.
-		MutationRecord record22 = MutationRecord.generateRecord(MutationRecordType.UPDATE_CONFIG, 2L, 2L, topic, UUID.randomUUID(), 1L, config2.serialize());
+		MutationRecord record22 = MutationRecord.generateRecord(MutationRecordType.UPDATE_CONFIG, 2L, 2L, TopicName.syntheticTopic(), UUID.randomUUID(), 1L, config2.serialize());
 		MutationRecord record23 = MutationRecord.generateRecord(MutationRecordType.TEMP, 2L, 3L, topic, UUID.randomUUID(), 1, new byte[] {3});
 		
 		test.start();
@@ -459,10 +459,10 @@ public class TestNodeState {
 		ConfigEntry originalEntry = test.initialConfig.entries[0];
 		ConfigEntry upstreamEntry = new ConfigEntry(UUID.randomUUID(), new InetSocketAddress(3), new InetSocketAddress(4));
 		ClusterConfig newConfig = ClusterConfig.configFromEntries(new ConfigEntry[] {originalEntry, upstreamEntry});
-		TopicName topic = TopicName.fromString("test");
+		TopicName topic = TopicName.fromString("fake");
 		
 		// Send the node this mutation so it becomes a FOLLOWER and then we can tell it to become a CANDIDATE (can't start election in empty config).
-		MutationRecord configChangeRecord = MutationRecord.generateRecord(MutationRecordType.UPDATE_CONFIG, 1L, 1L, topic, UUID.randomUUID(), 1L, newConfig.serialize());
+		MutationRecord configChangeRecord = MutationRecord.generateRecord(MutationRecordType.UPDATE_CONFIG, 1L, 1L, TopicName.syntheticTopic(), UUID.randomUUID(), 1L, newConfig.serialize());
 		long nextToLoad = runner.run((snapshot) -> nodeState.mainAppendMutationFromUpstream(upstreamEntry, 1L, 0L, configChangeRecord));
 		Assert.assertEquals(configChangeRecord.globalOffset + 1, nextToLoad);
 		// Tell it the first mutation committed (meaning that config will be active).
