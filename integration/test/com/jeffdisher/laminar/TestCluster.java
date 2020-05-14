@@ -16,6 +16,7 @@ import com.jeffdisher.laminar.types.ClientMessage;
 import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.types.ConfigEntry;
 import com.jeffdisher.laminar.types.EventRecord;
+import com.jeffdisher.laminar.types.TopicName;
 import com.jeffdisher.laminar.utils.TestingHelpers;
 
 
@@ -39,11 +40,12 @@ public class TestCluster {
 	 */
 	@Test
 	public void testConfigUpdate() throws Throwable {
+		TopicName topic = TopicName.fromString("test");
 		ServerWrapper wrapper = ServerWrapper.startedServerWrapper("testConfigUpdate-LEADER", 2003, 2002, new File("/tmp/laminar"));
 		InetSocketAddress address = new InetSocketAddress(InetAddress.getLocalHost(), 2002);
 		
 		// Start a listener before the client begins.
-		CaptureListener beforeListener = new CaptureListener(address, 4);
+		CaptureListener beforeListener = new CaptureListener(address, topic, 4);
 		beforeListener.setName("Before");
 		beforeListener.start();
 		UUID configSender = null;
@@ -54,8 +56,8 @@ public class TestCluster {
 		ClientConnection client2 = ClientConnection.open(address);
 		try {
 			// Send initial messages.
-			ClientResult result1_1 = client1.sendTemp(new byte[] {1});
-			ClientResult result2_1 = client2.sendTemp(new byte[] {2});
+			ClientResult result1_1 = client1.sendTemp(topic, new byte[] {1});
+			ClientResult result2_1 = client2.sendTemp(topic, new byte[] {2});
 			
 			// Send config update (wait for received to ensure one client got the initial config).
 			result1_1.waitForReceived();
@@ -74,8 +76,8 @@ public class TestCluster {
 			updateResult.waitForReceived();
 			
 			// Now send another from each client.
-			ClientResult result1_2 = client1.sendTemp(new byte[] {1});
-			ClientResult result2_2 = client2.sendTemp(new byte[] {2});
+			ClientResult result1_2 = client1.sendTemp(topic, new byte[] {1});
+			ClientResult result2_2 = client2.sendTemp(topic, new byte[] {2});
 			// We expect the previous messages to have committed, either way.
 			result1_1.waitForCommitted();
 			result2_1.waitForCommitted();
@@ -105,7 +107,7 @@ public class TestCluster {
 		}
 		
 		// Start a listener after the client is done.
-		CaptureListener afterListener = new CaptureListener(address, 4);
+		CaptureListener afterListener = new CaptureListener(address, topic, 4);
 		afterListener.setName("After");
 		afterListener.skipNonceCheck(configSender, configNonce);
 		afterListener.start();
@@ -122,11 +124,12 @@ public class TestCluster {
 
 	@Test
 	public void testReconnectWhileWaitingForClusterCommit() throws Throwable {
+		TopicName topic = TopicName.fromString("test");
 		ServerWrapper wrapper = ServerWrapper.startedServerWrapper("testReconnectWhileWaitingForClusterCommit-LEADER", 2003, 2002, new File("/tmp/laminar"));
 		InetSocketAddress address = new InetSocketAddress(InetAddress.getLocalHost(), 2002);
 		
 		// Start a listener before the client begins.
-		CaptureListener beforeListener = new CaptureListener(address, 7);
+		CaptureListener beforeListener = new CaptureListener(address, topic, 7);
 		beforeListener.setName("Before");
 		beforeListener.start();
 		UUID configSender = null;
@@ -137,8 +140,8 @@ public class TestCluster {
 		ClientConnection client2 = ClientConnection.open(address);
 		try {
 			// Send initial messages.
-			ClientResult result1_1 = client1.sendTemp(new byte[] {1});
-			ClientResult result2_1 = client2.sendTemp(new byte[] {2});
+			ClientResult result1_1 = client1.sendTemp(topic, new byte[] {1});
+			ClientResult result2_1 = client2.sendTemp(topic, new byte[] {2});
 			
 			// Send config update (wait for received to ensure one client got the initial config).
 			result1_1.waitForReceived();
@@ -157,16 +160,16 @@ public class TestCluster {
 			updateResult.waitForReceived();
 			
 			// Now send another from each client so there is something queued up which can't be committed until the new node is online.
-			ClientResult result1_2 = client1.sendTemp(new byte[] {1});
-			ClientResult result2_2 = client2.sendTemp(new byte[] {2});
+			ClientResult result1_2 = client1.sendTemp(topic, new byte[] {1});
+			ClientResult result2_2 = client2.sendTemp(topic, new byte[] {2});
 			// We expect the previous messages to have committed, either way.
 			result1_1.waitForCommitted();
 			result2_1.waitForCommitted();
 			
 			// Now, send the poison and another couple messages.
-			ClientResult poisonResult = client1.sendPoison(new byte[] {0});
-			ClientResult result1_3 = client1.sendTemp(new byte[] {1});
-			ClientResult result2_3 = client2.sendTemp(new byte[] {2});
+			ClientResult poisonResult = client1.sendPoison(topic, new byte[] {0});
+			ClientResult result1_3 = client1.sendTemp(topic, new byte[] {1});
+			ClientResult result2_3 = client2.sendTemp(topic, new byte[] {2});
 			
 			// Verify everything so far has been received.
 			result1_2.waitForReceived();
@@ -201,7 +204,7 @@ public class TestCluster {
 		}
 		
 		// Start a listener after the client is done.
-		CaptureListener afterListener = new CaptureListener(address, 7);
+		CaptureListener afterListener = new CaptureListener(address, topic, 7);
 		afterListener.setName("After");
 		afterListener.skipNonceCheck(configSender, configNonce);
 		afterListener.start();
@@ -222,14 +225,15 @@ public class TestCluster {
 	 */
 	@Test
 	public void testListenToFollower() throws Throwable {
+		TopicName topic = TopicName.fromString("test");
 		ServerWrapper leader = ServerWrapper.startedServerWrapper("testListenToFollower-LEADER", 2003, 2002, new File("/tmp/laminar"));
 		InetSocketAddress leaderClientAddress = new InetSocketAddress(InetAddress.getLocalHost(), 2002);
 		ServerWrapper follower = ServerWrapper.startedServerWrapper("testListenToFollower-FOLLOWER", 2005, 2004, new File("/tmp/laminar2"));
 		InetSocketAddress followerClientAddress= new InetSocketAddress(InetAddress.getLocalHost(), 2004);
 		
 		// Start the listeners.
-		CaptureListener leaderListener = new CaptureListener(leaderClientAddress, 3);
-		CaptureListener followerListener = new CaptureListener(followerClientAddress, 3);
+		CaptureListener leaderListener = new CaptureListener(leaderClientAddress, topic, 3);
+		CaptureListener followerListener = new CaptureListener(followerClientAddress, topic, 3);
 		leaderListener.setName("Leader");
 		followerListener.setName("Follower");
 		leaderListener.start();
@@ -256,9 +260,9 @@ public class TestCluster {
 			configResult.waitForCommitted();
 			
 			// Now, send another message on client1 and 2 on client2.
-			ClientResult client1_1 = client1.sendTemp(new byte[] {1});
-			ClientResult client2_1 = client2.sendTemp(new byte[] {2});
-			ClientResult client2_2 = client2.sendTemp(new byte[] {3});
+			ClientResult client1_1 = client1.sendTemp(topic, new byte[] {1});
+			ClientResult client2_1 = client2.sendTemp(topic, new byte[] {2});
+			ClientResult client2_2 = client2.sendTemp(topic, new byte[] {3});
 			
 			// We can wait for these to commit at once, to stress the ordering further.
 			client1_1.waitForCommitted();
@@ -291,6 +295,7 @@ public class TestCluster {
 	 */
 	@Test
 	public void testMajorityProgress() throws Throwable {
+		TopicName topic = TopicName.fromString("test");
 		ServerWrapper leader = ServerWrapper.startedServerWrapper("testMajorityProgress-LEADER", 2003, 2002, new File("/tmp/laminar"));
 		InetSocketAddress leaderClientAddress = new InetSocketAddress(InetAddress.getLocalHost(), 2002);
 		ServerWrapper follower = ServerWrapper.startedServerWrapper("testMajorityProgress-FOLLOWER", 2005, 2004, new File("/tmp/laminar2"));
@@ -316,9 +321,9 @@ public class TestCluster {
 			configResult.waitForCommitted();
 			
 			// Now, send another message on client1 and 2 on client2.
-			ClientResult client1_1 = client1.sendTemp(new byte[] {1});
-			ClientResult client2_1 = client2.sendTemp(new byte[] {2});
-			ClientResult client2_2 = client2.sendTemp(new byte[] {3});
+			ClientResult client1_1 = client1.sendTemp(topic, new byte[] {1});
+			ClientResult client2_1 = client2.sendTemp(topic, new byte[] {2});
+			ClientResult client2_2 = client2.sendTemp(topic, new byte[] {3});
 			
 			// We can wait for these to commit at once, to stress the ordering further.
 			client1_1.waitForCommitted();
@@ -342,6 +347,7 @@ public class TestCluster {
 	 */
 	@Test
 	public void testPoisonClusterSwitch() throws Throwable {
+		TopicName topic = TopicName.fromString("test");
 		ServerWrapper leader = ServerWrapper.startedServerWrapper("testPoisonClusterSwitch-LEADER", 2003, 2002, new File("/tmp/laminar"));
 		InetSocketAddress leaderClientAddress = new InetSocketAddress(InetAddress.getLocalHost(), 2002);
 		ServerWrapper follower = ServerWrapper.startedServerWrapper("testPoisonClusterSwitch-FOLLOWER", 2005, 2004, new File("/tmp/laminar2"));
@@ -365,17 +371,17 @@ public class TestCluster {
 			ClusterConfig config = ClusterConfig.configFromEntries(new ConfigEntry[] {leaderInitial.entries[0], followerInitial.entries[0], follower2Config});
 			
 			// Send a normal message, the config update, the poison, and a normal message on client1.
-			ClientResult client1_1 = client1.sendTemp(new byte[] {1});
+			ClientResult client1_1 = client1.sendTemp(topic, new byte[] {1});
 			ClientResult configResult = client1.sendUpdateConfig(config);
-			ClientResult client1_2 = client1.sendPoison(new byte[] {2});
-			ClientResult client1_3 = client1.sendTemp(new byte[] {3});
+			ClientResult client1_2 = client1.sendPoison(topic, new byte[] {2});
+			ClientResult client1_3 = client1.sendTemp(topic, new byte[] {3});
 			
 			// Wait for them all to commit and then send a normal message on client2 and wait for it to commit.
 			client1_1.waitForCommitted();
 			configResult.waitForCommitted();
 			client1_2.waitForCommitted();
 			client1_3.waitForCommitted();
-			ClientResult client2_1 = client2.sendTemp(new byte[] {1});
+			ClientResult client2_1 = client2.sendTemp(topic, new byte[] {1});
 			client2_1.waitForCommitted();
 			
 			// Then, stop the existing follower, create another one.
@@ -384,9 +390,9 @@ public class TestCluster {
 			follower2 = ServerWrapper.startedServerWrapperWithUuid("testPoisonClusterSwitch-FOLLOWER2", follower2Uuid, 2007, 2006, new File("/tmp/laminar3"));
 			
 			// Send poison from client2 and a normal message from each client, then wait for everything to commit.
-			ClientResult client2_2 = client2.sendPoison(new byte[] {2});
-			ClientResult client1_4 = client1.sendTemp(new byte[] {4});
-			ClientResult client2_3 = client1.sendTemp(new byte[] {3});
+			ClientResult client2_2 = client2.sendPoison(topic, new byte[] {2});
+			ClientResult client1_4 = client1.sendTemp(topic, new byte[] {4});
+			ClientResult client2_3 = client1.sendTemp(topic, new byte[] {3});
 			client2_2.waitForCommitted();
 			client1_4.waitForCommitted();
 			client2_3.waitForCommitted();
@@ -416,6 +422,7 @@ public class TestCluster {
 	 */
 	@Test
 	public void testForceLeader() throws Throwable {
+		TopicName topic = TopicName.fromString("test");
 		UUID server1Uuid = UUID.randomUUID();
 		UUID server2Uuid = UUID.randomUUID();
 		ServerWrapper server1 = ServerWrapper.startedServerWrapperWithUuid("testForceLeader-1", server1Uuid, 2003, 2002, new File("/tmp/laminar"));
@@ -424,13 +431,13 @@ public class TestCluster {
 		InetSocketAddress server2Address= new InetSocketAddress(InetAddress.getLocalHost(), 2004);
 		
 		// Start the listeners.
-		CaptureListener listener1 = new CaptureListener(server1Address, 3);
-		CaptureListener listener2 = new CaptureListener(server2Address, 3);
+		CaptureListener listener1 = new CaptureListener(server1Address, topic, 3);
+		CaptureListener listener2 = new CaptureListener(server2Address, topic, 3);
 		listener1.setName("1");
 		listener2.setName("2");
 		listener1.start();
 		listener2.start();
-		CaptureListener timingListener = new CaptureListener(server2Address, 1);
+		CaptureListener timingListener = new CaptureListener(server2Address, topic, 1);
 		timingListener.setName("timing");
 		timingListener.start();
 		
@@ -449,7 +456,7 @@ public class TestCluster {
 			configResult.waitForCommitted();
 			
 			// Send the initial message and wait for it to commit (which means it has made it to both nodes).
-			ClientResult result1 = client.sendTemp(new byte[] {1});
+			ClientResult result1 = client.sendTemp(topic, new byte[] {1});
 			result1.waitForCommitted();
 			// Wait until it commits on the other, too.
 			timingListener.waitForTerminate();
@@ -463,12 +470,12 @@ public class TestCluster {
 			}
 			
 			ClientConnection client2 = ClientConnection.open(server2Address);
-			client2.sendTemp(new byte[] {2}).waitForCommitted();
+			client2.sendTemp(topic, new byte[] {2}).waitForCommitted();
 			Assert.assertEquals(server2Address, client2.getCurrentServer());
 			client2.close();
 			
 			// Send the other message
-			ClientResult result2 = client.sendTemp(new byte[] {3});
+			ClientResult result2 = client.sendTemp(topic, new byte[] {3});
 			result2.waitForCommitted();
 			
 			// Finally, check that the listeners saw all the results.
@@ -492,23 +499,24 @@ public class TestCluster {
 	 */
 	@Test
 	public void testReconnectStress() throws Throwable {
+		TopicName topic = TopicName.fromString("test");
 		ServerWrapper server = ServerWrapper.startedServerWrapper("testReconnectStress", 2003, 2002, new File("/tmp/laminar"));
 		InetSocketAddress serverAddress = new InetSocketAddress(InetAddress.getLocalHost(), 2002);
 		
 		
 		ClientConnection client = ClientConnection.open(serverAddress);
 		try {
-			client.sendTemp(new byte[] {-1}).waitForCommitted();
+			client.sendTemp(topic, new byte[] {-1}).waitForCommitted();
 			// Send lots of messages and then force a reconnect, before we have blocked on any of them.
 			ClientResult[] results = new ClientResult[100];
 			for (int i = 0; i < 50; ++i) {
-				results[i] = client.sendTemp(new byte[] {(byte)i});
+				results[i] = client.sendTemp(topic, new byte[] {(byte)i});
 			}
 			// We can't force reconnect until the connection appears.
 			client.waitForConnection();
 			client.forceReconnect();
 			for (int i = 50; i < results.length; ++i) {
-				results[i] = client.sendTemp(new byte[] {(byte)i});
+				results[i] = client.sendTemp(topic, new byte[] {(byte)i});
 			}
 			for (int i = 0; i < results.length; ++i) {
 				results[i].waitForCommitted();
@@ -516,7 +524,7 @@ public class TestCluster {
 			client.forceReconnect();
 			ClientResult[] after = new ClientResult[10];
 			for (int i = 0; i < after.length; ++i) {
-				after[i] = client.sendTemp(new byte[] {(byte)i});
+				after[i] = client.sendTemp(topic, new byte[] {(byte)i});
 			}
 			for (int i = 0; i < after.length; ++i) {
 				after[i].waitForCommitted();
@@ -535,6 +543,7 @@ public class TestCluster {
 	 */
 	@Test
 	public void testLargeCluster() throws Throwable {
+		TopicName topic = TopicName.fromString("test");
 		// Create our config.
 		InetSocketAddress server1Address = new InetSocketAddress(InetAddress.getLocalHost(), 2001);
 		InetSocketAddress server2Address = new InetSocketAddress(InetAddress.getLocalHost(), 2002);
@@ -567,21 +576,21 @@ public class TestCluster {
 			client.sendUpdateConfig(config);
 			
 			// We want to send the messages in bursts as we bring more servers online.
-			_runBatch(client, 10, 0);
+			_runBatch(client, topic, 10, 0);
 			server4 = ServerWrapper.startedServerWrapperWithUuid("testLargeCluster-4", server4Uuid, 3004, 2004, new File("/tmp/laminar4"));
-			_runBatch(client, 10, 10);
+			_runBatch(client, topic, 10, 10);
 			server5 = ServerWrapper.startedServerWrapperWithUuid("testLargeCluster-5", server4Uuid, 3005, 2005, new File("/tmp/laminar5"));
-			_runBatch(client, 10, 20);
+			_runBatch(client, topic, 10, 20);
 			Assert.assertEquals(0, server2.stop());
 			server2 = null;
-			_runBatch(client, 10, 30);
+			_runBatch(client, topic, 10, 30);
 			Assert.assertEquals(0, server3.stop());
 			server3 = null;
 			
 			// Start a listener on each remaining server and verify we see all 40 mutations.
-			EventRecord[] records1 = _listenOnServer(server1Address, client.getClientId(), 40);
-			EventRecord[] records4 = _listenOnServer(server4Address, client.getClientId(), 40);
-			EventRecord[] records5 = _listenOnServer(server5Address, client.getClientId(), 40);
+			EventRecord[] records1 = _listenOnServer(server1Address, topic, client.getClientId(), 40);
+			EventRecord[] records4 = _listenOnServer(server4Address, topic, client.getClientId(), 40);
+			EventRecord[] records5 = _listenOnServer(server5Address, topic, client.getClientId(), 40);
 			for (int i = 0; i < 40; ++i) {
 				Assert.assertEquals((byte)i, records1[i].payload[0]);
 				Assert.assertEquals((byte)i, records4[i].payload[0]);
@@ -612,6 +621,7 @@ public class TestCluster {
 	 */
 	@Test
 	public void testElectionTimeout() throws Throwable {
+		TopicName topic = TopicName.fromString("test");
 		// Create our config.
 		InetSocketAddress server1Address = new InetSocketAddress(InetAddress.getLocalHost(), 2001);
 		InetSocketAddress server2Address = new InetSocketAddress(InetAddress.getLocalHost(), 2002);
@@ -645,19 +655,19 @@ public class TestCluster {
 			client.sendUpdateConfig(config);
 			
 			// We want to send the messages in bursts as we bring more servers online.
-			_runBatch(client, 10, 0);
+			_runBatch(client, topic, 10, 0);
 			_rotateServer(serverUuids, config, servers, client);
-			_runBatch(client, 10, 10);
+			_runBatch(client, topic, 10, 10);
 			_rotateServer(serverUuids, config, servers, client);
-			_runBatch(client, 10, 20);
+			_runBatch(client, topic, 10, 20);
 			_rotateServer(serverUuids, config, servers, client);
-			_runBatch(client, 10, 30);
+			_runBatch(client, topic, 10, 30);
 			
-			EventRecord[] records1 = _listenOnServer(server1Address, client.getClientId(), 40);
-			EventRecord[] records2 = _listenOnServer(server2Address, client.getClientId(), 40);
-			EventRecord[] records3 = _listenOnServer(server3Address, client.getClientId(), 40);
-			EventRecord[] records4 = _listenOnServer(server4Address, client.getClientId(), 40);
-			EventRecord[] records5 = _listenOnServer(server5Address, client.getClientId(), 40);
+			EventRecord[] records1 = _listenOnServer(server1Address, topic, client.getClientId(), 40);
+			EventRecord[] records2 = _listenOnServer(server2Address, topic, client.getClientId(), 40);
+			EventRecord[] records3 = _listenOnServer(server3Address, topic, client.getClientId(), 40);
+			EventRecord[] records4 = _listenOnServer(server4Address, topic, client.getClientId(), 40);
+			EventRecord[] records5 = _listenOnServer(server5Address, topic, client.getClientId(), 40);
 			for (int i = 0; i < 40; ++i) {
 				Assert.assertEquals((byte)i, records1[i].payload[0]);
 				Assert.assertEquals((byte)i, records2[i].payload[0]);
@@ -675,17 +685,17 @@ public class TestCluster {
 	}
 
 
-	private EventRecord[] _listenOnServer(InetSocketAddress serverAddress, UUID clientUuid, int count) throws Throwable {
-		CaptureListener listener = new CaptureListener(serverAddress, count);
+	private EventRecord[] _listenOnServer(InetSocketAddress serverAddress, TopicName topic, UUID clientUuid, int count) throws Throwable {
+		CaptureListener listener = new CaptureListener(serverAddress, topic, count);
 		listener.skipNonceCheck(clientUuid, 1L);
 		listener.start();
 		return listener.waitForTerminate();
 	}
 
-	private void _runBatch(ClientConnection client, int size, int bias) throws Throwable {
+	private void _runBatch(ClientConnection client, TopicName topic, int size, int bias) throws Throwable {
 		ClientResult results[] = new ClientResult[size];
 		for (int i = 0; i < results.length; ++i) {
-			results[i] = client.sendTemp(new byte[] {(byte)(i + bias)});
+			results[i] = client.sendTemp(topic, new byte[] {(byte)(i + bias)});
 		}
 		for (int i = 0; i < results.length; ++i) {
 			results[i].waitForCommitted();

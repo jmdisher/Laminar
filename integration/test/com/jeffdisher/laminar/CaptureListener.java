@@ -11,6 +11,7 @@ import org.junit.Assert;
 import com.jeffdisher.laminar.client.ListenerConnection;
 import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.types.EventRecord;
+import com.jeffdisher.laminar.types.TopicName;
 
 
 /**
@@ -23,8 +24,8 @@ public class CaptureListener extends Thread {
 	private UUID _configSender;
 	private long _configNonce;
 	
-	public CaptureListener(InetSocketAddress address, int messagesToCapture) throws IOException {
-		_listener = ListenerConnection.open(address, 0L);
+	public CaptureListener(InetSocketAddress address, TopicName topic, int messagesToCapture) throws IOException {
+		_listener = ListenerConnection.open(address, topic, 0L);
 		_captured = new EventRecord[messagesToCapture];
 	}
 	

@@ -39,7 +39,7 @@ public class TestClientsAndListeners {
 		ServerWrapper wrapper = ServerWrapper.startedServerWrapper("testSimpleClient", 2003, 2002, new File("/tmp/laminar"));
 		
 		try (ClientConnection client = ClientConnection.open(new InetSocketAddress(InetAddress.getLocalHost(), 2002))) {
-			ClientResult result = client.sendTemp("Hello World!".getBytes());
+			ClientResult result = client.sendTemp(TopicName.fromString("test"), "Hello World!".getBytes());
 			result.waitForReceived();
 			long commitOffset = result.waitForCommitted();
 			Assert.assertEquals(1L, commitOffset);
@@ -49,6 +49,7 @@ public class TestClientsAndListeners {
 
 	@Test
 	public void testSimpleClientAndListeners() throws Throwable {
+		TopicName topic = TopicName.fromString("test");
 		byte[] message = "Hello World!".getBytes();
 		// Here, we start up, connect a client, send one message, wait for it to commit, observe listener behaviour, then shut everything down.
 		
@@ -57,11 +58,11 @@ public class TestClientsAndListeners {
 		
 		// Start a listener before the client begins.
 		CountDownLatch beforeLatch = new CountDownLatch(1);
-		ListenerThread beforeListener = new ListenerThread("testSimpleClientAndListeners-before", address, message, beforeLatch);
+		ListenerThread beforeListener = new ListenerThread("testSimpleClientAndListeners-before", address, topic, message, beforeLatch);
 		beforeListener.start();
 		
 		try (ClientConnection client = ClientConnection.open(address)) {
-			ClientResult result = client.sendTemp(message);
+			ClientResult result = client.sendTemp(topic, message);
 			result.waitForReceived();
 			long commitOffset = result.waitForCommitted();
 			Assert.assertEquals(1L, commitOffset);
@@ -69,7 +70,7 @@ public class TestClientsAndListeners {
 		
 		// Start a listener after the client begins.
 		CountDownLatch afterLatch = new CountDownLatch(1);
-		ListenerThread afterListener = new ListenerThread("testSimpleClientAndListeners-after", address, message, afterLatch);
+		ListenerThread afterListener = new ListenerThread("testSimpleClientAndListeners-after", address, topic, message, afterLatch);
 		afterListener.start();
 		
 		// Verify that both listeners received the event.
@@ -84,6 +85,7 @@ public class TestClientsAndListeners {
 
 	@Test
 	public void testClientForceDisconnect() throws Throwable {
+		TopicName topic = TopicName.fromString("test");
 		byte[] message = "Hello World!".getBytes();
 		// Here, we start up, connect a client, send one message, wait for it to commit, observe listener behaviour, then shut everything down.
 		
@@ -91,9 +93,9 @@ public class TestClientsAndListeners {
 		InetSocketAddress address = new InetSocketAddress(InetAddress.getLocalHost(), 2002);
 		
 		try (ClientConnection client = ClientConnection.open(address)) {
-			ClientResult result1 = client.sendTemp(message);
-			ClientResult result2 = client.sendTemp(message);
-			ClientResult result3 = client.sendTemp(message);
+			ClientResult result1 = client.sendTemp(topic, message);
+			ClientResult result2 = client.sendTemp(topic, message);
+			ClientResult result3 = client.sendTemp(topic, message);
 			result1.waitForReceived();
 			result2.waitForReceived();
 			result3.waitForReceived();
@@ -106,12 +108,13 @@ public class TestClientsAndListeners {
 
 	@Test
 	public void testClientFailedConnection() throws Throwable {
+		TopicName topic = TopicName.fromString("test");
 		byte[] message = "Hello World!".getBytes();
 		InetSocketAddress address = new InetSocketAddress(InetAddress.getLocalHost(), 2002);
 		
 		try (ClientConnection client = ClientConnection.open(address)) {
 			// Even though we aren't yet connected, the client can technically still attempt to send messages.
-			client.sendTemp(message);
+			client.sendTemp(topic, message);
 
 			// Block until the connection observes failure.
 			boolean didThrow = false;
@@ -126,9 +129,10 @@ public class TestClientsAndListeners {
 
 	@Test
 	public void testListenerFailedConnection() throws Throwable {
+		TopicName topic = TopicName.fromString("test");
 		InetSocketAddress address = new InetSocketAddress(InetAddress.getLocalHost(), 2002);
 		CountDownLatch latch = new CountDownLatch(1);
-		ListenerThread listener = new ListenerThread("testListenerFailedConnection", address, null, latch);
+		ListenerThread listener = new ListenerThread("testListenerFailedConnection", address, topic, null, latch);
 		listener.start();
 		
 		// Block until the connection observes failure.
@@ -147,13 +151,14 @@ public class TestClientsAndListeners {
 
 	@Test
 	public void testSimpleClientWaitForConnection() throws Throwable {
+		TopicName topic = TopicName.fromString("test");
 		// Here, we start up, connect a client, send one message, wait for it to commit, then shut everything down.
 		ServerWrapper wrapper = ServerWrapper.startedServerWrapper("testSimpleClientWaitForConnection", 2003, 2002, new File("/tmp/laminar"));
 		
 		// It should always be harmless to wait for connection over and over so just do that here.
 		try (ClientConnection client = ClientConnection.open(new InetSocketAddress(InetAddress.getLocalHost(), 2002))) {
 			client.waitForConnection();
-			ClientResult result = client.sendTemp("Hello World!".getBytes());
+			ClientResult result = client.sendTemp(topic, "Hello World!".getBytes());
 			client.waitForConnection();
 			result.waitForReceived();
 			client.waitForConnection();
@@ -254,12 +259,13 @@ public class TestClientsAndListeners {
 
 	@Test
 	public void testSimplePoisonCase() throws Throwable {
+		TopicName topic = TopicName.fromString("test");
 		// Here, we start up, connect a client, send one message, wait for it to commit, observe listener behaviour, then shut everything down.
 		ServerWrapper wrapper = ServerWrapper.startedServerWrapper("testSimplePoisonCase", 2003, 2002, new File("/tmp/laminar"));
 		InetSocketAddress address = new InetSocketAddress(InetAddress.getLocalHost(), 2002);
 		
 		// Start a listener before the client begins.
-		CaptureListener beforeListener = new CaptureListener(address, 21);
+		CaptureListener beforeListener = new CaptureListener(address, topic, 21);
 		beforeListener.setName("Before");
 		beforeListener.start();
 		
@@ -267,11 +273,11 @@ public class TestClientsAndListeners {
 			// Send 10 messages, then a poison, then another 10 messages.  After, wait for them all to commit.
 			ClientResult[] results = new ClientResult[21];
 			for (int i = 0; i < 10; ++i) {
-				results[i] = client.sendTemp(new byte[] {(byte)i});
+				results[i] = client.sendTemp(topic, new byte[] {(byte)i});
 			}
-			results[10] = client.sendPoison(new byte[] {10});
+			results[10] = client.sendPoison(topic, new byte[] {10});
 			for (int i = 11; i < results.length; ++i) {
-				results[i] = client.sendTemp(new byte[] {(byte)i});
+				results[i] = client.sendTemp(topic, new byte[] {(byte)i});
 			}
 			for (int i = 0; i < results.length; ++i) {
 				results[i].waitForReceived();
@@ -283,7 +289,7 @@ public class TestClientsAndListeners {
 		}
 		
 		// Start a listener after the client is done.
-		CaptureListener afterListener = new CaptureListener(address, 21);
+		CaptureListener afterListener = new CaptureListener(address, topic, 21);
 		afterListener.setName("After");
 		afterListener.start();
 		
@@ -371,6 +377,7 @@ public class TestClientsAndListeners {
 	 */
 	@Test
 	public void testReconnectAndFailOver() throws Throwable {
+		TopicName topic = TopicName.fromString("test");
 		InetSocketAddress server1Address = new InetSocketAddress(InetAddress.getLocalHost(), 2001);
 		InetSocketAddress server2Address = new InetSocketAddress(InetAddress.getLocalHost(), 2002);
 		InetSocketAddress server3Address = new InetSocketAddress(InetAddress.getLocalHost(), 2003);
@@ -386,7 +393,7 @@ public class TestClientsAndListeners {
 		ServerWrapper server2 = ServerWrapper.startedServerWrapperWithUuid("testReconnectAndFailOver-2", server2Uuid, 3002, 2002, new File("/tmp/laminar2"));
 		ServerWrapper server3 = ServerWrapper.startedServerWrapperWithUuid("testReconnectAndFailOver-3", server3Uuid, 3003, 2003, new File("/tmp/laminar3"));
 		
-		CaptureListener timingListener = new CaptureListener(server2Address, 1);
+		CaptureListener timingListener = new CaptureListener(server2Address, topic, 1);
 		timingListener.start();
 		UUID clientUuid = null;
 		
@@ -396,7 +403,7 @@ public class TestClientsAndListeners {
 			client.waitForConnection();
 			long commitOffset = client.sendUpdateConfig(config).waitForCommitted();
 			Assert.assertEquals(1L, commitOffset);
-			commitOffset = client.sendTemp(new byte[] {1}).waitForCommitted();
+			commitOffset = client.sendTemp(topic, new byte[] {1}).waitForCommitted();
 			Assert.assertEquals(2L, commitOffset);
 			
 			// Stop the leader and ask another node to become leader then see if we can continue sending messages.
@@ -409,12 +416,12 @@ public class TestClientsAndListeners {
 				adhoc.getInputStream().read();
 			}
 			
-			commitOffset = client.sendTemp(new byte[] {2}).waitForCommitted();
+			commitOffset = client.sendTemp(topic, new byte[] {2}).waitForCommitted();
 			Assert.assertEquals(3L, commitOffset);
-			commitOffset = client.sendTemp(new byte[] {3}).waitForCommitted();
+			commitOffset = client.sendTemp(topic, new byte[] {3}).waitForCommitted();
 			Assert.assertEquals(4L, commitOffset);
 		}
-		CaptureListener counting = new CaptureListener(server2Address, 3);
+		CaptureListener counting = new CaptureListener(server2Address, topic, 3);
 		counting.skipNonceCheck(clientUuid, 1L);
 		counting.start();
 		counting.waitForTerminate();
@@ -422,6 +429,55 @@ public class TestClientsAndListeners {
 		// Shut down.
 		Assert.assertEquals(0, server2.stop());
 		Assert.assertEquals(0, server3.stop());
+	}
+
+	/**
+	 * Tests that messages sent do different topics are read properly by their associated listeners.
+	 */
+	@Test
+	public void testTopicMultiplexing() throws Throwable {
+		TopicName topic1 = TopicName.fromString("one");
+		TopicName topic2 = TopicName.fromString("two");
+		ServerWrapper server1 = ServerWrapper.startedServerWrapper("testTopicMultiplexing", 3001, 2001, new File("/tmp/laminar1"));
+		InetSocketAddress serverAddress = new InetSocketAddress(InetAddress.getLocalHost(), 2001);
+		
+		try (ClientConnection client = ClientConnection.open(serverAddress)) {
+			// Send 10 messages, alternating between topics.
+			ClientResult[] results = new ClientResult[10];
+			for (int i = 0; i < 10; ++i) {
+				TopicName topic = (0 == (i % 2))
+						? topic1
+						: topic2;
+				results[i] = client.sendTemp(topic, new byte[] { (byte)i });
+			}
+			for (int i = 0; i < 10; ++i) {
+				long mutationOffset = results[i].waitForCommitted();
+				// These were sent by one client so commit, in-order.
+				Assert.assertEquals((i + 1), (int)mutationOffset);
+			}
+		}
+		ListenerConnection listener1 = ListenerConnection.open(serverAddress, topic1, 0L);
+		ListenerConnection listener2 = ListenerConnection.open(serverAddress, topic2, 0L);
+		for (int i = 0; i < 5; ++i) {
+			EventRecord event1 = listener1.pollForNextEvent();
+			EventRecord event2 = listener2.pollForNextEvent();
+			
+			// Test that we see everything interleaved for these 2, corresponding to how we posted.
+			Assert.assertEquals((2 * i) + 1, (int)event1.clientNonce);
+			Assert.assertEquals((2 * i) + 2, (int)event2.clientNonce);
+			
+			Assert.assertEquals((2 * i) + 1, (int)event1.globalOffset);
+			Assert.assertEquals((2 * i) + 2, (int)event2.globalOffset);
+			
+			// (these contain the raw TEMP payloads, too).
+			Assert.assertEquals((2 * i), Byte.toUnsignedInt(event1.payload[0]));
+			Assert.assertEquals((2 * i) + 1, Byte.toUnsignedInt(event2.payload[0]));
+		}
+		listener1.close();
+		listener2.close();
+		
+		// Shut down.
+		Assert.assertEquals(0, server1.stop());
 	}
 
 
@@ -460,12 +516,12 @@ public class TestClientsAndListeners {
 		private final CountDownLatch _latch;
 		public final ListenerConnection listener;
 		
-		public ListenerThread(String name, InetSocketAddress address, byte[] message, CountDownLatch latch) throws IOException {
+		public ListenerThread(String name, InetSocketAddress address, TopicName topic, byte[] message, CountDownLatch latch) throws IOException {
 			super(name);
 			_message = message;
 			_latch = latch;
 			// We want to expose the connection so tests can request it shut down.
-			this.listener = ListenerConnection.open(address, 0L);
+			this.listener = ListenerConnection.open(address, topic, 0L);
 		}
 		
 		@Override

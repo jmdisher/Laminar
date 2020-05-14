@@ -51,11 +51,14 @@ public class ListenerConnection implements Closeable, INetworkManagerBackgroundC
 	 * @return An initialized, but not yet connected, listener.
 	 * @throws IOException Something went wrong in initializing the network layer.
 	 */
-	public static ListenerConnection open(InetSocketAddress server, long previousLocalOffset) throws IOException {
+	public static ListenerConnection open(InetSocketAddress server, TopicName listeningTopic, long previousLocalOffset) throws IOException {
 		if (null == server) {
 			throw new IllegalArgumentException("Address cannot be null");
 		}
-		ListenerConnection connection = new ListenerConnection(server, previousLocalOffset);
+		if (listeningTopic.string.isEmpty()) {
+			throw new IllegalArgumentException("Cannot listen to empty topic");
+		}
+		ListenerConnection connection = new ListenerConnection(server, listeningTopic, previousLocalOffset);
 		connection._network.startAndWaitForReady("ListenerConnection");
 		connection._network.createOutgoingConnection(server);
 		return connection;
@@ -75,6 +78,7 @@ public class ListenerConnection implements Closeable, INetworkManagerBackgroundC
 	private boolean _isPollActive;
 	private boolean _didSendListen;
 	private int _pendingMessages;
+	private final TopicName _listeningTopic;
 	private long _previousLocalOffset;
 
 	// Due to reconnection requirements, it is possible to fail a connection but not want to bring down the system.
@@ -85,13 +89,14 @@ public class ListenerConnection implements Closeable, INetworkManagerBackgroundC
 	// To avoid a hard-spin when host is down, we will set this flag when we encounter a connection failure.
 	private boolean _shouldSleepBeforeNextConnection;
 
-	private ListenerConnection(InetSocketAddress server, long previousLocalOffset) throws IOException {
+	private ListenerConnection(InetSocketAddress server, TopicName listeningTopic, long previousLocalOffset) throws IOException {
 		_serverAddress = server;
 		_network = NetworkManager.outboundOnly(this);
 		_keepRunning = true;
 		// We "sent" listen until a new connection opens and then it is set to false.
 		_didSendListen = true;
 		_pendingMessages = 0;
+		_listeningTopic = listeningTopic;
 		_previousLocalOffset = previousLocalOffset;
 	}
 
@@ -267,9 +272,7 @@ public class ListenerConnection implements Closeable, INetworkManagerBackgroundC
 			if (!_didSendListen) {
 				Assert.assertTrue(null != _connection);
 				// The connection opened but we haven't send the listen message.
-				// For this fifth step, we just use a fake topic on the listener side.
-				TopicName topic = TopicName.fromString("fake");
-				ClientMessage listen = ClientMessage.listen(topic, previousLocalOffset);
+				ClientMessage listen = ClientMessage.listen(_listeningTopic, previousLocalOffset);
 				boolean didSend = _network.trySendMessage(_connection, listen.serialize());
 				// We had the _canWrite, so this can't fail.
 				Assert.assertTrue(didSend);

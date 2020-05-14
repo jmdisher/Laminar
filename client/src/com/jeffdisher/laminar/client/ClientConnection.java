@@ -159,17 +159,19 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 		}
 	}
 
-	public ClientResult sendTemp(byte[] payload) {
+	public ClientResult sendTemp(TopicName topic, byte[] payload) {
 		Assert.assertTrue(Thread.currentThread() != _internalThread);
-		// For this third step, we just use a fake topic in the ClientMessage.
-		TopicName topic = TopicName.fromString("fake");
+		if (topic.string.isEmpty()) {
+			throw new IllegalArgumentException("Cannot post to empty topic");
+		}
 		return _externalWaitForMessageSetup((nonce) -> ClientMessage.temp(nonce, topic, payload));
 	}
 
-	public ClientResult sendPoison(byte[] payload) {
+	public ClientResult sendPoison(TopicName topic, byte[] payload) {
 		Assert.assertTrue(Thread.currentThread() != _internalThread);
-		// For this third step, we just use a fake topic in the ClientMessage.
-		TopicName topic = TopicName.fromString("fake");
+		if (topic.string.isEmpty()) {
+			throw new IllegalArgumentException("Cannot post to empty topic");
+		}
 		return _externalWaitForMessageSetup((nonce) -> ClientMessage.poison(nonce, topic, payload));
 	}
 
