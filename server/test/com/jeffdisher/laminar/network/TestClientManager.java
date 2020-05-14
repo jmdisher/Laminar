@@ -96,7 +96,7 @@ public class TestClientManager {
 	@Test
 	public void testSendCommitResponse() throws Throwable {
 		// Create a message.
-		ClientMessage message = ClientMessage.temp(1L, TopicName.fromString("fake"), new byte[] {0,1,2,3});
+		ClientMessage message = ClientMessage.temp(1L, TopicName.fromString("test"), new byte[] {0,1,2,3});
 		// Create a server.
 		int port = PORT_BASE + 2;
 		ServerSocketChannel socket = TestingHelpers.createServerSocket(port);
@@ -160,7 +160,8 @@ public class TestClientManager {
 	@Test
 	public void testSendEvent() throws Throwable {
 		// Create an event record.
-		EventRecord record = EventRecord.generateRecord(EventRecordType.TEMP, 1L, 1L, TopicName.fromString("fake"), 1L, UUID.randomUUID(), 1L, new byte[] { 1, 2, 3});
+		TopicName topic = TopicName.fromString("test");
+		EventRecord record = EventRecord.generateRecord(EventRecordType.TEMP, 1L, 1L, topic, 1L, UUID.randomUUID(), 1L, new byte[] { 1, 2, 3});
 		// Create a server.
 		int port = PORT_BASE + 3;
 		ServerSocketChannel socket = TestingHelpers.createServerSocket(port);
@@ -173,7 +174,7 @@ public class TestClientManager {
 			NetworkManager.NodeToken connectedNode = callbacks.runRunnableAndGetNewClientNode(manager);
 			Assert.assertNotNull(connectedNode);
 			// Write the listen since we want to go into the listener state.
-			TestingHelpers.writeMessageInFrame(client.getOutputStream(), ClientMessage.listen(0L).serialize());
+			TestingHelpers.writeMessageInFrame(client.getOutputStream(), ClientMessage.listen(topic, 0L).serialize());
 			InputStream fromServer = client.getInputStream();
 			
 			// Run 1 callback to receive the LISTEN.

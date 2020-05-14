@@ -51,15 +51,16 @@ public class ClientMessage {
 	 * Sends a listen request when a new connection wants to be a read-only listener instead of a normal client (for
 	 * which they would have sent a handshake).
 	 * 
+	 * @param topic The topic to which this client will listen.
 	 * @param previousLocalOffset The most recent local offset the listener has seen (0 for first request).
 	 * @return A new ClientMessageInstance.
 	 */
-	public static ClientMessage listen(long previousLocalOffset) {
+	public static ClientMessage listen(TopicName topic, long previousLocalOffset) {
 		// We just want to make sure that the offset is non-negative (0 is common since that is the first request).
 		Assert.assertTrue(previousLocalOffset >= 0L);
 		
 		// Note that we overload the usual "nonce" field for the previousLocalOffset, since the messages are otherwise the same.
-		return new ClientMessage(ClientMessageType.LISTEN, previousLocalOffset, ClientMessagePayload_Listen.create());
+		return new ClientMessage(ClientMessageType.LISTEN, previousLocalOffset, ClientMessagePayload_Listen.create(topic));
 	}
 
 	/**

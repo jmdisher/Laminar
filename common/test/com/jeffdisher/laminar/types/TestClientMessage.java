@@ -29,10 +29,11 @@ public class TestClientMessage {
 
 	@Test
 	public void testListenMessage() throws Throwable {
+		TopicName topic = TopicName.fromString("test");
 		long previousLocalOffset = 5L;
-		ClientMessage input = ClientMessage.listen(previousLocalOffset);
+		ClientMessage input = ClientMessage.listen(topic, previousLocalOffset);
 		byte[] serialized = input.serialize();
-		Assert.assertEquals(Byte.BYTES + Long.BYTES, serialized.length);
+		Assert.assertEquals(Byte.BYTES + Long.BYTES + topic.serializedSize(), serialized.length);
 		ClientMessage output = ClientMessage.deserialize(serialized);
 		Assert.assertEquals(input.type, output.type);
 		Assert.assertEquals(input.nonce, output.nonce);

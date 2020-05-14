@@ -10,6 +10,7 @@ import com.jeffdisher.laminar.types.ClientMessage;
 import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.types.EventRecord;
 import com.jeffdisher.laminar.types.EventRecordType;
+import com.jeffdisher.laminar.types.TopicName;
 import com.jeffdisher.laminar.utils.Assert;
 
 
@@ -266,7 +267,9 @@ public class ListenerConnection implements Closeable, INetworkManagerBackgroundC
 			if (!_didSendListen) {
 				Assert.assertTrue(null != _connection);
 				// The connection opened but we haven't send the listen message.
-				ClientMessage listen = ClientMessage.listen(previousLocalOffset);
+				// For this fifth step, we just use a fake topic on the listener side.
+				TopicName topic = TopicName.fromString("fake");
+				ClientMessage listen = ClientMessage.listen(topic, previousLocalOffset);
 				boolean didSend = _network.trySendMessage(_connection, listen.serialize());
 				// We had the _canWrite, so this can't fail.
 				Assert.assertTrue(didSend);

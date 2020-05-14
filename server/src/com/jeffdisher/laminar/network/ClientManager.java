@@ -19,13 +19,13 @@ import com.jeffdisher.laminar.components.NetworkManager;
 import com.jeffdisher.laminar.state.StateSnapshot;
 import com.jeffdisher.laminar.types.ClientMessage;
 import com.jeffdisher.laminar.types.ClientMessagePayload_Handshake;
+import com.jeffdisher.laminar.types.ClientMessagePayload_Listen;
 import com.jeffdisher.laminar.types.ClientMessagePayload_Reconnect;
 import com.jeffdisher.laminar.types.ClientResponse;
 import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.types.ConfigEntry;
 import com.jeffdisher.laminar.types.EventRecord;
 import com.jeffdisher.laminar.types.MutationRecord;
-import com.jeffdisher.laminar.types.TopicName;
 import com.jeffdisher.laminar.utils.Assert;
 
 
@@ -458,6 +458,7 @@ public class ClientManager implements IClientManager, INetworkManagerBackgroundC
 		case LISTEN: {
 			// This is the first message a client sends when they want to register as a listener.
 			// In this case, they won't send any other messages to us and just expect a constant stream of raw EventRecords to be sent to them.
+			ClientMessagePayload_Listen listen = (ClientMessagePayload_Listen)incoming.payload;
 			
 			// Note that this message overloads the nonce as the last received local offset.
 			long lastReceivedLocalOffset = incoming.nonce;
@@ -466,9 +467,7 @@ public class ClientManager implements IClientManager, INetworkManagerBackgroundC
 			}
 			
 			// Create the new state and change the connection state in the maps.
-			// For this fourth step, we just use a fake topic from the listener.
-			TopicName topic = TopicName.fromString("fake");
-			ListenerState state = new ListenerState(topic, lastReceivedLocalOffset);
+			ListenerState state = new ListenerState(listen.topic, lastReceivedLocalOffset);
 			boolean didRemove = _newClients.remove(client);
 			Assert.assertTrue(didRemove);
 			_listenerClients.put(client, state);
