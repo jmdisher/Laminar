@@ -60,14 +60,8 @@ public class ClientManager implements IClientManager, INetworkManagerBackgroundC
 	private final Map<Long, ClientCommitTuple> _pendingMessageCommits;
 	// Clients which we want to disconnect but are currently waiting for them to become write-ready to know that the buffer has been flushed.
 	private final Set<NetworkManager.NodeToken> _closingClients;
-	// This is a map of local offsets to the list of listener clients waiting for them.
-	// A key is only in this map if a load request for it is outstanding or it is an offset which hasn't yet been sent from a client.
-	// The map uses the ClientNode since these may have disconnected.
-	// Note that no listener should ever appear in _writableClients or _readableClients as these messages are sent immediately (since they would be unbounded buffers, otherwise).
-	// This also means that there is currently no asynchronous load/send on the listener path as it is fully lock-step between network and disk.  This will be changed later.
-	// (in the future, this will change to handle multiple topics).
-	private final Map<Long, List<NetworkManager.NodeToken>> _listenersWaitingOnLocalOffset;
 	private final Map<Long, List<ReconnectingClientState>> _reconnectingClientsByGlobalOffset;
+	private final ListenerManager _listenerManager;
 
 	public ClientManager(UUID serverUuid, ServerSocketChannel serverSocket, IClientManagerCallbacks callbacks) throws IOException {
 		_mainThread = Thread.currentThread();
@@ -82,8 +76,8 @@ public class ClientManager implements IClientManager, INetworkManagerBackgroundC
 		_listenerClients = new HashMap<>();
 		_pendingMessageCommits = new HashMap<>();
 		_closingClients = new HashSet<>();
-		_listenersWaitingOnLocalOffset = new HashMap<>();
 		_reconnectingClientsByGlobalOffset = new HashMap<>();
+		_listenerManager = new ListenerManager();
 	}
 
 	/**
@@ -132,6 +126,7 @@ public class ClientManager implements IClientManager, INetworkManagerBackgroundC
 			_networkManager.closeConnection(node);
 		}
 		_listenerClients.clear();
+		_listenerManager.removeAllWritableListeners();
 	}
 
 	@Override
@@ -152,18 +147,18 @@ public class ClientManager implements IClientManager, INetworkManagerBackgroundC
 		for (ListenerState listenerState : _listenerClients.values()) {
 			listenerState.highPriorityMessage = updateConfigPseudoRecord;
 		}
-		List<NetworkManager.NodeToken> waitingForNewEvent = _listenersWaitingOnLocalOffset.remove(snapshot.lastCommittedEventOffset);
-		if (null != waitingForNewEvent) {
-			for (NetworkManager.NodeToken node : waitingForNewEvent) {
-				ListenerState listenerState = _listenerClients.get(node);
-				// Make sure they are still connected.
-				if (null != listenerState) {
-					// Send this and clear it.
-					_sendEventToListener(node, updateConfigPseudoRecord);
-					Assert.assertTrue(updateConfigPseudoRecord == listenerState.highPriorityMessage);
-					listenerState.highPriorityMessage = null;
-				}
-			}
+		// Get and clear any writable listeners since we want to send this, now.
+		List<ListenerState> writableListeners = _listenerManager.removeAllWritableListeners();
+		for (ListenerState listener : writableListeners) {
+			// Nothing from this collection should be disconnected.
+			Assert.assertTrue(_listenerClients.containsKey(listener.token));
+			// Each element MUST have what we just stored.
+			Assert.assertTrue(updateConfigPseudoRecord == listener.highPriorityMessage);
+			
+			// Send this and clear it.
+			_sendEventToListener(listener.token, listener.highPriorityMessage);
+			Assert.assertTrue(updateConfigPseudoRecord == listener.highPriorityMessage);
+			listener.highPriorityMessage = null;
 		}
 	}
 
@@ -301,6 +296,7 @@ public class ClientManager implements IClientManager, INetworkManagerBackgroundC
 				if (null != removedListener) {
 					Assert.assertTrue(!removeConsistent);
 					System.out.println("Disconnect listener client");
+					_listenerManager.removeDisconnectedListener(removedListener);
 					removeConsistent = true;
 				}
 				if (removedClosing) {
@@ -348,7 +344,7 @@ public class ClientManager implements IClientManager, INetworkManagerBackgroundC
 						listenerState.highPriorityMessage = null;
 					} else {
 						// Normal syncing operation so either load or wait for the next event for this listener.
-						long nextLocalEventToFetch = _mainSetupListenerForNextEvent(node, listenerState, arg.lastCommittedEventOffset);
+						long nextLocalEventToFetch = _listenerManager.addWritableListener(listenerState);
 						if (-1 != nextLocalEventToFetch) {
 							_callbacks.mainRequestEventFetch(listenerState.topic, nextLocalEventToFetch);
 						}
@@ -528,43 +524,14 @@ public class ClientManager implements IClientManager, INetworkManagerBackgroundC
 		}
 	}
 
-	private long _mainSetupListenerForNextEvent(NetworkManager.NodeToken client, ListenerState state, long lastCommittedEventOffset) {
-		// Main thread helper.
-		Assert.assertTrue(Thread.currentThread() == _mainThread);
-		// See if there is a pending request for this offset.
-		long nextLocalOffset = state.lastSentLocalOffset + 1;
-		long nextLocalEventToFetch = -1;
-		List<NetworkManager.NodeToken> waitingList = _listenersWaitingOnLocalOffset.get(nextLocalOffset);
-		if (null == waitingList) {
-			// Nobody is currently waiting so set up the record.
-			waitingList = new LinkedList<>();
-			_listenersWaitingOnLocalOffset.put(nextLocalOffset, waitingList);
-			// Unless this is the next offset (meaning we are waiting for a client to send and commit it), then request the load.
-			// Note that this, like all uses of "local" or "event-based" offsets, will eventually need to be per-topic.
-			if (nextLocalOffset <= lastCommittedEventOffset) {
-				// We will need this entry fetched.
-				nextLocalEventToFetch = nextLocalOffset;
-			}
-		}
-		waitingList.add(client);
-		return nextLocalEventToFetch;
-	}
-
 	private void _mainSendRecordToListeners(TopicName topic, EventRecord record) {
 		// Main thread helper.
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
-		List<NetworkManager.NodeToken> waitingList = _listenersWaitingOnLocalOffset.remove(record.localOffset);
-		if (null != waitingList) {
-			for (NetworkManager.NodeToken node : waitingList) {
-				ListenerState listenerState = _listenerClients.get(node);
-				// (make sure this is still connected)
-				// Only send this event to the listener if they are listening to that topic.
-				if ((null != listenerState) && listenerState.topic.equals(topic)) {
-					_sendEventToListener(node, record);
-					// Update the state to be the offset of this event.
-					listenerState.lastSentLocalOffset = record.localOffset;
-				}
-			}
+		Set<ListenerState> listeners = _listenerManager.eventBecameAvailable(topic, record.localOffset);
+		for (ListenerState listenerState : listeners) {
+			_sendEventToListener(listenerState.token, record);
+			// Update the state to be the offset of this event.
+			listenerState.lastSentLocalOffset = record.localOffset;
 		}
 	}
 
