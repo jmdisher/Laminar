@@ -81,9 +81,9 @@ public class ClientManager implements IClientManager, INetworkManagerBackgroundC
 		_normalClientsById = new HashMap<>();
 		_listenerClients = new HashMap<>();
 		_pendingMessageCommits = new HashMap<>();
+		_closingClients = new HashSet<>();
 		_listenersWaitingOnLocalOffset = new HashMap<>();
 		_reconnectingClientsByGlobalOffset = new HashMap<>();
-		_closingClients = new HashSet<>();
 	}
 
 	/**
@@ -148,9 +148,8 @@ public class ClientManager implements IClientManager, INetworkManagerBackgroundC
 		// waiting on an in-progress disk fetch).
 		// We use the high-priority slot because it doesn't have a message queue and they don't need every update, just the most recent.
 		EventRecord updateConfigPseudoRecord = EventRecord.synthesizeRecordForConfig(newConfig);
-		// Set this in all of them and remove the ones we are going to eagerly handle.
-		for (NetworkManager.NodeToken node : _listenerClients.keySet()) {
-			ListenerState listenerState = _listenerClients.get(node);
+		// Set this in all the connected listeners, writable or not.
+		for (ListenerState listenerState : _listenerClients.values()) {
 			listenerState.highPriorityMessage = updateConfigPseudoRecord;
 		}
 		List<NetworkManager.NodeToken> waitingForNewEvent = _listenersWaitingOnLocalOffset.remove(snapshot.lastCommittedEventOffset);
@@ -287,7 +286,7 @@ public class ClientManager implements IClientManager, INetworkManagerBackgroundC
 					_normalClientsById.remove(removedClient.clientId);
 				}
 				boolean removedNormal = (null != removedClient);
-				boolean removedListener = (null != _listenerClients.remove(node));
+				ListenerState removedListener = _listenerClients.remove(node);
 				boolean removedClosing = _closingClients.remove(node);
 				boolean removeConsistent = false;
 				if (removedNew) {
@@ -299,7 +298,7 @@ public class ClientManager implements IClientManager, INetworkManagerBackgroundC
 					System.out.println("Disconnect normal client");
 					removeConsistent = true;
 				}
-				if (removedListener) {
+				if (null != removedListener) {
 					Assert.assertTrue(!removeConsistent);
 					System.out.println("Disconnect listener client");
 					removeConsistent = true;
@@ -402,7 +401,7 @@ public class ClientManager implements IClientManager, INetworkManagerBackgroundC
 	}
 
 
-	private long _mainTransitionNewConnectionState(NetworkManager.NodeToken client, ClientMessage incoming, long lastReceivedMutationOffset, long lastCommittedMutationOffset, ClusterConfig currentConfig, long lastCommittedEventOffset) {
+	private long _mainTransitionNewConnectionState(NetworkManager.NodeToken client, ClientMessage incoming, long lastReceivedMutationOffset, long lastCommittedMutationOffset, ClusterConfig currentConfig) {
 		long mutationOffsetToFetch = -1;
 		// Main thread helper.
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
@@ -463,12 +462,12 @@ public class ClientManager implements IClientManager, INetworkManagerBackgroundC
 			
 			// Note that this message overloads the nonce as the last received local offset.
 			long lastReceivedLocalOffset = incoming.nonce;
-			if ((lastReceivedLocalOffset < 0L) || (lastReceivedLocalOffset > lastCommittedEventOffset)) {
+			if (lastReceivedLocalOffset < 0L) {
 				Assert.unimplemented("This listener is invalid so disconnect it");
 			}
 			
 			// Create the new state and change the connection state in the maps.
-			ListenerState state = new ListenerState(listen.topic, lastReceivedLocalOffset);
+			ListenerState state = new ListenerState(client, listen.topic, lastReceivedLocalOffset);
 			boolean didRemove = _newClients.remove(client);
 			Assert.assertTrue(didRemove);
 			_listenerClients.put(client, state);
@@ -694,7 +693,7 @@ public class ClientManager implements IClientManager, INetworkManagerBackgroundC
 			
 			// We will ignore the nonce on a new connection.
 			// Note that the client maps are modified by this helper.
-			long mutationOffsetToFetch = _mainTransitionNewConnectionState(node, incoming, arg.lastReceivedMutationOffset, arg.lastCommittedMutationOffset, arg.currentConfig, arg.lastCommittedEventOffset);
+			long mutationOffsetToFetch = _mainTransitionNewConnectionState(node, incoming, arg.lastReceivedMutationOffset, arg.lastCommittedMutationOffset, arg.currentConfig);
 			if (-1 != mutationOffsetToFetch) {
 				// This might return an in-flight mutation, immediately.
 				MutationRecord nextToProcess = _callbacks.mainClientFetchMutationIfAvailable(mutationOffsetToFetch);

@@ -48,7 +48,7 @@ public interface IClientManager {
 
 	/**
 	 * Broadcast the given EventRecord to all attached listeners who were waiting for it.
-	 * This is called when a new EventRecord is committed.
+	 * This is called when a new EventRecord is committed or fetched from disk.
 	 * 
 	 * @param topic The topic where the event occurred.
 	 * @param record The committed EventRecord.
