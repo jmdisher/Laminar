@@ -1,6 +1,7 @@
 package com.jeffdisher.laminar.client;
 
 import com.jeffdisher.laminar.types.ClientMessage;
+import com.jeffdisher.laminar.types.CommitInfo;
 import com.jeffdisher.laminar.utils.Assert;
 
 
@@ -16,8 +17,7 @@ import com.jeffdisher.laminar.utils.Assert;
 public class ClientResult {
 	public final ClientMessage message;
 	private boolean _received;
-	private boolean _committed;
-	private long _committedOffset;
+	private CommitInfo _commitInfo;
 
 	public ClientResult(ClientMessage message) {
 		this.message = message;
@@ -43,15 +43,15 @@ public class ClientResult {
 	 * part of the cluster's mutation history in the order it was received.
 	 * This is the primary means of blocking on "completion" of the message.
 	 * 
-	 * @return The committed offset of the message (global to the cluster and unique for this message).
+	 * @return Description of how the commit was done.
 	 * @throws InterruptedException If the user code interrupted this thread.
 	 */
-	public synchronized long waitForCommitted() throws InterruptedException {
-		while (!_committed) {
+	public synchronized CommitInfo waitForCommitted() throws InterruptedException {
+		while (null == _commitInfo) {
 			// We allow the user to interrupt their own thread.
 			this.wait();
 		}
-		return _committedOffset;
+		return _commitInfo;
 	}
 
 	/**
@@ -67,17 +67,15 @@ public class ClientResult {
 	 * Called by the lower levels of the ClientConnection to notify that this message has been received on a majority of
 	 * the nodes in the cluster and will unavoidably be committed.
 	 * 
-	 * @param committedOffset The offset where this message was committed (global to the cluster and unique for this
-	 * message).
+	 * @param info Details of the how the message was committed.
 	 */
-	public synchronized void setCommitted(long committedOffset) {
+	public synchronized void setCommitted(CommitInfo info) {
 		// We can't be committed twice.
-		Assert.assertTrue(!_committed);
+		Assert.assertTrue(null == _commitInfo);
 		// The commit offset must be a positive number.
-		Assert.assertTrue(committedOffset > 0L);
+		Assert.assertTrue(info.mutationOffset > 0L);
 		
-		_committed = true;
-		_committedOffset = committedOffset;
+		_commitInfo = info;
 		this.notifyAll();
 	}
 
@@ -101,6 +99,6 @@ public class ClientResult {
 
 	@Override
 	public String toString() {
-		return "ClientResult(message=" + this.message + ", R=" + _received + ", C=" + _committed + ")";
+		return "ClientResult(message=" + this.message + ", R=" + _received + ", C=" + _commitInfo + ")";
 	}
 }

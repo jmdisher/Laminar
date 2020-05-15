@@ -41,13 +41,13 @@ public class TestClientResponse {
 		long nonce = 1000;
 		long thisCommitOffset = 1L;
 		long lastCommitGlobalOffset = 2L;
-		ClientResponse input = ClientResponse.committed(nonce, lastCommitGlobalOffset, thisCommitOffset);
+		ClientResponse input = ClientResponse.committed(nonce, lastCommitGlobalOffset, CommitInfo.create(thisCommitOffset));
 		byte[] serialized = input.serialize();
 		Assert.assertEquals(Byte.BYTES + Long.BYTES + Long.BYTES + Long.BYTES, serialized.length);
 		ClientResponse output = ClientResponse.deserialize(serialized);
 		Assert.assertEquals(input.type, output.type);
 		Assert.assertEquals(input.nonce, output.nonce);
 		Assert.assertEquals(input.lastCommitGlobalOffset, output.lastCommitGlobalOffset);
-		Assert.assertEquals(thisCommitOffset, ((ClientResponsePayload_Commit)output.payload).committedAsMutationOffset);
+		Assert.assertEquals(thisCommitOffset, ((ClientResponsePayload_Commit)output.payload).info.mutationOffset);
 	}
 }

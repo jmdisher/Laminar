@@ -58,13 +58,11 @@ public class ClientResponse {
 	 * 
 	 * @param nonce Per-client nonce of the message being acknowledged.
 	 * @param lastCommitGlobalOffset The most recent global message offset which was committed on the server.
-	 * @param committedAsMutationOffset The global offset of the mutation the message was committed as.
+	 * @param commitInfo Information describing the details of the commit action.
 	 * @return A new ClientResponse instance.
 	 */
-	public static ClientResponse committed(long nonce, long lastCommitGlobalOffset, long committedAsMutationOffset) {
-		// All commits must be positive numbers.
-		Assert.assertTrue(committedAsMutationOffset > 0L);
-		return new ClientResponse(ClientResponseType.COMMITTED, nonce, lastCommitGlobalOffset, ClientResponsePayload_Commit.create(committedAsMutationOffset));
+	public static ClientResponse committed(long nonce, long lastCommitGlobalOffset, CommitInfo commitInfo) {
+		return new ClientResponse(ClientResponseType.COMMITTED, nonce, lastCommitGlobalOffset, ClientResponsePayload_Commit.create(commitInfo));
 	}
 
 	/**

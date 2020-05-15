@@ -21,6 +21,7 @@ import com.jeffdisher.laminar.types.ClientResponsePayload_ClusterConfig;
 import com.jeffdisher.laminar.types.ClientResponsePayload_Commit;
 import com.jeffdisher.laminar.types.ClientResponsePayload_ConfigEntry;
 import com.jeffdisher.laminar.types.ClusterConfig;
+import com.jeffdisher.laminar.types.CommitInfo;
 import com.jeffdisher.laminar.types.ConfigEntry;
 import com.jeffdisher.laminar.types.TopicName;
 import com.jeffdisher.laminar.utils.Assert;
@@ -477,8 +478,8 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 			result.setReceived();
 			break;
 		case COMMITTED: {
-			long committedOffset = ((ClientResponsePayload_Commit)deserialized.payload).committedAsMutationOffset;
-			result.setCommitted(committedOffset);
+			CommitInfo info = ((ClientResponsePayload_Commit)deserialized.payload).info;
+			result.setCommitted(info);
 			// If the message has committed, we will no longer re-send it.
 			_inFlightMessages.remove(deserialized.nonce);
 		}

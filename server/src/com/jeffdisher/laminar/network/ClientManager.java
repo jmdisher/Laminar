@@ -23,6 +23,7 @@ import com.jeffdisher.laminar.types.ClientMessagePayload_Listen;
 import com.jeffdisher.laminar.types.ClientMessagePayload_Reconnect;
 import com.jeffdisher.laminar.types.ClientResponse;
 import com.jeffdisher.laminar.types.ClusterConfig;
+import com.jeffdisher.laminar.types.CommitInfo;
 import com.jeffdisher.laminar.types.ConfigEntry;
 import com.jeffdisher.laminar.types.EventRecord;
 import com.jeffdisher.laminar.types.MutationRecord;
@@ -581,7 +582,7 @@ public class ClientManager implements IClientManager, INetworkManagerBackgroundC
 		while (nonces.hasNext()) {
 			long nonceToCommit = nonces.next();
 			long commitOffsetOfMessage = correspondingCommits.next();
-			ClientResponse synthesizedCommit = ClientResponse.committed(nonceToCommit, lastCommittedMutationOffset, commitOffsetOfMessage);
+			ClientResponse synthesizedCommit = ClientResponse.committed(nonceToCommit, lastCommittedMutationOffset, CommitInfo.create(commitOffsetOfMessage));
 			_mainEnqueueMessageToClient(state.clientId, synthesizedCommit);
 		}
 		Assert.assertTrue(!correspondingCommits.hasNext());
@@ -614,7 +615,7 @@ public class ClientManager implements IClientManager, INetworkManagerBackgroundC
 							: state.mostRecentlySentServerCommitOffset;
 					_mainEnqueueMessageToClient(state.clientId, ClientResponse.received(record.clientNonce, lastCommitGlobalOffset));
 					if (willSendCommitted) {
-						_mainEnqueueMessageToClient(state.clientId, ClientResponse.committed(record.clientNonce, lastCommitGlobalOffset, record.globalOffset));
+						_mainEnqueueMessageToClient(state.clientId, ClientResponse.committed(record.clientNonce, lastCommitGlobalOffset, CommitInfo.create(record.globalOffset)));
 						state.mostRecentlySentServerCommitOffset = lastCommitGlobalOffset;
 					}
 					// Make sure to bump ahead the expected nonce, if this is later.
@@ -703,7 +704,7 @@ public class ClientManager implements IClientManager, INetworkManagerBackgroundC
 			state.correspondingCommitOffsets.add(globalOffsetOfCommit);
 		} else {
 			// Create the commit from the information in the tuple and send it to the client.
-			ClientResponse commit = ClientResponse.committed(tuple.clientNonce, globalOffsetOfCommit, globalOffsetOfCommit);
+			ClientResponse commit = ClientResponse.committed(tuple.clientNonce, globalOffsetOfCommit, CommitInfo.create(globalOffsetOfCommit));
 			_mainEnqueueMessageToClient(tuple.clientId, commit);
 		}
 	}

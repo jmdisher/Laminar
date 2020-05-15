@@ -20,6 +20,7 @@ import com.jeffdisher.laminar.types.ClientMessagePayload_Temp;
 import com.jeffdisher.laminar.types.ClientMessageType;
 import com.jeffdisher.laminar.types.ClientResponse;
 import com.jeffdisher.laminar.types.ClusterConfig;
+import com.jeffdisher.laminar.types.CommitInfo;
 import com.jeffdisher.laminar.types.ConfigEntry;
 import com.jeffdisher.laminar.types.TopicName;
 
@@ -279,7 +280,7 @@ public class TestClientConnection {
 	}
 
 	private void _sendCommitted(SocketChannel server, long nonce, long lastCommitGlobalOffset) throws IOException {
-		ClientResponse committed = ClientResponse.committed(nonce, lastCommitGlobalOffset, lastCommitGlobalOffset);
+		ClientResponse committed = ClientResponse.committed(nonce, lastCommitGlobalOffset, CommitInfo.create(lastCommitGlobalOffset));
 		byte[] raw = committed.serialize();
 		ByteBuffer writeBuffer = ByteBuffer.allocate(Short.BYTES + raw.length);
 		writeBuffer.putShort((short)raw.length).put(raw);
@@ -348,7 +349,7 @@ public class TestClientConnection {
 					Assert.assertNull(old);
 					if (committed) {
 						_mostRecentCommitOffset = thisMutationOffset;
-						_sendResponse(ClientResponse.committed(message.nonce, _mostRecentCommitOffset, thisMutationOffset));
+						_sendResponse(ClientResponse.committed(message.nonce, _mostRecentCommitOffset, CommitInfo.create(thisMutationOffset)));
 					}
 					_nextMutationOffset += 1L;
 				}
@@ -381,7 +382,7 @@ public class TestClientConnection {
 				ClientMessage oneToSendBack = this.messageByMutationOffset.get(globalMutationToLoad);
 				Assert.assertNotNull(oneToSendBack);
 				_sendResponse(ClientResponse.received(oneToSendBack.nonce, _mostRecentCommitOffset));
-				_sendResponse(ClientResponse.committed(oneToSendBack.nonce, _mostRecentCommitOffset, globalMutationToLoad));
+				_sendResponse(ClientResponse.committed(oneToSendBack.nonce, _mostRecentCommitOffset, CommitInfo.create(globalMutationToLoad)));
 				// We can also verify that they next nonce they gave us is for this message.
 				Assert.assertEquals(_clientNextNonce, oneToSendBack.nonce);
 				_clientNextNonce += 1L;
