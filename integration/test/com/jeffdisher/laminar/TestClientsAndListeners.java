@@ -21,6 +21,7 @@ import com.jeffdisher.laminar.types.ClientMessage;
 import com.jeffdisher.laminar.types.ClientResponse;
 import com.jeffdisher.laminar.types.ClientResponseType;
 import com.jeffdisher.laminar.types.ClusterConfig;
+import com.jeffdisher.laminar.types.CommitInfo;
 import com.jeffdisher.laminar.types.ConfigEntry;
 import com.jeffdisher.laminar.types.EventRecord;
 import com.jeffdisher.laminar.types.TopicName;
@@ -41,7 +42,9 @@ public class TestClientsAndListeners {
 		try (ClientConnection client = ClientConnection.open(new InetSocketAddress(InetAddress.getLocalHost(), 2002))) {
 			ClientResult result = client.sendTemp(TopicName.fromString("test"), "Hello World!".getBytes());
 			result.waitForReceived();
-			long commitOffset = result.waitForCommitted().mutationOffset;
+			CommitInfo info = result.waitForCommitted();
+			Assert.assertEquals(CommitInfo.Effect.VALID, info.effect);
+			long commitOffset = info.mutationOffset;
 			Assert.assertEquals(1L, commitOffset);
 		}
 		Assert.assertEquals(0, wrapper.stop());
@@ -64,7 +67,9 @@ public class TestClientsAndListeners {
 		try (ClientConnection client = ClientConnection.open(address)) {
 			ClientResult result = client.sendTemp(topic, message);
 			result.waitForReceived();
-			long commitOffset = result.waitForCommitted().mutationOffset;
+			CommitInfo info = result.waitForCommitted();
+			Assert.assertEquals(CommitInfo.Effect.VALID, info.effect);
+			long commitOffset = info.mutationOffset;
 			Assert.assertEquals(1L, commitOffset);
 		}
 		
@@ -162,7 +167,9 @@ public class TestClientsAndListeners {
 			client.waitForConnection();
 			result.waitForReceived();
 			client.waitForConnection();
-			long commitOffset = result.waitForCommitted().mutationOffset;
+			CommitInfo info = result.waitForCommitted();
+			Assert.assertEquals(CommitInfo.Effect.VALID, info.effect);
+			long commitOffset = info.mutationOffset;
 			Assert.assertEquals(1L, commitOffset);
 			client.waitForConnection();
 		}
@@ -281,7 +288,9 @@ public class TestClientsAndListeners {
 			}
 			for (int i = 0; i < results.length; ++i) {
 				results[i].waitForReceived();
-				long commitOffset = results[i].waitForCommitted().mutationOffset;
+				CommitInfo info = results[i].waitForCommitted();
+				Assert.assertEquals(CommitInfo.Effect.VALID, info.effect);
+				long commitOffset = info.mutationOffset;
 				Assert.assertEquals((long)(1 + i), commitOffset);
 			}
 			// By this point, the client must have received the config (since it gets that before any received/committed).
@@ -330,7 +339,9 @@ public class TestClientsAndListeners {
 					followerEntry,
 					start,
 			});
-			long commitOffset = client.sendUpdateConfig(newConfig).waitForCommitted().mutationOffset;
+			CommitInfo info = client.sendUpdateConfig(newConfig).waitForCommitted();
+			Assert.assertEquals(CommitInfo.Effect.VALID, info.effect);
+			long commitOffset = info.mutationOffset;
 			Assert.assertEquals(1L, commitOffset);
 		}
 		try (ClientConnection client = ClientConnection.open(address)) {
@@ -401,9 +412,13 @@ public class TestClientsAndListeners {
 			clientUuid = client.getClientId();
 			timingListener.skipNonceCheck(clientUuid, 1L);
 			client.waitForConnection();
-			long commitOffset = client.sendUpdateConfig(config).waitForCommitted().mutationOffset;
+			CommitInfo info = client.sendUpdateConfig(config).waitForCommitted();
+			Assert.assertEquals(CommitInfo.Effect.VALID, info.effect);
+			long commitOffset = info.mutationOffset;
 			Assert.assertEquals(1L, commitOffset);
-			commitOffset = client.sendTemp(topic, new byte[] {1}).waitForCommitted().mutationOffset;
+			info = client.sendTemp(topic, new byte[] {1}).waitForCommitted();
+			Assert.assertEquals(CommitInfo.Effect.VALID, info.effect);
+			commitOffset = info.mutationOffset;
 			Assert.assertEquals(2L, commitOffset);
 			
 			// Stop the leader and ask another node to become leader then see if we can continue sending messages.
@@ -416,9 +431,13 @@ public class TestClientsAndListeners {
 				adhoc.getInputStream().read();
 			}
 			
-			commitOffset = client.sendTemp(topic, new byte[] {2}).waitForCommitted().mutationOffset;
+			info = client.sendTemp(topic, new byte[] {2}).waitForCommitted();
+			Assert.assertEquals(CommitInfo.Effect.VALID, info.effect);
+			commitOffset = info.mutationOffset;
 			Assert.assertEquals(3L, commitOffset);
-			commitOffset = client.sendTemp(topic, new byte[] {3}).waitForCommitted().mutationOffset;
+			info = client.sendTemp(topic, new byte[] {3}).waitForCommitted();
+			Assert.assertEquals(CommitInfo.Effect.VALID, info.effect);
+			commitOffset = info.mutationOffset;
 			Assert.assertEquals(4L, commitOffset);
 		}
 		CaptureListener counting = new CaptureListener(server2Address, topic, 3);
@@ -451,7 +470,9 @@ public class TestClientsAndListeners {
 				results[i] = client.sendTemp(topic, new byte[] { (byte)i });
 			}
 			for (int i = 0; i < 10; ++i) {
-				long mutationOffset = results[i].waitForCommitted().mutationOffset;
+				CommitInfo info = results[i].waitForCommitted();
+				Assert.assertEquals(CommitInfo.Effect.VALID, info.effect);
+				long mutationOffset = info.mutationOffset;
 				// These were sent by one client so commit, in-order.
 				Assert.assertEquals((i + 1), (int)mutationOffset);
 			}
