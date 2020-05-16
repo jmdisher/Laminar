@@ -173,7 +173,7 @@ public class ClientManager implements IClientManager, INetworkManagerBackgroundC
 		
 		// It is possible that nobody was interested in this commit if it was fetched for ClusterManager.
 		if (null != tuple) {
-			_mainProcessTupleForCommit(committedRecord.record.globalOffset, CommitInfo.Effect.VALID, tuple);
+			_mainProcessTupleForCommit(committedRecord.record.globalOffset, committedRecord.effect, tuple);
 		}
 	}
 
@@ -184,7 +184,7 @@ public class ClientManager implements IClientManager, INetworkManagerBackgroundC
 		
 		MutationRecord nextToProcess = committedRecord.record;
 		// The first mutation is always loaded from disk, so committed.
-		CommitInfo.Effect commitEffect = CommitInfo.Effect.VALID;
+		CommitInfo.Effect commitEffect = committedRecord.effect;
 		while (null != nextToProcess) {
 			nextToProcess = _mainReplayMutationAndFetchNext(snapshot, nextToProcess, commitEffect);
 			// Later mutations are only in-flight, so not committed.

@@ -19,6 +19,7 @@ import com.jeffdisher.laminar.network.IClusterManagerCallbacks;
 import com.jeffdisher.laminar.types.ClientMessage;
 import com.jeffdisher.laminar.types.ClientMessageType;
 import com.jeffdisher.laminar.types.ClusterConfig;
+import com.jeffdisher.laminar.types.CommitInfo;
 import com.jeffdisher.laminar.types.ConfigEntry;
 import com.jeffdisher.laminar.types.EventRecord;
 import com.jeffdisher.laminar.types.CommittedMutationRecord;
@@ -534,7 +535,9 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		if (null != event) {
 			_diskManager.commitEvent(topic, event);
 		}
-		CommittedMutationRecord committedMutationRecord = CommittedMutationRecord.create(mutation);
+		// TODO:  Add some mechanism to resolve this commit state properly once there is more than one answer.
+		CommitInfo.Effect effect = CommitInfo.Effect.VALID;
+		CommittedMutationRecord committedMutationRecord = CommittedMutationRecord.create(mutation, effect);
 		// TODO:  We probably want to lock-step the mutation on the event commit since we will be able to detect the broken data, that way, and replay it.
 		_diskManager.commitMutation(committedMutationRecord);
 		_lastTermNumberRemovedFromInFlight = mutation.termNumber;

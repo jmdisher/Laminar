@@ -7,6 +7,7 @@ import org.junit.Assert;
 import org.junit.Test;
 
 import com.jeffdisher.laminar.state.StateSnapshot;
+import com.jeffdisher.laminar.types.CommitInfo;
 import com.jeffdisher.laminar.types.CommittedMutationRecord;
 import com.jeffdisher.laminar.types.EventRecord;
 import com.jeffdisher.laminar.types.EventRecordType;
@@ -62,9 +63,9 @@ public class TestDiskManager {
 		DiskManager manager = new DiskManager(null, callbacks);
 		manager.startAndWaitForReady();
 		
-		manager.commitMutation(CommittedMutationRecord.create(mutation1));
+		manager.commitMutation(CommittedMutationRecord.create(mutation1, CommitInfo.Effect.VALID));
 		while (callbacks.commitMutationCount < 1) { callbacks.runOneCommand(); }
-		manager.commitMutation(CommittedMutationRecord.create(mutation2));
+		manager.commitMutation(CommittedMutationRecord.create(mutation2, CommitInfo.Effect.VALID));
 		while (callbacks.commitMutationCount < 2) { callbacks.runOneCommand(); }
 		manager.commitEvent(topic, event1);
 		while (callbacks.commitEventCount < 1) { callbacks.runOneCommand(); }

@@ -12,6 +12,7 @@ import com.jeffdisher.laminar.console.IConsoleManager;
 import com.jeffdisher.laminar.network.IClusterManagerCallbacks;
 import com.jeffdisher.laminar.types.ClientMessage;
 import com.jeffdisher.laminar.types.ClusterConfig;
+import com.jeffdisher.laminar.types.CommitInfo;
 import com.jeffdisher.laminar.types.CommittedMutationRecord;
 import com.jeffdisher.laminar.types.ConfigEntry;
 import com.jeffdisher.laminar.types.EventRecord;
@@ -319,17 +320,17 @@ public class TestNodeState {
 		// -note that the commit processing is only done after the disk returns so we need to send those calls, too
 		// -in this test, the first config change is purely additive but the second does drop one peer.
 		runner.runVoid((snapshot) -> test.nodeState.mainCommittedMutationOffsetFromUpstream(leader, 1L, 1L));
-		runner.runVoid((snapshot) -> test.nodeState.mainMutationWasCommitted(CommittedMutationRecord.create(record1)));
+		runner.runVoid((snapshot) -> test.nodeState.mainMutationWasCommitted(CommittedMutationRecord.create(record1, CommitInfo.Effect.VALID)));
 		runner.runVoid((snapshot) -> test.nodeState.mainCommittedMutationOffsetFromUpstream(leader, 1L, 2L));
-		runner.runVoid((snapshot) -> test.nodeState.mainMutationWasCommitted(CommittedMutationRecord.create(record2)));
+		runner.runVoid((snapshot) -> test.nodeState.mainMutationWasCommitted(CommittedMutationRecord.create(record2, CommitInfo.Effect.VALID)));
 		runner.runVoid((snapshot) -> test.nodeState.mainCommittedMutationOffsetFromUpstream(leader, 1L, 3L));
-		runner.runVoid((snapshot) -> test.nodeState.mainMutationWasCommitted(CommittedMutationRecord.create(record3)));
+		runner.runVoid((snapshot) -> test.nodeState.mainMutationWasCommitted(CommittedMutationRecord.create(record3, CommitInfo.Effect.VALID)));
 		F<ConfigEntry> disconnect = test.clusterManager.get_mainCloseDownstreamConnection();
 		runner.runVoid((snapshot) -> test.nodeState.mainCommittedMutationOffsetFromUpstream(leader, 1L, 4L));
-		runner.runVoid((snapshot) -> test.nodeState.mainMutationWasCommitted(CommittedMutationRecord.create(record4)));
+		runner.runVoid((snapshot) -> test.nodeState.mainMutationWasCommitted(CommittedMutationRecord.create(record4, CommitInfo.Effect.VALID)));
 		Assert.assertEquals(peer1.nodeUuid, disconnect.get().nodeUuid);
 		runner.runVoid((snapshot) -> test.nodeState.mainCommittedMutationOffsetFromUpstream(leader, 1L, 5L));
-		runner.runVoid((snapshot) -> test.nodeState.mainMutationWasCommitted(CommittedMutationRecord.create(record5)));
+		runner.runVoid((snapshot) -> test.nodeState.mainMutationWasCommitted(CommittedMutationRecord.create(record5, CommitInfo.Effect.VALID)));
 		
 		// Stop.
 		runner.runVoid((snapshot) -> test.nodeState.mainHandleStopCommand());
@@ -436,11 +437,11 @@ public class TestNodeState {
 		runner.runVoid((snapshot) -> test.nodeState.mainCommittedMutationOffsetFromUpstream(leader2, 2L, record22.globalOffset));
 		Assert.assertEquals(record1, commit1.get().record);
 		Assert.assertEquals(record22, commit2.get().record);
-		runner.runVoid((snapshot) -> test.nodeState.mainMutationWasCommitted(CommittedMutationRecord.create(record1)));
-		runner.runVoid((snapshot) -> test.nodeState.mainMutationWasCommitted(CommittedMutationRecord.create(record22)));
+		runner.runVoid((snapshot) -> test.nodeState.mainMutationWasCommitted(CommittedMutationRecord.create(record1, CommitInfo.Effect.VALID)));
+		runner.runVoid((snapshot) -> test.nodeState.mainMutationWasCommitted(CommittedMutationRecord.create(record22, CommitInfo.Effect.VALID)));
 		runner.runVoid((snapshot) -> test.nodeState.mainCommittedMutationOffsetFromUpstream(leader2, 2L, record23.globalOffset));
 		Assert.assertEquals(record23, commit3.get().record);
-		runner.runVoid((snapshot) -> test.nodeState.mainMutationWasCommitted(CommittedMutationRecord.create(record23)));
+		runner.runVoid((snapshot) -> test.nodeState.mainMutationWasCommitted(CommittedMutationRecord.create(record23, CommitInfo.Effect.VALID)));
 		
 		// Stop.
 		runner.runVoid((snapshot) -> test.nodeState.mainHandleStopCommand());

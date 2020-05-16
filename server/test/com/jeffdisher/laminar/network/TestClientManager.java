@@ -21,6 +21,7 @@ import com.jeffdisher.laminar.types.ClientResponsePayload_ClusterConfig;
 import com.jeffdisher.laminar.types.ClientResponsePayload_ConfigEntry;
 import com.jeffdisher.laminar.types.ClientResponseType;
 import com.jeffdisher.laminar.types.ClusterConfig;
+import com.jeffdisher.laminar.types.CommitInfo;
 import com.jeffdisher.laminar.types.CommittedMutationRecord;
 import com.jeffdisher.laminar.types.ConfigEntry;
 import com.jeffdisher.laminar.types.EventRecord;
@@ -148,7 +149,7 @@ public class TestClientManager {
 			
 			// Tell the manager we committed it and verify that we see the commit.
 			MutationRecord record = Helpers.convertClientMessageToMutation(message, 1L, clientId, 1L);
-			manager.mainProcessingPendingMessageForRecord(CommittedMutationRecord.create(record));
+			manager.mainProcessingPendingMessageForRecord(CommittedMutationRecord.create(record, CommitInfo.Effect.VALID));
 			raw = TestingHelpers.readMessageInFrame(fromServer);
 			ClientResponse committed = ClientResponse.deserialize(raw);
 			Assert.assertEquals(ClientResponseType.COMMITTED, committed.type);
