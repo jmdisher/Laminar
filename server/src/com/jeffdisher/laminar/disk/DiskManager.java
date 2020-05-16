@@ -8,7 +8,7 @@ import java.util.List;
 import java.util.Map;
 
 import com.jeffdisher.laminar.types.EventRecord;
-import com.jeffdisher.laminar.types.MutationRecord;
+import com.jeffdisher.laminar.types.CommittedMutationRecord;
 import com.jeffdisher.laminar.types.TopicName;
 import com.jeffdisher.laminar.utils.Assert;
 
@@ -32,14 +32,14 @@ public class DiskManager implements IDiskManager {
 	// These are all accessed under monitor.
 	private boolean _keepRunning;
 	// We track the incoming commits in 2 lists:  one for the "global" mutations and one for the "local" events.
-	private final List<MutationRecord> _incomingCommitMutations;
+	private final List<CommittedMutationRecord> _incomingCommitMutations;
 	private final List<EventCommitTuple> _incomingCommitEvents;
 	// We track fetch requests in 2 lists:  one for the "global" mutations and one for the "local" events.
 	private final List<Long> _incomingFetchMutationRequests;
 	private final List<EventFetchTuple> _incomingFetchEventRequests;
 
 	// Only accessed by background thread (current virtual "disk").
-	private final List<MutationRecord> _committedMutationVirtualDisk;
+	private final List<CommittedMutationRecord> _committedMutationVirtualDisk;
 	private final Map<TopicName, List<EventRecord>> _committedEventVirtualDisk;
 
 	public DiskManager(File dataDirectory, IDiskManagerBackgroundCallbacks callbackTarget) {
@@ -96,7 +96,7 @@ public class DiskManager implements IDiskManager {
 	}
 
 	@Override
-	public synchronized void commitMutation(MutationRecord mutation) {
+	public synchronized void commitMutation(CommittedMutationRecord mutation) {
 		// Make sure this isn't reentrant.
 		Assert.assertTrue(Thread.currentThread() != _background);
 		_incomingCommitMutations.add(mutation);
@@ -135,7 +135,7 @@ public class DiskManager implements IDiskManager {
 		while (null != work) {
 			if (null != work.commitMutation) {
 				_committedMutationVirtualDisk.add(work.commitMutation);
-				MutationRecord record = work.commitMutation;
+				CommittedMutationRecord record = work.commitMutation;
 				_callbackTarget.ioEnqueueDiskCommandForMainThread((snapshot) -> _callbackTarget.mainMutationWasCommitted(record));
 			}
 			else if (null != work.commitEvent) {
@@ -154,10 +154,10 @@ public class DiskManager implements IDiskManager {
 				// is not required to satisfy all requests.
 				// These indexing errors should be intercepted at a higher level, before we get to the disk.
 				Assert.assertTrue((int)work.fetchMutation < _committedMutationVirtualDisk.size());
-				MutationRecord record = _committedMutationVirtualDisk.get((int)work.fetchMutation);
+				CommittedMutationRecord record = _committedMutationVirtualDisk.get((int)work.fetchMutation);
 				// See if we can get the previous term number.
 				long previousMutationTermNumber = (work.fetchMutation > 1)
-						? _committedMutationVirtualDisk.get((int)work.fetchMutation - 1).termNumber
+						? _committedMutationVirtualDisk.get((int)work.fetchMutation - 1).record.termNumber
 						: 0L;
 				_callbackTarget.ioEnqueueDiskCommandForMainThread((snapshot) -> _callbackTarget.mainMutationWasFetched(snapshot, previousMutationTermNumber, record));
 			}
@@ -215,7 +215,7 @@ public class DiskManager implements IDiskManager {
 	 * A simple tuple used to pass back work from the synchronized wait loop.
 	 */
 	private static class Work {
-		public static Work commitMutation(MutationRecord toCommit) {
+		public static Work commitMutation(CommittedMutationRecord toCommit) {
 			return new Work(toCommit, null, 0L, null);
 		}
 		public static Work commitEvent(EventCommitTuple toCommit) {
@@ -228,12 +228,12 @@ public class DiskManager implements IDiskManager {
 			return new Work(null, null, 0L, toFetch);
 		}
 		
-		public final MutationRecord commitMutation;
+		public final CommittedMutationRecord commitMutation;
 		public final EventCommitTuple commitEvent;
 		public final long fetchMutation;
 		public final EventFetchTuple fetchEvent;
 		
-		private Work(MutationRecord commitMutation, EventCommitTuple commitEvent, long fetchMutation, EventFetchTuple fetchEvent) {
+		private Work(CommittedMutationRecord commitMutation, EventCommitTuple commitEvent, long fetchMutation, EventFetchTuple fetchEvent) {
 			this.commitMutation = commitMutation;
 			this.commitEvent = commitEvent;
 			this.fetchMutation = fetchMutation;

@@ -4,7 +4,7 @@ import com.jeffdisher.laminar.state.StateSnapshot;
 import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.types.ConfigEntry;
 import com.jeffdisher.laminar.types.EventRecord;
-import com.jeffdisher.laminar.types.MutationRecord;
+import com.jeffdisher.laminar.types.CommittedMutationRecord;
 import com.jeffdisher.laminar.types.TopicName;
 
 
@@ -29,12 +29,11 @@ public interface IClientManager {
 	void mainEnterFollowerState(ConfigEntry clusterLeader, StateSnapshot snapshot);
 
 	/**
-	 * Called when the mutation commit offset changes.
-	 * Any commit messages waiting on globalOffsetOfCommit must now be sent.
+	 * Called once a mutation has committed so that the client can send any required acks associated with it to clients.
 	 * 
-	 * @param globalOffsetOfCommit The global mutation offset which is now committed.
+	 * @param committedRecord The record which has committed.
 	 */
-	void mainProcessingPendingMessageCommits(long globalOffsetOfCommit);
+	void mainProcessingPendingMessageForRecord(CommittedMutationRecord committedRecord);
 
 	/**
 	 * Called when the active config has has changed.  Specifically, this means when a CHANGE_CONFIG mutation has
@@ -60,9 +59,9 @@ public interface IClientManager {
 	 * committed MutationRecord has been fetched in case there were any clients waiting on it.
 	 * 
 	 * @param snapshot The snapshot of this node's current state.
-	 * @param record The committed MutationRecord.
+	 * @param record The committed record.
 	 */
-	void mainReplayCommittedMutationForReconnects(StateSnapshot snapshot, MutationRecord record);
+	void mainReplayCommittedMutationForReconnects(StateSnapshot snapshot, CommittedMutationRecord record);
 
 	/**
 	 * Called when the node has entered a LEADER state.  This means that the receiver should stop sending REDIRECTs and

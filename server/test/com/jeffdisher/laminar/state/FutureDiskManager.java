@@ -3,8 +3,8 @@ package com.jeffdisher.laminar.state;
 import org.junit.Assert;
 
 import com.jeffdisher.laminar.disk.IDiskManager;
+import com.jeffdisher.laminar.types.CommittedMutationRecord;
 import com.jeffdisher.laminar.types.EventRecord;
-import com.jeffdisher.laminar.types.MutationRecord;
 import com.jeffdisher.laminar.types.TopicName;
 
 
@@ -13,13 +13,13 @@ import com.jeffdisher.laminar.types.TopicName;
  * given.
  */
 public class FutureDiskManager implements IDiskManager {
-	private F<MutationRecord> f_commitMutation;
+	private F<CommittedMutationRecord> f_commitMutation;
 	private F<EventRecord> f_commitEvent;
 
-	public F<MutationRecord> get_commitMutation() {
-		F<MutationRecord> future = new F<>();
+	public F<CommittedMutationRecord> get_commitMutation() {
+		F<CommittedMutationRecord> future = new F<>();
 		if (null != f_commitMutation) {
-			F<MutationRecord> stem = f_commitMutation;
+			F<CommittedMutationRecord> stem = f_commitMutation;
 			while (null != stem.nextLink) {
 				stem = stem.nextLink;
 			}
@@ -45,7 +45,7 @@ public class FutureDiskManager implements IDiskManager {
 		System.out.println("IDiskManager - fetchEvent");
 	}
 	@Override
-	public void commitMutation(MutationRecord mutation) {
+	public void commitMutation(CommittedMutationRecord mutation) {
 		if (null != f_commitMutation) {
 			f_commitMutation.put(mutation);
 			f_commitMutation = f_commitMutation.nextLink;

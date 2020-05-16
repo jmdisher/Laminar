@@ -7,6 +7,7 @@ import org.junit.Assert;
 import org.junit.Test;
 
 import com.jeffdisher.laminar.state.StateSnapshot;
+import com.jeffdisher.laminar.types.CommittedMutationRecord;
 import com.jeffdisher.laminar.types.EventRecord;
 import com.jeffdisher.laminar.types.EventRecordType;
 import com.jeffdisher.laminar.types.MutationRecord;
@@ -61,9 +62,9 @@ public class TestDiskManager {
 		DiskManager manager = new DiskManager(null, callbacks);
 		manager.startAndWaitForReady();
 		
-		manager.commitMutation(mutation1);
+		manager.commitMutation(CommittedMutationRecord.create(mutation1));
 		while (callbacks.commitMutationCount < 1) { callbacks.runOneCommand(); }
-		manager.commitMutation(mutation2);
+		manager.commitMutation(CommittedMutationRecord.create(mutation2));
 		while (callbacks.commitMutationCount < 2) { callbacks.runOneCommand(); }
 		manager.commitEvent(topic, event1);
 		while (callbacks.commitEventCount < 1) { callbacks.runOneCommand(); }
@@ -126,7 +127,7 @@ public class TestDiskManager {
 		}
 		
 		@Override
-		public void mainMutationWasCommitted(MutationRecord completed) {
+		public void mainMutationWasCommitted(CommittedMutationRecord completed) {
 			this.commitMutationCount += 1;
 		}
 		
@@ -136,9 +137,9 @@ public class TestDiskManager {
 		}
 		
 		@Override
-		public void mainMutationWasFetched(StateSnapshot snapshot, long previousMutationTermNumber, MutationRecord record) {
+		public void mainMutationWasFetched(StateSnapshot snapshot, long previousMutationTermNumber, CommittedMutationRecord record) {
 			// We currently just support a single match.
-			Assert.assertTrue(record == this.expectedMutation);
+			Assert.assertTrue(record.record == this.expectedMutation);
 			this.fetchMutationCount += 1;
 		}
 		

@@ -12,6 +12,7 @@ import org.junit.Assert;
 import org.junit.Test;
 
 import com.jeffdisher.laminar.components.NetworkManager;
+import com.jeffdisher.laminar.state.Helpers;
 import com.jeffdisher.laminar.state.StateSnapshot;
 import com.jeffdisher.laminar.types.ClientMessage;
 import com.jeffdisher.laminar.types.ClientMessagePayload_Temp;
@@ -20,6 +21,7 @@ import com.jeffdisher.laminar.types.ClientResponsePayload_ClusterConfig;
 import com.jeffdisher.laminar.types.ClientResponsePayload_ConfigEntry;
 import com.jeffdisher.laminar.types.ClientResponseType;
 import com.jeffdisher.laminar.types.ClusterConfig;
+import com.jeffdisher.laminar.types.CommittedMutationRecord;
 import com.jeffdisher.laminar.types.ConfigEntry;
 import com.jeffdisher.laminar.types.EventRecord;
 import com.jeffdisher.laminar.types.EventRecordType;
@@ -96,12 +98,14 @@ public class TestClientManager {
 	@Test
 	public void testSendCommitResponse() throws Throwable {
 		// Create a message.
-		ClientMessage message = ClientMessage.temp(1L, TopicName.fromString("test"), new byte[] {0,1,2,3});
+		TopicName topic = TopicName.fromString("test");
+		ClientMessage message = ClientMessage.temp(1L, topic, new byte[] {0,1,2,3});
 		// Create a server.
 		int port = PORT_BASE + 2;
 		ServerSocketChannel socket = TestingHelpers.createServerSocket(port);
 		LatchedCallbacks callbacks = new LatchedCallbacks();
-		ClientManager manager = new ClientManager(UUID.randomUUID(), socket, callbacks);
+		UUID clientId = UUID.randomUUID();
+		ClientManager manager = new ClientManager(clientId, socket, callbacks);
 		manager.startAndWaitForReady();
 		
 		// Create the connection, send the commit message, and read it, directly.
@@ -143,7 +147,8 @@ public class TestClientManager {
 			Assert.assertNull(readMessage);
 			
 			// Tell the manager we committed it and verify that we see the commit.
-			manager.mainProcessingPendingMessageCommits(1L);
+			MutationRecord record = Helpers.convertClientMessageToMutation(message, 1L, clientId, 1L);
+			manager.mainProcessingPendingMessageForRecord(CommittedMutationRecord.create(record));
 			raw = TestingHelpers.readMessageInFrame(fromServer);
 			ClientResponse committed = ClientResponse.deserialize(raw);
 			Assert.assertEquals(ClientResponseType.COMMITTED, committed.type);

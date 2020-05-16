@@ -26,6 +26,7 @@ import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.types.CommitInfo;
 import com.jeffdisher.laminar.types.ConfigEntry;
 import com.jeffdisher.laminar.types.EventRecord;
+import com.jeffdisher.laminar.types.CommittedMutationRecord;
 import com.jeffdisher.laminar.types.MutationRecord;
 import com.jeffdisher.laminar.types.TopicName;
 import com.jeffdisher.laminar.utils.Assert;
@@ -164,24 +165,24 @@ public class ClientManager implements IClientManager, INetworkManagerBackgroundC
 	}
 
 	@Override
-	public void mainProcessingPendingMessageCommits(long globalOffsetOfCommit) {
+	public void mainProcessingPendingMessageForRecord(CommittedMutationRecord committedRecord) {
 		// Called on main thread.
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		// Look up the tuple so we know which clients and listeners should be told about the commit.
-		ClientCommitTuple tuple = _pendingMessageCommits.remove(globalOffsetOfCommit);
+		ClientCommitTuple tuple = _pendingMessageCommits.remove(committedRecord.record.globalOffset);
 		
 		// It is possible that nobody was interested in this commit if it was fetched for ClusterManager.
 		if (null != tuple) {
-			_mainProcessTupleForCommit(globalOffsetOfCommit, tuple);
+			_mainProcessTupleForCommit(committedRecord.record.globalOffset, tuple);
 		}
 	}
 
 	@Override
-	public void mainReplayCommittedMutationForReconnects(StateSnapshot snapshot, MutationRecord record) {
+	public void mainReplayCommittedMutationForReconnects(StateSnapshot snapshot, CommittedMutationRecord committedRecord) {
 		// Called on main thread.
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		
-		MutationRecord nextToProcess = record;
+		MutationRecord nextToProcess = committedRecord.record;
 		// The first mutation is always loaded from disk, so committed.
 		boolean isCommitted = true;
 		while (null != nextToProcess) {

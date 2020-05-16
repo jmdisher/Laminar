@@ -21,6 +21,7 @@ import com.jeffdisher.laminar.types.ClientMessageType;
 import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.types.ConfigEntry;
 import com.jeffdisher.laminar.types.EventRecord;
+import com.jeffdisher.laminar.types.CommittedMutationRecord;
 import com.jeffdisher.laminar.types.MutationRecord;
 import com.jeffdisher.laminar.types.MutationRecordType;
 import com.jeffdisher.laminar.types.TopicName;
@@ -371,19 +372,19 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 	}
 
 	@Override
-	public void mainMutationWasCommitted(MutationRecord completed) {
+	public void mainMutationWasCommitted(CommittedMutationRecord completed) {
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		// Update our global commit offset (set this first since other methods we are calling might want to read for common state).
 		// We setup this commit so it must be sequential (this is a good check to make sure the commits aren't being re-ordered in the disk layer, too).
-		Assert.assertTrue((_lastCommittedMutationOffset + 1) == completed.globalOffset);
-		_lastCommittedMutationOffset = completed.globalOffset;
+		Assert.assertTrue((_lastCommittedMutationOffset + 1) == completed.record.globalOffset);
+		_lastCommittedMutationOffset = completed.record.globalOffset;
 		// Only notify clients if we are the LEADER.
 		if (RaftState.LEADER == _currentState) {
-			_clientManager.mainProcessingPendingMessageCommits(completed.globalOffset);
+			_clientManager.mainProcessingPendingMessageForRecord(completed);
 		}
 		
 		// The mutation is only committed to disk when it is committed to the joint consensus so we can advance this now.
-		SyncProgress newConfigProgress = _configsPendingCommit.remove(completed.globalOffset);
+		SyncProgress newConfigProgress = _configsPendingCommit.remove(completed.record.globalOffset);
 		if (null != newConfigProgress) {
 			// We need a new snapshot since we just changed state in this command, above.
 			StateSnapshot newSnapshot = new StateSnapshot(_currentConfig.config, _lastCommittedMutationOffset, _selfState.lastMutationOffsetReceived, _currentTermNumber);
@@ -394,7 +395,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 			// Update we may need to purge now-stale downstream connections.
 			_rebuildDownstreamUnionAfterConfigChange();
 		}
-		_clusterManager.mainMutationWasCommitted(completed.globalOffset);
+		_clusterManager.mainMutationWasCommitted(completed.record.globalOffset);
 	}
 
 	@Override
@@ -405,14 +406,14 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 	}
 
 	@Override
-	public void mainMutationWasFetched(StateSnapshot snapshot, long previousMutationTermNumber, MutationRecord record) {
+	public void mainMutationWasFetched(StateSnapshot snapshot, long previousMutationTermNumber, CommittedMutationRecord record) {
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		
 		// Check to see if a client needs this
 		_clientManager.mainReplayCommittedMutationForReconnects(snapshot, record);
 		
 		// Check to see if a downstream peer needs this.
-		_clusterManager.mainMutationWasReceivedOrFetched(snapshot, previousMutationTermNumber, record);
+		_clusterManager.mainMutationWasReceivedOrFetched(snapshot, previousMutationTermNumber, record.record);
 	}
 
 	@Override
@@ -533,8 +534,9 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		if (null != event) {
 			_diskManager.commitEvent(topic, event);
 		}
+		CommittedMutationRecord committedMutationRecord = CommittedMutationRecord.create(mutation);
 		// TODO:  We probably want to lock-step the mutation on the event commit since we will be able to detect the broken data, that way, and replay it.
-		_diskManager.commitMutation(mutation);
+		_diskManager.commitMutation(committedMutationRecord);
 		_lastTermNumberRemovedFromInFlight = mutation.termNumber;
 	}
 

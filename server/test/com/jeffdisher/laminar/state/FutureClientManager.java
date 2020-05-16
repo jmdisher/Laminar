@@ -4,9 +4,9 @@ import org.junit.Assert;
 
 import com.jeffdisher.laminar.network.IClientManager;
 import com.jeffdisher.laminar.types.ClusterConfig;
+import com.jeffdisher.laminar.types.CommittedMutationRecord;
 import com.jeffdisher.laminar.types.ConfigEntry;
 import com.jeffdisher.laminar.types.EventRecord;
-import com.jeffdisher.laminar.types.MutationRecord;
 import com.jeffdisher.laminar.types.TopicName;
 
 
@@ -44,9 +44,9 @@ public class FutureClientManager implements IClientManager {
 		}
 	}
 	@Override
-	public void mainProcessingPendingMessageCommits(long globalOffset) {
+	public void mainProcessingPendingMessageForRecord(CommittedMutationRecord committedRecord) {
 		if (null != f_mainProcessingPendingMessageCommits) {
-			f_mainProcessingPendingMessageCommits.put(globalOffset);
+			f_mainProcessingPendingMessageCommits.put(committedRecord.record.globalOffset);
 			f_mainProcessingPendingMessageCommits = f_mainProcessingPendingMessageCommits.nextLink;
 		} else {
 			System.out.println("IClientManager - mainProcessingPendingMessageCommits");
@@ -61,7 +61,7 @@ public class FutureClientManager implements IClientManager {
 		System.out.println("IClientManager - mainSendRecordToListeners");
 	}
 	@Override
-	public void mainReplayCommittedMutationForReconnects(StateSnapshot arg, MutationRecord record) {
+	public void mainReplayCommittedMutationForReconnects(StateSnapshot arg, CommittedMutationRecord record) {
 		System.out.println("IClientManager - mainReplayCommittedMutationForReconnects");
 	}
 	@Override

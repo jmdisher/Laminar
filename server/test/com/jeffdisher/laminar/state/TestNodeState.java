@@ -12,6 +12,7 @@ import com.jeffdisher.laminar.console.IConsoleManager;
 import com.jeffdisher.laminar.network.IClusterManagerCallbacks;
 import com.jeffdisher.laminar.types.ClientMessage;
 import com.jeffdisher.laminar.types.ClusterConfig;
+import com.jeffdisher.laminar.types.CommittedMutationRecord;
 import com.jeffdisher.laminar.types.ConfigEntry;
 import com.jeffdisher.laminar.types.EventRecord;
 import com.jeffdisher.laminar.types.MutationRecord;
@@ -57,11 +58,11 @@ public class TestNodeState {
 		Runner runner = new Runner(test.nodeState);
 		
 		// Send the ClientMessage.
-		F<MutationRecord> mutation = test.diskManager.get_commitMutation();
+		F<CommittedMutationRecord> mutation = test.diskManager.get_commitMutation();
 		F<EventRecord> event = test.diskManager.get_commitEvent();
 		long mutationNumber = runner.run((snapshot) -> test.nodeState.mainHandleValidClientMessage(UUID.randomUUID(), ClientMessage.temp(1L, TopicName.fromString("fake"), new byte[] {1})));
 		Assert.assertEquals(1L, mutationNumber);
-		Assert.assertEquals(mutationNumber, mutation.get().globalOffset);
+		Assert.assertEquals(mutationNumber, mutation.get().record.globalOffset);
 		Assert.assertEquals(mutationNumber, event.get().globalOffset);
 		
 		// Say the corresponding mutation was committed.
@@ -181,11 +182,11 @@ public class TestNodeState {
 		Assert.assertEquals(1L, wrapper.previousMutationTermNumber);
 		Assert.assertEquals(2L, wrapper.record.termNumber);
 		// Send it the ack for the new mutation (this causes it to immediately commit mutations 2 and 3).
-		F<MutationRecord> commit1 = test.diskManager.get_commitMutation();
-		F<MutationRecord> commit2 = test.diskManager.get_commitMutation();
+		F<CommittedMutationRecord> commit1 = test.diskManager.get_commitMutation();
+		F<CommittedMutationRecord> commit2 = test.diskManager.get_commitMutation();
 		runner.runVoid((snapshot) -> nodeState.mainReceivedAckFromDownstream(upstreamEntry, 3L));
-		Assert.assertEquals(2L, commit1.get().globalOffset);
-		Assert.assertEquals(3L, commit2.get().globalOffset);
+		Assert.assertEquals(2L, commit1.get().record.globalOffset);
+		Assert.assertEquals(3L, commit2.get().record.globalOffset);
 		
 		// Verify all mutations are committed.
 		Assert.assertNull(runner.run((snapshot) -> nodeState.mainClusterFetchMutationIfAvailable(1L)));
@@ -231,11 +232,11 @@ public class TestNodeState {
 		ConfigEntry upstreamEntry1 = new ConfigEntry(UUID.randomUUID(), new InetSocketAddress(3), new InetSocketAddress(4));
 		ClusterConfig newConfig = ClusterConfig.configFromEntries(new ConfigEntry[] {originalEntry, upstreamEntry1});
 		
-		F<MutationRecord> commit = test.diskManager.get_commitMutation();
+		F<CommittedMutationRecord> commit = test.diskManager.get_commitMutation();
 		long mutationNumber = runner.run((snapshot) -> test.nodeState.mainHandleValidClientMessage(UUID.randomUUID(), ClientMessage.updateConfig(1L, newConfig)));
 		Assert.assertEquals(1L, mutationNumber);
 		runner.runVoid((snapshot) -> test.nodeState.mainReceivedAckFromDownstream(upstreamEntry1, 1L));
-		Assert.assertEquals(1L, commit.get().globalOffset);
+		Assert.assertEquals(1L, commit.get().record.globalOffset);
 		
 		// Synthesize a call for an election from a peer behind us and verify that this causes us to start an election.
 		F<Long> startElection = test.clusterManager.get_mainEnterCandidateState();
@@ -318,17 +319,17 @@ public class TestNodeState {
 		// -note that the commit processing is only done after the disk returns so we need to send those calls, too
 		// -in this test, the first config change is purely additive but the second does drop one peer.
 		runner.runVoid((snapshot) -> test.nodeState.mainCommittedMutationOffsetFromUpstream(leader, 1L, 1L));
-		runner.runVoid((snapshot) -> test.nodeState.mainMutationWasCommitted(record1));
+		runner.runVoid((snapshot) -> test.nodeState.mainMutationWasCommitted(CommittedMutationRecord.create(record1)));
 		runner.runVoid((snapshot) -> test.nodeState.mainCommittedMutationOffsetFromUpstream(leader, 1L, 2L));
-		runner.runVoid((snapshot) -> test.nodeState.mainMutationWasCommitted(record2));
+		runner.runVoid((snapshot) -> test.nodeState.mainMutationWasCommitted(CommittedMutationRecord.create(record2)));
 		runner.runVoid((snapshot) -> test.nodeState.mainCommittedMutationOffsetFromUpstream(leader, 1L, 3L));
-		runner.runVoid((snapshot) -> test.nodeState.mainMutationWasCommitted(record3));
+		runner.runVoid((snapshot) -> test.nodeState.mainMutationWasCommitted(CommittedMutationRecord.create(record3)));
 		F<ConfigEntry> disconnect = test.clusterManager.get_mainCloseDownstreamConnection();
 		runner.runVoid((snapshot) -> test.nodeState.mainCommittedMutationOffsetFromUpstream(leader, 1L, 4L));
-		runner.runVoid((snapshot) -> test.nodeState.mainMutationWasCommitted(record4));
+		runner.runVoid((snapshot) -> test.nodeState.mainMutationWasCommitted(CommittedMutationRecord.create(record4)));
 		Assert.assertEquals(peer1.nodeUuid, disconnect.get().nodeUuid);
 		runner.runVoid((snapshot) -> test.nodeState.mainCommittedMutationOffsetFromUpstream(leader, 1L, 5L));
-		runner.runVoid((snapshot) -> test.nodeState.mainMutationWasCommitted(record5));
+		runner.runVoid((snapshot) -> test.nodeState.mainMutationWasCommitted(CommittedMutationRecord.create(record5)));
 		
 		// Stop.
 		runner.runVoid((snapshot) -> test.nodeState.mainHandleStopCommand());
@@ -429,17 +430,17 @@ public class TestNodeState {
 		Assert.assertEquals(record23, received.get());
 		
 		// We now send the commits from the new leader and we should observe all 3 commit (note that the leader won't commit 1L, since it didn't send it, but will start at 2L).
-		F<MutationRecord> commit1 = test.diskManager.get_commitMutation();
-		F<MutationRecord> commit2 = test.diskManager.get_commitMutation();
-		F<MutationRecord> commit3 = test.diskManager.get_commitMutation();
+		F<CommittedMutationRecord> commit1 = test.diskManager.get_commitMutation();
+		F<CommittedMutationRecord> commit2 = test.diskManager.get_commitMutation();
+		F<CommittedMutationRecord> commit3 = test.diskManager.get_commitMutation();
 		runner.runVoid((snapshot) -> test.nodeState.mainCommittedMutationOffsetFromUpstream(leader2, 2L, record22.globalOffset));
-		Assert.assertEquals(record1, commit1.get());
-		Assert.assertEquals(record22, commit2.get());
-		runner.runVoid((snapshot) -> test.nodeState.mainMutationWasCommitted(record1));
-		runner.runVoid((snapshot) -> test.nodeState.mainMutationWasCommitted(record22));
+		Assert.assertEquals(record1, commit1.get().record);
+		Assert.assertEquals(record22, commit2.get().record);
+		runner.runVoid((snapshot) -> test.nodeState.mainMutationWasCommitted(CommittedMutationRecord.create(record1)));
+		runner.runVoid((snapshot) -> test.nodeState.mainMutationWasCommitted(CommittedMutationRecord.create(record22)));
 		runner.runVoid((snapshot) -> test.nodeState.mainCommittedMutationOffsetFromUpstream(leader2, 2L, record23.globalOffset));
-		Assert.assertEquals(record23, commit3.get());
-		runner.runVoid((snapshot) -> test.nodeState.mainMutationWasCommitted(record23));
+		Assert.assertEquals(record23, commit3.get().record);
+		runner.runVoid((snapshot) -> test.nodeState.mainMutationWasCommitted(CommittedMutationRecord.create(record23)));
 		
 		// Stop.
 		runner.runVoid((snapshot) -> test.nodeState.mainHandleStopCommand());

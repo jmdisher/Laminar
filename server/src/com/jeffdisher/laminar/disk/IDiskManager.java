@@ -1,7 +1,7 @@
 package com.jeffdisher.laminar.disk;
 
 import com.jeffdisher.laminar.types.EventRecord;
-import com.jeffdisher.laminar.types.MutationRecord;
+import com.jeffdisher.laminar.types.CommittedMutationRecord;
 import com.jeffdisher.laminar.types.TopicName;
 
 
@@ -31,7 +31,7 @@ public interface IDiskManager {
 	 * 
 	 * @param mutation The mutation to commit.
 	 */
-	void commitMutation(MutationRecord mutation);
+	void commitMutation(CommittedMutationRecord mutation);
 
 	/**
 	 * Requests that the mutation with the associated global offset be asynchronously fetched.
