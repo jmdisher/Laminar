@@ -184,11 +184,11 @@ public class ClientManager implements IClientManager, INetworkManagerBackgroundC
 		
 		MutationRecord nextToProcess = committedRecord.record;
 		// The first mutation is always loaded from disk, so committed.
-		boolean isCommitted = true;
+		CommitInfo.Effect commitEffect = CommitInfo.Effect.VALID;
 		while (null != nextToProcess) {
-			nextToProcess = _mainReplayMutationAndFetchNext(snapshot, nextToProcess, isCommitted);
+			nextToProcess = _mainReplayMutationAndFetchNext(snapshot, nextToProcess, commitEffect);
 			// Later mutations are only in-flight, so not committed.
-			isCommitted = false;
+			commitEffect = null;
 		}
 	}
 
@@ -591,7 +591,7 @@ public class ClientManager implements IClientManager, INetworkManagerBackgroundC
 		state.correspondingCommitOffsets = null;
 	}
 
-	private MutationRecord _mainReplayMutationAndFetchNext(StateSnapshot snapshot, MutationRecord record, boolean isCommitted) {
+	private MutationRecord _mainReplayMutationAndFetchNext(StateSnapshot snapshot, MutationRecord record, CommitInfo.Effect effectIfCommitted) {
 		MutationRecord nextToProcess = null;
 		// See which syncing clients requested this (we will remove and rebuild the list since it is usually 1 element).
 		List<ReconnectingClientState> reconnecting = _reconnectingClientsByGlobalOffset.remove(record.globalOffset);
@@ -610,13 +610,13 @@ public class ClientManager implements IClientManager, INetworkManagerBackgroundC
 					// Thus, we use mostRecentlySentServerCommitOffset and update it for every COMMITTED message we send.
 					
 					// Note that we won't send the committed if we think that we already have one pending for this reconnect (it already committed while the reconnect was in progress).
-					boolean willSendCommitted = (isCommitted && (record.globalOffset <= state.finalCommitToReturnInReconnect));
+					boolean willSendCommitted = ((null !=  effectIfCommitted) && (record.globalOffset <= state.finalCommitToReturnInReconnect));
 					long lastCommitGlobalOffset = willSendCommitted
 							? record.globalOffset
 							: state.mostRecentlySentServerCommitOffset;
 					_mainEnqueueMessageToClient(state.clientId, ClientResponse.received(record.clientNonce, lastCommitGlobalOffset));
 					if (willSendCommitted) {
-						_mainEnqueueMessageToClient(state.clientId, ClientResponse.committed(record.clientNonce, lastCommitGlobalOffset, CommitInfo.create(CommitInfo.Effect.VALID, record.globalOffset)));
+						_mainEnqueueMessageToClient(state.clientId, ClientResponse.committed(record.clientNonce, lastCommitGlobalOffset, CommitInfo.create(effectIfCommitted, record.globalOffset)));
 						state.mostRecentlySentServerCommitOffset = lastCommitGlobalOffset;
 					}
 					// Make sure to bump ahead the expected nonce, if this is later.
@@ -668,8 +668,7 @@ public class ClientManager implements IClientManager, INetworkManagerBackgroundC
 				MutationRecord nextToProcess = _callbacks.mainClientFetchMutationIfAvailable(mutationOffsetToFetch);
 				while (null != nextToProcess) {
 					// These in-flight mutations are never committed if returned inline.
-					boolean isCommitted = false;
-					nextToProcess = _mainReplayMutationAndFetchNext(arg, nextToProcess, isCommitted);
+					nextToProcess = _mainReplayMutationAndFetchNext(arg, nextToProcess, null);
 				}
 			}
 		} else if (null != normalState) {
