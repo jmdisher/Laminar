@@ -53,16 +53,23 @@ public class TestNodeState {
 	 */
 	@Test
 	public void testOneClientCommit() throws Throwable {
+		TopicName topic = TopicName.fromString("fake");
 		MainThread test = new MainThread();
 		test.start();
 		test.startLatch.await();
 		Runner runner = new Runner(test.nodeState);
 		
+		// Register the topic and say it was committed.
+		F<CommittedMutationRecord> preMutation = test.diskManager.get_commitMutation();
+		long mutationNumber = runner.run((snapshot) -> test.nodeState.mainHandleValidClientMessage(UUID.randomUUID(), ClientMessage.createTopic(1L, topic)));
+		Assert.assertEquals(1L, mutationNumber);
+		runner.runVoid((snapshot) -> test.nodeState.mainMutationWasCommitted(preMutation.get()));
+		
 		// Send the ClientMessage.
 		F<CommittedMutationRecord> mutation = test.diskManager.get_commitMutation();
 		F<EventRecord> event = test.diskManager.get_commitEvent();
-		long mutationNumber = runner.run((snapshot) -> test.nodeState.mainHandleValidClientMessage(UUID.randomUUID(), ClientMessage.temp(1L, TopicName.fromString("fake"), new byte[] {1})));
-		Assert.assertEquals(1L, mutationNumber);
+		mutationNumber = runner.run((snapshot) -> test.nodeState.mainHandleValidClientMessage(UUID.randomUUID(), ClientMessage.temp(2L, topic, new byte[] {1})));
+		Assert.assertEquals(2L, mutationNumber);
 		Assert.assertEquals(mutationNumber, mutation.get().record.globalOffset);
 		Assert.assertEquals(mutationNumber, event.get().globalOffset);
 		

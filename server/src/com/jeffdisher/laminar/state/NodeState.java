@@ -744,9 +744,14 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 
 	private EventRecord _createEventAndIncrementOffset(TopicName topic, MutationRecord mutation) {
 		boolean isSynthetic = topic.string.isEmpty();
-		// TODO:  Change this when event topics are no longer implicitly created.
-		_activeTopics.add(topic);
-		long offsetToPropose = _nextEventOffsetByTopic.getOrDefault(topic, 1L);
+		// By the time we get to this point, writes to invalid topics would be converted into a non-event.
+		// Destroy, however, is a special-case since it renders the topic invalid but we still want to use it for the destroy, itself.
+		if (MutationRecordType.DESTROY_TOPIC != mutation.type) {
+			Assert.assertTrue(isSynthetic || _activeTopics.contains(topic));
+		}
+		long offsetToPropose = isSynthetic
+				? 0L
+				: _nextEventOffsetByTopic.get(topic);
 		EventRecord event = Helpers.convertMutationToEvent(mutation, offsetToPropose);
 		// Note that mutations to synthetic topics cannot be converted to events.
 		Assert.assertTrue(isSynthetic == (null == event));
@@ -801,8 +806,10 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		case TEMP: {
 			// We don't change any internal state for this - we just log it.
 			System.out.println("GOT TEMP FROM " + mutation.clientId + " nonce " + mutation.clientNonce + " data " + mutation.payload[0]);
-			// For now, we always let these pass since topics are implicitly created.
-			effect = CommitInfo.Effect.VALID;
+			// This is VALID if the topic exists but ERROR, if not.
+			effect = _activeTopics.contains(mutation.topic)
+					? CommitInfo.Effect.VALID
+					: CommitInfo.Effect.ERROR;
 		}
 			break;
 		case UPDATE_CONFIG: {

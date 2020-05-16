@@ -58,6 +58,7 @@ public class TestCluster {
 		ClientConnection client2 = ClientConnection.open(address);
 		try {
 			// Send initial messages.
+			Assert.assertEquals(CommitInfo.Effect.VALID, client1.sendCreateTopic(topic).waitForCommitted().effect);
 			ClientResult result1_1 = client1.sendTemp(topic, new byte[] {1});
 			ClientResult result2_1 = client2.sendTemp(topic, new byte[] {2});
 			
@@ -90,7 +91,7 @@ public class TestCluster {
 			Assert.assertEquals(originalConfig.entries.length, client1.getCurrentConfig().entries.length);
 			Assert.assertEquals(originalConfig.entries.length, client2.getCurrentConfig().entries.length);
 			// Wait for the listener to receive the events before checking for the config (since it might not have received anything, yet).
-			Assert.assertEquals(2, beforeListener.waitForEventCount(2));
+			Assert.assertEquals(3, beforeListener.waitForEventCount(3));
 			Assert.assertEquals(originalConfig.entries.length, beforeListener.getCurrentConfig().entries.length);
 			
 			// Start the other node in the config and let the test complete.
@@ -142,6 +143,7 @@ public class TestCluster {
 		ClientConnection client2 = ClientConnection.open(address);
 		try {
 			// Send initial messages.
+			Assert.assertEquals(CommitInfo.Effect.VALID, client1.sendCreateTopic(topic).waitForCommitted().effect);
 			ClientResult result1_1 = client1.sendTemp(topic, new byte[] {1});
 			ClientResult result2_1 = client2.sendTemp(topic, new byte[] {2});
 			
@@ -186,7 +188,7 @@ public class TestCluster {
 			Assert.assertEquals(originalConfig.entries.length, client1.getCurrentConfig().entries.length);
 			Assert.assertEquals(originalConfig.entries.length, client2.getCurrentConfig().entries.length);
 			// Wait for the listener to receive the events before checking for the config (since it might not have received anything, yet).
-			Assert.assertEquals(2, beforeListener.waitForEventCount(2));
+			Assert.assertEquals(3, beforeListener.waitForEventCount(3));
 			Assert.assertEquals(originalConfig.entries.length, beforeListener.getCurrentConfig().entries.length);
 			
 			// Start the other node in the config and let the test complete.
@@ -262,6 +264,7 @@ public class TestCluster {
 			configResult.waitForCommitted();
 			
 			// Now, send another message on client1 and 2 on client2.
+			Assert.assertEquals(CommitInfo.Effect.VALID, client1.sendCreateTopic(topic).waitForCommitted().effect);
 			ClientResult client1_1 = client1.sendTemp(topic, new byte[] {1});
 			ClientResult client2_1 = client2.sendTemp(topic, new byte[] {2});
 			ClientResult client2_2 = client2.sendTemp(topic, new byte[] {3});
@@ -323,6 +326,7 @@ public class TestCluster {
 			configResult.waitForCommitted();
 			
 			// Now, send another message on client1 and 2 on client2.
+			Assert.assertEquals(CommitInfo.Effect.VALID, client1.sendCreateTopic(topic).waitForCommitted().effect);
 			ClientResult client1_1 = client1.sendTemp(topic, new byte[] {1});
 			ClientResult client2_1 = client2.sendTemp(topic, new byte[] {2});
 			ClientResult client2_2 = client2.sendTemp(topic, new byte[] {3});
@@ -373,6 +377,7 @@ public class TestCluster {
 			ClusterConfig config = ClusterConfig.configFromEntries(new ConfigEntry[] {leaderInitial.entries[0], followerInitial.entries[0], follower2Config});
 			
 			// Send a normal message, the config update, the poison, and a normal message on client1.
+			Assert.assertEquals(CommitInfo.Effect.VALID, client1.sendCreateTopic(topic).waitForCommitted().effect);
 			ClientResult client1_1 = client1.sendTemp(topic, new byte[] {1});
 			ClientResult configResult = client1.sendUpdateConfig(config);
 			ClientResult client1_2 = client1.sendPoison(topic, new byte[] {2});
@@ -458,6 +463,7 @@ public class TestCluster {
 			configResult.waitForCommitted();
 			
 			// Send the initial message and wait for it to commit (which means it has made it to both nodes).
+			Assert.assertEquals(CommitInfo.Effect.VALID, client.sendCreateTopic(topic).waitForCommitted().effect);
 			ClientResult result1 = client.sendTemp(topic, new byte[] {1});
 			result1.waitForCommitted();
 			// Wait until it commits on the other, too.
@@ -508,6 +514,7 @@ public class TestCluster {
 		
 		ClientConnection client = ClientConnection.open(serverAddress);
 		try {
+			Assert.assertEquals(CommitInfo.Effect.VALID, client.sendCreateTopic(topic).waitForCommitted().effect);
 			client.sendTemp(topic, new byte[] {-1}).waitForCommitted();
 			// Send lots of messages and then force a reconnect, before we have blocked on any of them.
 			ClientResult[] results = new ClientResult[100];
@@ -576,6 +583,7 @@ public class TestCluster {
 		ClientConnection client = ClientConnection.open(server1Address);
 		try {
 			client.sendUpdateConfig(config);
+			Assert.assertEquals(CommitInfo.Effect.VALID, client.sendCreateTopic(topic).waitForCommitted().effect);
 			
 			// We want to send the messages in bursts as we bring more servers online.
 			_runBatch(client, topic, 10, 0);
@@ -589,14 +597,16 @@ public class TestCluster {
 			Assert.assertEquals(0, server3.stop());
 			server3 = null;
 			
-			// Start a listener on each remaining server and verify we see all 40 mutations.
-			EventRecord[] records1 = _listenOnServer(server1Address, topic, client.getClientId(), 40);
-			EventRecord[] records4 = _listenOnServer(server4Address, topic, client.getClientId(), 40);
-			EventRecord[] records5 = _listenOnServer(server5Address, topic, client.getClientId(), 40);
+			// Start a listener on each remaining server and verify we see all 41 mutations (but want to skip the first, since it is just the topic creation).
+			EventRecord[] records1 = _listenOnServer(server1Address, topic, client.getClientId(), 41);
+			EventRecord[] records4 = _listenOnServer(server4Address, topic, client.getClientId(), 41);
+			EventRecord[] records5 = _listenOnServer(server5Address, topic, client.getClientId(), 41);
 			for (int i = 0; i < 40; ++i) {
-				Assert.assertEquals((byte)i, records1[i].payload[0]);
-				Assert.assertEquals((byte)i, records4[i].payload[0]);
-				Assert.assertEquals((byte)i, records5[i].payload[0]);
+				// Skip the topic creation.
+				int index = i + 1;
+				Assert.assertEquals((byte)i, records1[index].payload[0]);
+				Assert.assertEquals((byte)i, records4[index].payload[0]);
+				Assert.assertEquals((byte)i, records5[index].payload[0]);
 			}
 		} finally {
 			// Shut down.
@@ -655,6 +665,7 @@ public class TestCluster {
 		ClientConnection client = ClientConnection.open(server1Address);
 		try {
 			client.sendUpdateConfig(config);
+			Assert.assertEquals(CommitInfo.Effect.VALID, client.sendCreateTopic(topic).waitForCommitted().effect);
 			
 			// We want to send the messages in bursts as we bring more servers online.
 			_runBatch(client, topic, 10, 0);
@@ -665,17 +676,19 @@ public class TestCluster {
 			_rotateServer(serverUuids, config, servers, client);
 			_runBatch(client, topic, 10, 30);
 			
-			EventRecord[] records1 = _listenOnServer(server1Address, topic, client.getClientId(), 40);
-			EventRecord[] records2 = _listenOnServer(server2Address, topic, client.getClientId(), 40);
-			EventRecord[] records3 = _listenOnServer(server3Address, topic, client.getClientId(), 40);
-			EventRecord[] records4 = _listenOnServer(server4Address, topic, client.getClientId(), 40);
-			EventRecord[] records5 = _listenOnServer(server5Address, topic, client.getClientId(), 40);
+			// We need to add an extra event and skip over it to account for the creation of the topic.
+			EventRecord[] records1 = _listenOnServer(server1Address, topic, client.getClientId(), 41);
+			EventRecord[] records2 = _listenOnServer(server2Address, topic, client.getClientId(), 41);
+			EventRecord[] records3 = _listenOnServer(server3Address, topic, client.getClientId(), 41);
+			EventRecord[] records4 = _listenOnServer(server4Address, topic, client.getClientId(), 41);
+			EventRecord[] records5 = _listenOnServer(server5Address, topic, client.getClientId(), 41);
 			for (int i = 0; i < 40; ++i) {
-				Assert.assertEquals((byte)i, records1[i].payload[0]);
-				Assert.assertEquals((byte)i, records2[i].payload[0]);
-				Assert.assertEquals((byte)i, records3[i].payload[0]);
-				Assert.assertEquals((byte)i, records4[i].payload[0]);
-				Assert.assertEquals((byte)i, records5[i].payload[0]);
+				int index = i + 1;
+				Assert.assertEquals((byte)i, records1[index].payload[0]);
+				Assert.assertEquals((byte)i, records2[index].payload[0]);
+				Assert.assertEquals((byte)i, records3[index].payload[0]);
+				Assert.assertEquals((byte)i, records4[index].payload[0]);
+				Assert.assertEquals((byte)i, records5[index].payload[0]);
 			}
 		} finally {
 			// Shut down.
@@ -708,6 +721,8 @@ public class TestCluster {
 			Assert.assertEquals(CommitInfo.Effect.VALID, client.sendUpdateConfig(config).waitForCommitted().effect);
 			
 			// Send a message to the implicit topic and verify attempting to create it fails but we can destroy it.
+			ClientResult precreate1 = client.sendCreateTopic(implicit);
+			Assert.assertEquals(CommitInfo.Effect.VALID, precreate1.waitForCommitted().effect);
 			ClientResult result1 = client.sendTemp(implicit, new byte[] {1});
 			ClientResult result2 = client.sendCreateTopic(implicit);
 			Assert.assertEquals(CommitInfo.Effect.VALID, result1.waitForCommitted().effect);
@@ -716,6 +731,8 @@ public class TestCluster {
 			Assert.assertEquals(CommitInfo.Effect.VALID, result3.waitForCommitted().effect);
 			
 			// Explicitly create a new topic, send a message to both it and the invalid, then destroy both.
+			ClientResult precreate2 = client.sendCreateTopic(implicit);
+			Assert.assertEquals(CommitInfo.Effect.VALID, precreate2.waitForCommitted().effect);
 			ClientResult result4 = client.sendCreateTopic(explicit);
 			ClientResult result5 = client.sendTemp(implicit, new byte[] {2});
 			ClientResult result6 = client.sendTemp(explicit, new byte[] {3});
@@ -729,8 +746,10 @@ public class TestCluster {
 			
 			// Now, attach a listener to each server and ensure that we observe all the VALID messages.
 			try (ListenerConnection leaderImplicit = ListenerConnection.open(leaderClientAddress, implicit, 0L)) {
+				Assert.assertEquals(precreate1.message.nonce, leaderImplicit.pollForNextEvent().clientNonce);
 				Assert.assertEquals(result1.message.nonce, leaderImplicit.pollForNextEvent().clientNonce);
 				Assert.assertEquals(result3.message.nonce, leaderImplicit.pollForNextEvent().clientNonce);
+				Assert.assertEquals(precreate2.message.nonce, leaderImplicit.pollForNextEvent().clientNonce);
 				Assert.assertEquals(result5.message.nonce, leaderImplicit.pollForNextEvent().clientNonce);
 				Assert.assertEquals(result7.message.nonce, leaderImplicit.pollForNextEvent().clientNonce);
 			}

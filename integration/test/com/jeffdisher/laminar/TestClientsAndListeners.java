@@ -36,16 +36,18 @@ import com.jeffdisher.laminar.utils.TestingHelpers;
 public class TestClientsAndListeners {
 	@Test
 	public void testSimpleClient() throws Throwable {
+		TopicName topic = TopicName.fromString("test");
 		// Here, we start up, connect a client, send one message, wait for it to commit, then shut everything down.
 		ServerWrapper wrapper = ServerWrapper.startedServerWrapper("testSimpleClient", 2003, 2002, new File("/tmp/laminar"));
 		
 		try (ClientConnection client = ClientConnection.open(new InetSocketAddress(InetAddress.getLocalHost(), 2002))) {
-			ClientResult result = client.sendTemp(TopicName.fromString("test"), "Hello World!".getBytes());
+			Assert.assertEquals(CommitInfo.Effect.VALID, client.sendCreateTopic(topic).waitForCommitted().effect);
+			ClientResult result = client.sendTemp(topic, "Hello World!".getBytes());
 			result.waitForReceived();
 			CommitInfo info = result.waitForCommitted();
 			Assert.assertEquals(CommitInfo.Effect.VALID, info.effect);
 			long commitOffset = info.mutationOffset;
-			Assert.assertEquals(1L, commitOffset);
+			Assert.assertEquals(2L, commitOffset);
 		}
 		Assert.assertEquals(0, wrapper.stop());
 	}
@@ -65,12 +67,13 @@ public class TestClientsAndListeners {
 		beforeListener.start();
 		
 		try (ClientConnection client = ClientConnection.open(address)) {
+			Assert.assertEquals(CommitInfo.Effect.VALID, client.sendCreateTopic(topic).waitForCommitted().effect);
 			ClientResult result = client.sendTemp(topic, message);
 			result.waitForReceived();
 			CommitInfo info = result.waitForCommitted();
 			Assert.assertEquals(CommitInfo.Effect.VALID, info.effect);
 			long commitOffset = info.mutationOffset;
-			Assert.assertEquals(1L, commitOffset);
+			Assert.assertEquals(2L, commitOffset);
 		}
 		
 		// Start a listener after the client begins.
@@ -98,6 +101,7 @@ public class TestClientsAndListeners {
 		InetSocketAddress address = new InetSocketAddress(InetAddress.getLocalHost(), 2002);
 		
 		try (ClientConnection client = ClientConnection.open(address)) {
+			Assert.assertEquals(CommitInfo.Effect.VALID, client.sendCreateTopic(topic).waitForCommitted().effect);
 			ClientResult result1 = client.sendTemp(topic, message);
 			ClientResult result2 = client.sendTemp(topic, message);
 			ClientResult result3 = client.sendTemp(topic, message);
@@ -163,6 +167,7 @@ public class TestClientsAndListeners {
 		// It should always be harmless to wait for connection over and over so just do that here.
 		try (ClientConnection client = ClientConnection.open(new InetSocketAddress(InetAddress.getLocalHost(), 2002))) {
 			client.waitForConnection();
+			Assert.assertEquals(CommitInfo.Effect.VALID, client.sendCreateTopic(topic).waitForCommitted().effect);
 			ClientResult result = client.sendTemp(topic, "Hello World!".getBytes());
 			client.waitForConnection();
 			result.waitForReceived();
@@ -170,7 +175,7 @@ public class TestClientsAndListeners {
 			CommitInfo info = result.waitForCommitted();
 			Assert.assertEquals(CommitInfo.Effect.VALID, info.effect);
 			long commitOffset = info.mutationOffset;
-			Assert.assertEquals(1L, commitOffset);
+			Assert.assertEquals(2L, commitOffset);
 			client.waitForConnection();
 		}
 		Assert.assertEquals(0, wrapper.stop());
@@ -272,11 +277,12 @@ public class TestClientsAndListeners {
 		InetSocketAddress address = new InetSocketAddress(InetAddress.getLocalHost(), 2002);
 		
 		// Start a listener before the client begins.
-		CaptureListener beforeListener = new CaptureListener(address, topic, 21);
+		CaptureListener beforeListener = new CaptureListener(address, topic, 22);
 		beforeListener.setName("Before");
 		beforeListener.start();
 		
 		try (ClientConnection client = ClientConnection.open(address)) {
+			Assert.assertEquals(CommitInfo.Effect.VALID, client.sendCreateTopic(topic).waitForCommitted().effect);
 			// Send 10 messages, then a poison, then another 10 messages.  After, wait for them all to commit.
 			ClientResult[] results = new ClientResult[21];
 			for (int i = 0; i < 10; ++i) {
@@ -291,24 +297,26 @@ public class TestClientsAndListeners {
 				CommitInfo info = results[i].waitForCommitted();
 				Assert.assertEquals(CommitInfo.Effect.VALID, info.effect);
 				long commitOffset = info.mutationOffset;
-				Assert.assertEquals((long)(1 + i), commitOffset);
+				Assert.assertEquals((long)(2 + i), commitOffset);
 			}
 			// By this point, the client must have received the config (since it gets that before any received/committed).
 			Assert.assertNotNull(client.getCurrentConfig());
 		}
 		
 		// Start a listener after the client is done.
-		CaptureListener afterListener = new CaptureListener(address, topic, 21);
+		CaptureListener afterListener = new CaptureListener(address, topic, 22);
 		afterListener.setName("After");
 		afterListener.start();
 		
 		// Wait for the listeners to stop and then verify what they found is correct.
 		EventRecord[] beforeEvents = beforeListener.waitForTerminate();
 		EventRecord[] afterEvents = afterListener.waitForTerminate();
-		for (int i = 0; i < beforeEvents.length; ++i) {
+		for (int i = 0; i < beforeEvents.length-1; ++i) {
+			// Add a bias to skip the topic creation.
+			int index = i + 1;
 			// Check the after, first, since that happened after the poison was done and the difference can point to different bugs.
-			Assert.assertEquals(i, afterEvents[i].payload[0]);
-			Assert.assertEquals(i, beforeEvents[i].payload[0]);
+			Assert.assertEquals(i, afterEvents[index].payload[0]);
+			Assert.assertEquals(i, beforeEvents[index].payload[0]);
 		}
 		// Also verify that the listeners got the config.
 		Assert.assertNotNull(beforeListener.getCurrentConfig());
@@ -416,10 +424,11 @@ public class TestClientsAndListeners {
 			Assert.assertEquals(CommitInfo.Effect.VALID, info.effect);
 			long commitOffset = info.mutationOffset;
 			Assert.assertEquals(1L, commitOffset);
+			Assert.assertEquals(CommitInfo.Effect.VALID, client.sendCreateTopic(topic).waitForCommitted().effect);
 			info = client.sendTemp(topic, new byte[] {1}).waitForCommitted();
 			Assert.assertEquals(CommitInfo.Effect.VALID, info.effect);
 			commitOffset = info.mutationOffset;
-			Assert.assertEquals(2L, commitOffset);
+			Assert.assertEquals(3L, commitOffset);
 			
 			// Stop the leader and ask another node to become leader then see if we can continue sending messages.
 			timingListener.waitForTerminate();
@@ -434,13 +443,13 @@ public class TestClientsAndListeners {
 			info = client.sendTemp(topic, new byte[] {2}).waitForCommitted();
 			Assert.assertEquals(CommitInfo.Effect.VALID, info.effect);
 			commitOffset = info.mutationOffset;
-			Assert.assertEquals(3L, commitOffset);
+			Assert.assertEquals(4L, commitOffset);
 			info = client.sendTemp(topic, new byte[] {3}).waitForCommitted();
 			Assert.assertEquals(CommitInfo.Effect.VALID, info.effect);
 			commitOffset = info.mutationOffset;
-			Assert.assertEquals(4L, commitOffset);
+			Assert.assertEquals(5L, commitOffset);
 		}
-		CaptureListener counting = new CaptureListener(server2Address, topic, 3);
+		CaptureListener counting = new CaptureListener(server2Address, topic, 4);
 		counting.skipNonceCheck(clientUuid, 1L);
 		counting.start();
 		counting.waitForTerminate();
@@ -461,6 +470,10 @@ public class TestClientsAndListeners {
 		InetSocketAddress serverAddress = new InetSocketAddress(InetAddress.getLocalHost(), 2001);
 		
 		try (ClientConnection client = ClientConnection.open(serverAddress)) {
+			// Create the topics.
+			Assert.assertEquals(CommitInfo.Effect.VALID, client.sendCreateTopic(topic1).waitForCommitted().effect);
+			Assert.assertEquals(CommitInfo.Effect.VALID, client.sendCreateTopic(topic2).waitForCommitted().effect);
+			
 			// Send 10 messages, alternating between topics.
 			ClientResult[] results = new ClientResult[10];
 			for (int i = 0; i < 10; ++i) {
@@ -474,25 +487,34 @@ public class TestClientsAndListeners {
 				Assert.assertEquals(CommitInfo.Effect.VALID, info.effect);
 				long mutationOffset = info.mutationOffset;
 				// These were sent by one client so commit, in-order.
-				Assert.assertEquals((i + 1), (int)mutationOffset);
+				// We need to add a nonce bias to account for the 2 messages to create the topics.
+				Assert.assertEquals(2 + (i + 1), (int)mutationOffset);
 			}
 		}
 		ListenerConnection listener1 = ListenerConnection.open(serverAddress, topic1, 0L);
 		ListenerConnection listener2 = ListenerConnection.open(serverAddress, topic2, 0L);
+		// Consume the first message in each topic to skip over the creation.
+		Assert.assertEquals(1L, listener1.pollForNextEvent().clientNonce);
+		Assert.assertEquals(2L, listener2.pollForNextEvent().clientNonce);
 		for (int i = 0; i < 5; ++i) {
+			// We need to add a nonce bias to account for the 2 messages to create the topics.
+			int bias = 2;
+			
 			EventRecord event1 = listener1.pollForNextEvent();
 			EventRecord event2 = listener2.pollForNextEvent();
 			
 			// Test that we see everything interleaved for these 2, corresponding to how we posted.
-			Assert.assertEquals((2 * i) + 1, (int)event1.clientNonce);
-			Assert.assertEquals((2 * i) + 2, (int)event2.clientNonce);
+			Assert.assertEquals(bias + (2 * i) + 1, (int)event1.clientNonce);
+			Assert.assertEquals(bias + (2 * i) + 2, (int)event2.clientNonce);
 			
-			Assert.assertEquals((2 * i) + 1, (int)event1.globalOffset);
-			Assert.assertEquals((2 * i) + 2, (int)event2.globalOffset);
+			Assert.assertEquals(bias + (2 * i) + 1, (int)event1.globalOffset);
+			Assert.assertEquals(bias + (2 * i) + 2, (int)event2.globalOffset);
 			
-			// (these contain the raw TEMP payloads, too).
-			Assert.assertEquals((2 * i), Byte.toUnsignedInt(event1.payload[0]));
-			Assert.assertEquals((2 * i) + 1, Byte.toUnsignedInt(event2.payload[0]));
+			if (i >= 2) {
+				// (these contain the raw TEMP payloads, too).
+				Assert.assertEquals((2 * i), Byte.toUnsignedInt(event1.payload[0]));
+				Assert.assertEquals((2 * i) + 1, Byte.toUnsignedInt(event2.payload[0]));
+			}
 		}
 		listener1.close();
 		listener2.close();
@@ -542,7 +564,8 @@ public class TestClientsAndListeners {
 			_message = message;
 			_latch = latch;
 			// We want to expose the connection so tests can request it shut down.
-			this.listener = ListenerConnection.open(address, topic, 0L);
+			// Start at the second event since the first 1 is just the topic creation.
+			this.listener = ListenerConnection.open(address, topic, 1L);
 		}
 		
 		@Override
@@ -554,7 +577,7 @@ public class TestClientsAndListeners {
 					Assert.assertNull(record);
 				} else {
 					// We only expect the one.
-					Assert.assertEquals(1L, record.localOffset);
+					Assert.assertEquals(2L, record.localOffset);
 					Assert.assertArrayEquals(_message, record.payload);
 				}
 				_latch.countDown();
