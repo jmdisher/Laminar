@@ -6,6 +6,7 @@ import java.util.UUID;
 
 import com.jeffdisher.laminar.components.NetworkManager;
 import com.jeffdisher.laminar.types.ClientResponse;
+import com.jeffdisher.laminar.types.CommitInfo;
 
 
 /**
@@ -26,9 +27,9 @@ public class ClientState {
 	 */
 	public List<Long> noncesCommittedDuringReconnect;
 	/**
-	 * We also store the commit offsets of the commits we observed during reconnect.
+	 * We also store the commit info of the commits we observed during reconnect.
 	 */
-	public List<Long> correspondingCommitOffsets;
+	public List<CommitInfo> correspondingCommitInfo;
 
 	/**
 	 * Creates a new normal client state with the given clientId and nextNonce.  The nonce is typically set to 1L but

@@ -173,7 +173,7 @@ public class ClientManager implements IClientManager, INetworkManagerBackgroundC
 		
 		// It is possible that nobody was interested in this commit if it was fetched for ClusterManager.
 		if (null != tuple) {
-			_mainProcessTupleForCommit(committedRecord.record.globalOffset, tuple);
+			_mainProcessTupleForCommit(committedRecord.record.globalOffset, CommitInfo.Effect.VALID, tuple);
 		}
 	}
 
@@ -577,18 +577,18 @@ public class ClientManager implements IClientManager, INetworkManagerBackgroundC
 		
 		// Synthesize commit messages for any nonces which accumulated during reconnect.
 		Assert.assertTrue(null != state.noncesCommittedDuringReconnect);
-		Assert.assertTrue(null != state.correspondingCommitOffsets);
+		Assert.assertTrue(null != state.correspondingCommitInfo);
 		Iterator<Long> nonces = state.noncesCommittedDuringReconnect.iterator();
-		Iterator<Long> correspondingCommits = state.correspondingCommitOffsets.iterator();
+		Iterator<CommitInfo> correspondingInfo = state.correspondingCommitInfo.iterator();
 		while (nonces.hasNext()) {
 			long nonceToCommit = nonces.next();
-			long commitOffsetOfMessage = correspondingCommits.next();
-			ClientResponse synthesizedCommit = ClientResponse.committed(nonceToCommit, lastCommittedMutationOffset, CommitInfo.create(CommitInfo.Effect.VALID, commitOffsetOfMessage));
+			CommitInfo info = correspondingInfo.next();
+			ClientResponse synthesizedCommit = ClientResponse.committed(nonceToCommit, lastCommittedMutationOffset, info);
 			_mainEnqueueMessageToClient(state.clientId, synthesizedCommit);
 		}
-		Assert.assertTrue(!correspondingCommits.hasNext());
+		Assert.assertTrue(!correspondingInfo.hasNext());
 		state.noncesCommittedDuringReconnect = null;
-		state.correspondingCommitOffsets = null;
+		state.correspondingCommitInfo = null;
 	}
 
 	private MutationRecord _mainReplayMutationAndFetchNext(StateSnapshot snapshot, MutationRecord record, CommitInfo.Effect effectIfCommitted) {
@@ -696,15 +696,16 @@ public class ClientManager implements IClientManager, INetworkManagerBackgroundC
 		}
 	}
 
-	private void _mainProcessTupleForCommit(long globalOffsetOfCommit, ClientCommitTuple tuple) {
+	private void _mainProcessTupleForCommit(long globalOffsetOfCommit, CommitInfo.Effect effect, ClientCommitTuple tuple) {
+		CommitInfo info = CommitInfo.create(effect, globalOffsetOfCommit);
 		if (_normalClientsById.containsKey(tuple.clientId) && (null != _normalClientsById.get(tuple.clientId).noncesCommittedDuringReconnect)) {
 			// Note that we can't allow already in-flight messages from before the reconnect to go to the client before the reconnect is done so enqueue nonces to commit here and we will synthesize them, later.
 			ClientState state = _normalClientsById.get(tuple.clientId);
 			state.noncesCommittedDuringReconnect.add(tuple.clientNonce);
-			state.correspondingCommitOffsets.add(globalOffsetOfCommit);
+			state.correspondingCommitInfo.add(info);
 		} else {
 			// Create the commit from the information in the tuple and send it to the client.
-			ClientResponse commit = ClientResponse.committed(tuple.clientNonce, globalOffsetOfCommit, CommitInfo.create(CommitInfo.Effect.VALID, globalOffsetOfCommit));
+			ClientResponse commit = ClientResponse.committed(tuple.clientNonce, globalOffsetOfCommit, info);
 			_mainEnqueueMessageToClient(tuple.clientId, commit);
 		}
 	}
@@ -716,7 +717,7 @@ public class ClientManager implements IClientManager, INetworkManagerBackgroundC
 		ClientState state = _createAndInstallNewClient(client, reconnect.clientId, -1L);
 		// This is a reconnecting client so set the buffer for old messages trying to commit back to this client.
 		state.noncesCommittedDuringReconnect = new LinkedList<>();
-		state.correspondingCommitOffsets = new LinkedList<>();
+		state.correspondingCommitInfo = new LinkedList<>();
 		
 		// We still use a specific ReconnectionState to track the progress of the sync.
 		// We don't add them to our map of _normalClients until they finish syncing so we put them into our map of
