@@ -88,6 +88,24 @@ public class ClientMessage {
 	}
 
 	/**
+	 * Creates a message to create a new topic on the cluster.
+	 * 
+	 * @return A new ClientMessage instance.
+	 */
+	public static ClientMessage createTopic(long nonce, TopicName topic) {
+		return new ClientMessage(ClientMessageType.CREATE_TOPIC, nonce, ClientMessagePayload_Topic.create(topic));
+	}
+
+	/**
+	 * Creates a message to destroy an existing topic on the cluster.
+	 * 
+	 * @return A new ClientMessage instance.
+	 */
+	public static ClientMessage destroyTopic(long nonce, TopicName topic) {
+		return new ClientMessage(ClientMessageType.DESTROY_TOPIC, nonce, ClientMessagePayload_Topic.create(topic));
+	}
+
+	/**
 	 * Creates a temp message.
 	 * Note that, as the name implies, this only exists for temporary testing of the flow and will be removed, later.
 	 * 
@@ -164,6 +182,12 @@ public class ClientMessage {
 			break;
 		case GET_UUID:
 			payload = ClientMessagePayload_Empty.deserialize(buffer);
+			break;
+		case CREATE_TOPIC:
+			payload = ClientMessagePayload_Topic.deserialize(buffer);
+			break;
+		case DESTROY_TOPIC:
+			payload = ClientMessagePayload_Topic.deserialize(buffer);
 			break;
 		case TEMP:
 			payload = ClientMessagePayload_Temp.deserialize(buffer);

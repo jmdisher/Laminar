@@ -160,6 +160,22 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 		}
 	}
 
+	public ClientResult sendCreateTopic(TopicName topic) {
+		Assert.assertTrue(Thread.currentThread() != _internalThread);
+		if (topic.string.isEmpty()) {
+			throw new IllegalArgumentException("Cannot create empty topic");
+		}
+		return _externalWaitForMessageSetup((nonce) -> ClientMessage.createTopic(nonce, topic));
+	}
+
+	public ClientResult sendDestroyTopic(TopicName topic) {
+		Assert.assertTrue(Thread.currentThread() != _internalThread);
+		if (topic.string.isEmpty()) {
+			throw new IllegalArgumentException("Cannot destroy empty topic");
+		}
+		return _externalWaitForMessageSetup((nonce) -> ClientMessage.destroyTopic(nonce, topic));
+	}
+
 	public ClientResult sendTemp(TopicName topic, byte[] payload) {
 		Assert.assertTrue(Thread.currentThread() != _internalThread);
 		if (topic.string.isEmpty()) {

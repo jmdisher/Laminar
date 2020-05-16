@@ -1,9 +1,11 @@
 package com.jeffdisher.laminar.state;
 
+import java.nio.ByteBuffer;
 import java.util.UUID;
 
 import com.jeffdisher.laminar.types.ClientMessage;
 import com.jeffdisher.laminar.types.ClientMessagePayload_Temp;
+import com.jeffdisher.laminar.types.ClientMessagePayload_Topic;
 import com.jeffdisher.laminar.types.ClientMessagePayload_UpdateConfig;
 import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.types.EventRecord;
@@ -34,6 +36,20 @@ public class Helpers {
 		switch (message.type) {
 		case INVALID:
 			Assert.unimplemented("Invalid message type");
+			break;
+		case CREATE_TOPIC: {
+			ClientMessagePayload_Topic payload = (ClientMessagePayload_Topic)message.payload;
+			ByteBuffer serializer = ByteBuffer.allocate(payload.topic.serializedSize());
+			payload.topic.serializeInto(serializer);
+			converted = MutationRecord.generateRecord(MutationRecordType.CREATE_TOPIC, termNumber, mutationOffsetToAssign, payload.topic, clientId, message.nonce, serializer.array());
+		}
+			break;
+		case DESTROY_TOPIC: {
+			ClientMessagePayload_Topic payload = (ClientMessagePayload_Topic)message.payload;
+			ByteBuffer serializer = ByteBuffer.allocate(payload.topic.serializedSize());
+			payload.topic.serializeInto(serializer);
+			converted = MutationRecord.generateRecord(MutationRecordType.DESTROY_TOPIC, termNumber, mutationOffsetToAssign, payload.topic, clientId, message.nonce, serializer.array());
+		}
 			break;
 		case TEMP: {
 			// This is just for initial testing:  send the received, log it, and send the commit.
@@ -77,6 +93,14 @@ public class Helpers {
 		switch (mutation.type) {
 		case INVALID:
 			throw Assert.unimplemented("Invalid message type");
+		case CREATE_TOPIC: {
+			eventToReturn = EventRecord.generateRecord(EventRecordType.CREATE_TOPIC, mutation.termNumber, mutation.globalOffset, eventOffsetToAssign, mutation.clientId, mutation.clientNonce, mutation.payload);
+		}
+			break;
+		case DESTROY_TOPIC: {
+			eventToReturn = EventRecord.generateRecord(EventRecordType.DESTROY_TOPIC, mutation.termNumber, mutation.globalOffset, eventOffsetToAssign, mutation.clientId, mutation.clientNonce, mutation.payload);
+		}
+			break;
 		case TEMP: {
 			eventToReturn = EventRecord.generateRecord(EventRecordType.TEMP, mutation.termNumber, mutation.globalOffset, eventOffsetToAssign, mutation.clientId, mutation.clientNonce, mutation.payload);
 		}

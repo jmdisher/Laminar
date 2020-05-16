@@ -10,6 +10,14 @@ public enum MutationRecordType {
 	 */
 	INVALID,
 	/**
+	 * Creates the named topic, generating an INVALID effect if it already exists.
+	 */
+	CREATE_TOPIC,
+	/**
+	 * Destroys the named topic, generating an INVALID effect if it doesn't exist.
+	 */
+	DESTROY_TOPIC,
+	/**
 	 * This message is purely temporary to verify the client-server communication.
 	 */
 	TEMP,

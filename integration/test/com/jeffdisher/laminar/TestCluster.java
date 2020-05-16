@@ -12,8 +12,10 @@ import org.junit.Test;
 
 import com.jeffdisher.laminar.client.ClientConnection;
 import com.jeffdisher.laminar.client.ClientResult;
+import com.jeffdisher.laminar.client.ListenerConnection;
 import com.jeffdisher.laminar.types.ClientMessage;
 import com.jeffdisher.laminar.types.ClusterConfig;
+import com.jeffdisher.laminar.types.CommitInfo;
 import com.jeffdisher.laminar.types.ConfigEntry;
 import com.jeffdisher.laminar.types.EventRecord;
 import com.jeffdisher.laminar.types.TopicName;
@@ -681,6 +683,66 @@ public class TestCluster {
 			for (ServerWrapper wrapper: servers) {
 				Assert.assertEquals(0, wrapper.stop());
 			}
+		}
+	}
+
+	/**
+	 * Tests that we observe the expected CommitInfo.Effect from create/destroy topic messages.
+	 */
+	@Test
+	public void testCreateDestroyTopic() throws Throwable {
+		TopicName implicit = TopicName.fromString("implicit");
+		TopicName explicit = TopicName.fromString("explicit");
+		UUID leaderUuid = UUID.randomUUID();
+		ServerWrapper leader = ServerWrapper.startedServerWrapperWithUuid("testCreateDestroyTopic-LEADER", leaderUuid, 3001, 2001, new File("/tmp/laminar1"));
+		InetSocketAddress leaderClientAddress = new InetSocketAddress(InetAddress.getLocalHost(), 2001);
+		UUID followerUuid = UUID.randomUUID();
+		ServerWrapper follower = ServerWrapper.startedServerWrapperWithUuid("testCreateDestroyTopic-FOLLOWER", followerUuid, 3002, 2002, new File("/tmp/laminar2"));
+		InetSocketAddress followerClientAddress= new InetSocketAddress(InetAddress.getLocalHost(), 2002);
+		
+		try(ClientConnection client = ClientConnection.open(leaderClientAddress)) {
+			ClusterConfig config = ClusterConfig.configFromEntries(new ConfigEntry[] {
+					new ConfigEntry(leaderUuid, new InetSocketAddress(InetAddress.getLocalHost(), 3001), leaderClientAddress),
+					new ConfigEntry(followerUuid, new InetSocketAddress(InetAddress.getLocalHost(), 3002), followerClientAddress),
+			});
+			Assert.assertEquals(CommitInfo.Effect.VALID, client.sendUpdateConfig(config).waitForCommitted().effect);
+			
+			// Send a message to the implicit topic and verify attempting to create it fails but we can destroy it.
+			ClientResult result1 = client.sendTemp(implicit, new byte[] {1});
+			ClientResult result2 = client.sendCreateTopic(implicit);
+			Assert.assertEquals(CommitInfo.Effect.VALID, result1.waitForCommitted().effect);
+			Assert.assertEquals(CommitInfo.Effect.INVALID, result2.waitForCommitted().effect);
+			ClientResult result3 = client.sendDestroyTopic(implicit);
+			Assert.assertEquals(CommitInfo.Effect.VALID, result3.waitForCommitted().effect);
+			
+			// Explicitly create a new topic, send a message to both it and the invalid, then destroy both.
+			ClientResult result4 = client.sendCreateTopic(explicit);
+			ClientResult result5 = client.sendTemp(implicit, new byte[] {2});
+			ClientResult result6 = client.sendTemp(explicit, new byte[] {3});
+			ClientResult result7 = client.sendDestroyTopic(implicit);
+			ClientResult result8 = client.sendDestroyTopic(explicit);
+			Assert.assertEquals(CommitInfo.Effect.VALID, result4.waitForCommitted().effect);
+			Assert.assertEquals(CommitInfo.Effect.VALID, result5.waitForCommitted().effect);
+			Assert.assertEquals(CommitInfo.Effect.VALID, result6.waitForCommitted().effect);
+			Assert.assertEquals(CommitInfo.Effect.VALID, result7.waitForCommitted().effect);
+			Assert.assertEquals(CommitInfo.Effect.VALID, result8.waitForCommitted().effect);
+			
+			// Now, attach a listener to each server and ensure that we observe all the VALID messages.
+			try (ListenerConnection leaderImplicit = ListenerConnection.open(leaderClientAddress, implicit, 0L)) {
+				Assert.assertEquals(result1.message.nonce, leaderImplicit.pollForNextEvent().clientNonce);
+				Assert.assertEquals(result3.message.nonce, leaderImplicit.pollForNextEvent().clientNonce);
+				Assert.assertEquals(result5.message.nonce, leaderImplicit.pollForNextEvent().clientNonce);
+				Assert.assertEquals(result7.message.nonce, leaderImplicit.pollForNextEvent().clientNonce);
+			}
+			try (ListenerConnection followerExplicit = ListenerConnection.open(leaderClientAddress, explicit, 0L)) {
+				Assert.assertEquals(result4.message.nonce, followerExplicit.pollForNextEvent().clientNonce);
+				Assert.assertEquals(result6.message.nonce, followerExplicit.pollForNextEvent().clientNonce);
+				Assert.assertEquals(result8.message.nonce, followerExplicit.pollForNextEvent().clientNonce);
+			}
+		} finally {
+			// Shut down.
+			Assert.assertEquals(0, leader.stop());
+			Assert.assertEquals(0, follower.stop());
 		}
 	}
 

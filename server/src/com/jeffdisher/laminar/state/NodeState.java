@@ -1,5 +1,6 @@
 package com.jeffdisher.laminar.state;
 
+import java.nio.ByteBuffer;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -63,6 +64,8 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 	private SyncProgress _currentConfig;
 	// This map is usually empty but contains any ClusterConfigs which haven't yet committed (meaning they are part of joint consensus).
 	private final Map<Long, SyncProgress> _configsPendingCommit;
+	// Note that we need to describe active topics and next event by topic separately since topic event offsets don't reset when a topic is recreated.
+	private final Set<TopicName> _activeTopics;
 	private final Map<TopicName, Long> _nextEventOffsetByTopic;
 	// The offset of the mutation most recently committed to disk (used to keep both the clients and other nodes in sync).
 	private long _lastCommittedMutationOffset;
@@ -94,6 +97,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		_configsPendingCommit = new HashMap<>();
 		
 		// Global offsets are 1-indexed so the first one is 1L.
+		_activeTopics = new HashSet<>();
 		_nextEventOffsetByTopic = new HashMap<>();
 		
 		_inFlightMutations = new InFlightMutations();
@@ -447,6 +451,16 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		switch (mutation.type) {
 		case INVALID:
 			throw Assert.unimplemented("Invalid message type");
+		case CREATE_TOPIC: {
+			// We don't change any internal state for this - we just log it.
+			System.out.println("GOT CREATE_TOPIC FROM " + mutation.clientId + " nonce " + mutation.clientNonce + ": " + TopicName.deserializeFrom(ByteBuffer.wrap(mutation.payload)));
+		}
+			break;
+		case DESTROY_TOPIC: {
+			// We don't change any internal state for this - we just log it.
+			System.out.println("GOT DESTROY_TOPIC FROM " + mutation.clientId + " nonce " + mutation.clientNonce + ": " + TopicName.deserializeFrom(ByteBuffer.wrap(mutation.payload)));
+		}
+			break;
 		case TEMP: {
 			// We don't change any internal state for this - we just log it.
 			System.out.println("GOT TEMP FROM " + mutation.clientId + " nonce " + mutation.clientNonce + " data " + mutation.payload[0]);
@@ -731,6 +745,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 	private EventRecord _createEventAndIncrementOffset(TopicName topic, MutationRecord mutation) {
 		boolean isSynthetic = topic.string.isEmpty();
 		// TODO:  Change this when event topics are no longer implicitly created.
+		_activeTopics.add(topic);
 		long offsetToPropose = _nextEventOffsetByTopic.getOrDefault(topic, 1L);
 		EventRecord event = Helpers.convertMutationToEvent(mutation, offsetToPropose);
 		// Note that mutations to synthetic topics cannot be converted to events.
@@ -759,6 +774,30 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		switch (mutation.type) {
 		case INVALID:
 			throw Assert.unimplemented("Invalid message type");
+		case CREATE_TOPIC: {
+			// We want to create the topic but should fail with Effect.INVALID if it is already there.
+			if (_activeTopics.contains(mutation.topic)) {
+				effect = CommitInfo.Effect.INVALID;
+			} else {
+				// 1-indexed.
+				_activeTopics.add(mutation.topic);
+				if (!_nextEventOffsetByTopic.containsKey(mutation.topic)) {
+					_nextEventOffsetByTopic.put(mutation.topic, 1L);
+				}
+				effect = CommitInfo.Effect.VALID;
+			}
+		}
+			break;
+		case DESTROY_TOPIC: {
+			// We want to destroy the topic but should fail with Effect.ERROR if it doesn't exist.
+			if (_activeTopics.contains(mutation.topic)) {
+				_activeTopics.remove(mutation.topic);
+				effect = CommitInfo.Effect.VALID;
+			} else {
+				effect = CommitInfo.Effect.INVALID;
+			}
+		}
+			break;
 		case TEMP: {
 			// We don't change any internal state for this - we just log it.
 			System.out.println("GOT TEMP FROM " + mutation.clientId + " nonce " + mutation.clientNonce + " data " + mutation.payload[0]);
