@@ -493,9 +493,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		if (mutation.globalOffset <= consensusOffset) {
 			// Commit, immediately.
 			Assert.assertTrue(_inFlightMutations.isEmpty());
-			TopicName topic = mutation.topic;
-			EventRecord event = _createEventAndIncrementOffset(topic, mutation);
-			_commit(mutation, topic, event);
+			_executeAndCommit(mutation);
 			// We also need to tell the in-flight mutations to increment its bias since it won't see this mutation.
 			_inFlightMutations.updateBiasForDirectCommit(mutation.globalOffset);
 		} else {
@@ -530,13 +528,11 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		return _selfState.lastMutationOffsetReceived;
 	}
 
-	private void _commit(MutationRecord mutation, TopicName topic, EventRecord event) {
+	private void _commit(MutationRecord mutation, CommitInfo.Effect effect, TopicName topic, EventRecord event) {
 		// (note that the event is null for certain meta-messages like UPDATE_CONFIG).
 		if (null != event) {
 			_diskManager.commitEvent(topic, event);
 		}
-		// TODO:  Add some mechanism to resolve this commit state properly once there is more than one answer.
-		CommitInfo.Effect effect = CommitInfo.Effect.VALID;
 		CommittedMutationRecord committedMutationRecord = CommittedMutationRecord.create(mutation, effect);
 		// TODO:  We probably want to lock-step the mutation on the event commit since we will be able to detect the broken data, that way, and replay it.
 		_diskManager.commitMutation(committedMutationRecord);
@@ -578,9 +574,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		if (canCommit) {
 			MutationRecord mutation = _inFlightMutations.removeFirstElementLessThanOrEqualTo(consensusOffset);
 			while (null != mutation) {
-				TopicName topic = mutation.topic;
-				EventRecord event = _createEventAndIncrementOffset(topic, mutation);
-				_commit(mutation, topic, event);
+				_executeAndCommit(mutation);
 				mutation = _inFlightMutations.removeFirstElementLessThanOrEqualTo(consensusOffset);
 			}
 		}
@@ -755,5 +749,41 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		) {
 			_enterFollowerState(peer, upstreamTermNumber);
 		}
+	}
+
+	private CommitInfo.Effect _executeMutationForCommit(MutationRecord mutation) {
+		// Main thread helper.
+		Assert.assertTrue(Thread.currentThread() == _mainThread);
+		
+		CommitInfo.Effect effect;
+		switch (mutation.type) {
+		case INVALID:
+			throw Assert.unimplemented("Invalid message type");
+		case TEMP: {
+			// We don't change any internal state for this - we just log it.
+			System.out.println("GOT TEMP FROM " + mutation.clientId + " nonce " + mutation.clientNonce + " data " + mutation.payload[0]);
+			// For now, we always let these pass since topics are implicitly created.
+			effect = CommitInfo.Effect.VALID;
+		}
+			break;
+		case UPDATE_CONFIG: {
+			// We always just apply configs.
+			effect = CommitInfo.Effect.VALID;
+		}
+			break;
+		default:
+			throw Assert.unimplemented("Case missing in mutation processing");
+		}
+		return effect;
+	}
+
+	private void _executeAndCommit(MutationRecord mutation) {
+		TopicName topic = mutation.topic;
+		CommitInfo.Effect effect = _executeMutationForCommit(mutation);
+		// We only create an event if the effect was valid.
+		EventRecord event = (CommitInfo.Effect.VALID == effect)
+				? _createEventAndIncrementOffset(topic, mutation)
+				: null;
+		_commit(mutation, effect, topic, event);
 	}
 }
