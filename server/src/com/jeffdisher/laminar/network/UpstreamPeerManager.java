@@ -7,6 +7,7 @@ import java.util.Map;
 import java.util.Set;
 
 import com.jeffdisher.laminar.components.NetworkManager;
+import com.jeffdisher.laminar.network.p2p.UpstreamResponse;
 import com.jeffdisher.laminar.types.ConfigEntry;
 import com.jeffdisher.laminar.utils.Assert;
 
@@ -108,31 +109,129 @@ public class UpstreamPeerManager {
 	}
 
 	/**
-	 * Returns the peer state associated with the given token.
-	 * 
-	 * @param node The token of the established node.
-	 * @return The upstream state object for this node.
-	 */
-	public UpstreamPeerState getEstablishedPeerState(NetworkManager.NodeToken node) {
-		// This can only be called when it matches.
-		Assert.assertTrue(_upstreamPeerByNode.containsKey(node));
-		return _upstreamPeerByNode.get(node);
-	}
-
-	/**
 	 * Changes the state of a "new" node to an "established" node and returns the initial peer state object for it.
 	 * 
 	 * @param entry The ConfigEntry used to identify the node.
 	 * @param node The token corresponding to the node.
-	 * @return The new peer state object.
+	 * @param lastReceivedMutationOffset The most recent mutation we have received, so the upstream knows what mutation
+	 * they should send, next.
 	 */
-	public UpstreamPeerState establishPeer(ConfigEntry entry, NetworkManager.NodeToken node) {
+	public void establishPeer(ConfigEntry entry, NetworkManager.NodeToken node, long lastReceivedMutationOffset) {
 		// Create the upstream state and migrate this.
 		UpstreamPeerState state = new UpstreamPeerState(entry, node);
 		boolean didRemove = _newUpstreamNodes.remove(node);
 		Assert.assertTrue(didRemove);
 		UpstreamPeerState previous = _upstreamPeerByNode.put(node, state);
 		Assert.assertTrue(null == previous);
-		return state;
+		// Send back our PEER_STATE.
+		state.pendingPeerStateMutationOffsetReceived = lastReceivedMutationOffset;
+	}
+
+	/**
+	 * Sets the given node to be writable.
+	 * Note that the node must be established and must not already be writable.
+	 * 
+	 * @param node The token for the upstream node.
+	 */
+	public void setNodeWritable(NetworkManager.NodeToken node) {
+		// This MUST be an established peer.
+		Assert.assertTrue(_upstreamPeerByNode.containsKey(node));
+		UpstreamPeerState state = _upstreamPeerByNode.get(node);
+		// This MUST not have already been writable.
+		Assert.assertTrue(!state.isWritable);
+		state.isWritable = true;
+	}
+
+	/**
+	 * Used to translate from a node into a ConfigEntry for callbacks to higher levels of the stack.
+	 * Note that the referenced peer must be established.
+	 * 
+	 * @param node The node token to resolve.
+	 * @return The ConfigEntry of the established node.
+	 */
+	public ConfigEntry getEstablishedNodeConfig(NetworkManager.NodeToken node) {
+		// This MUST be an established peer.
+		Assert.assertTrue(_upstreamPeerByNode.containsKey(node));
+		return _upstreamPeerByNode.get(node).entry;
+	}
+
+	/**
+	 * Sets a pending outgoing vote for this node.
+	 * Note that the node must be established.
+	 * 
+	 * @param node The token of the upstream node.
+	 * @param newTermNumber The term number where the election is taking place.
+	 */
+	public void prepareToCastVote(NetworkManager.NodeToken node, long newTermNumber) {
+		// This MUST be an established peer.
+		Assert.assertTrue(_upstreamPeerByNode.containsKey(node));
+		_upstreamPeerByNode.get(node).pendingVoteToSend = UpstreamResponse.castVote(newTermNumber);
+	}
+
+	/**
+	 * Updates the internal state for the given established node to account for having applied a mutation from that
+	 * peer.
+	 * 
+	 * @param node The token for the upstream node.
+	 * @param lastMutationOffsetReceived The last mutation we have now received from them.
+	 * @param lastMutationOffsetAcknowledged The last mutation we have last acknowledged.
+	 */
+	public void didApplyReceivedMutation(NetworkManager.NodeToken node, long lastMutationOffsetReceived, long lastMutationOffsetAcknowledged) {
+		// This MUST be an established peer.
+		Assert.assertTrue(_upstreamPeerByNode.containsKey(node));
+		UpstreamPeerState state = _upstreamPeerByNode.get(node);
+		state.lastMutationOffsetReceived = lastMutationOffsetReceived;
+		state.lastMutationOffsetAcknowledged = lastMutationOffsetAcknowledged;
+	}
+
+	/**
+	 * Updates the internal state for the given established node to prepare to send a new PEER_STATE message as we
+	 * failed to apply the most recent mutation it sent.
+	 * 
+	 * @param node The token for the upstream node.
+	 * @param lastReceivedMutationOffset The last mutation offset we believe is probably consistent on both sides so
+	 * they can send us the one after this, next.
+	 */
+	public void failedToApplyMutations(NetworkManager.NodeToken node, long lastReceivedMutationOffset) {
+		// This MUST be an established peer.
+		Assert.assertTrue(_upstreamPeerByNode.containsKey(node));
+		// We failed to apply so send a new PEER_STATE to tell them what we actually need.
+		_upstreamPeerByNode.get(node).pendingPeerStateMutationOffsetReceived = lastReceivedMutationOffset;
+	}
+
+	/**
+	 * Checks the internal state of the given node to see if we can send them another message and what message that
+	 * should be.  Updates the internal state in response to this decision meaning that the caller MUST now send this
+	 * message.
+	 * 
+	 * @param node The token for the upstream node.
+	 * @param isLeader True if the current node is a leader.
+	 * @return The message that the caller MUST send to this upstream peer or null if there is nothing which can be
+	 * sent.
+	 */
+	public UpstreamResponse commitToSendNextMessage(NetworkManager.NodeToken node, boolean isLeader) {
+		// This MUST be an established peer.
+		Assert.assertTrue(_upstreamPeerByNode.containsKey(node));
+		UpstreamPeerState state = _upstreamPeerByNode.get(node);
+		UpstreamResponse messageToSend = null;
+		if (state.isWritable) {
+			if (state.pendingPeerStateMutationOffsetReceived > -1L) {
+				// Send the PEER_STATE.
+				messageToSend = UpstreamResponse.peerState(state.pendingPeerStateMutationOffsetReceived);
+				state.pendingPeerStateMutationOffsetReceived = -1L;
+			} else if (!isLeader && (state.lastMutationOffsetAcknowledged < state.lastMutationOffsetReceived)) {
+				// Send the ack.
+				messageToSend = UpstreamResponse.receivedMutations(state.lastMutationOffsetReceived);
+				state.lastMutationOffsetAcknowledged = state.lastMutationOffsetReceived;
+			} else if (!isLeader && (null != state.pendingVoteToSend)) {
+				messageToSend = state.pendingVoteToSend;
+				state.pendingVoteToSend = null;
+			}
+			
+			if (null != messageToSend) {
+				state.isWritable = false;
+			}
+		}
+		return messageToSend;
 	}
 }

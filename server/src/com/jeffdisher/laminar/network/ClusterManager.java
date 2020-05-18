@@ -231,10 +231,8 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 					ReadOnlyDownstreamPeerState peer = _downstreamPeers.setNodeWritable(node);
 					_tryFetchOrSend(peer, arg0.currentTermNumber);
 				} else {
-					UpstreamPeerState peer = _upstreamPeers.getEstablishedPeerState(node);
-					Assert.assertTrue(!peer.isWritable);
-					peer.isWritable = true;
-					_trySendUpstream(peer);
+					_upstreamPeers.setNodeWritable(node);
+					_trySendUpstream(node);
 				}
 			}});
 	}
@@ -287,17 +285,15 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 					Assert.assertTrue(DownstreamMessage.Type.IDENTITY == message.type);
 					ConfigEntry entry = ((DownstreamPayload_Identity)message.payload).self;
 					
-					UpstreamPeerState state = _upstreamPeers.establishPeer(entry, node);
+					_upstreamPeers.establishPeer(entry, node, _lastReceivedMutationOffset);
 					
-					// Send back our PEER_STATE.
-					state.pendingPeerStateMutationOffsetReceived = _lastReceivedMutationOffset;
-					_trySendUpstream(state);
+					_trySendUpstream(node);
 					
 					// We don't tell the NodeState about this unless they upstream starts acting like a LEADER and sending mutations.
 				} else {
 					// Ready upstream nodes just means the leader sending us an APPEND_MUTATIONS, for now.
 					Assert.assertTrue(_upstreamPeers.isEstablishedUpstream(node));
-					UpstreamPeerState peer = _upstreamPeers.getEstablishedPeerState(node);
+					ConfigEntry entry = _upstreamPeers.getEstablishedNodeConfig(node);
 					
 					byte[] raw = _networkManager.readWaitingMessage(node);
 					DownstreamMessage message = DownstreamMessage.deserializeFrom(ByteBuffer.wrap(raw));
@@ -305,20 +301,20 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 					// There are 2 messages which come from upstream peers:  APPEND_MUTATIONS and REQUEST_VOTES.
 					if (DownstreamMessage.Type.APPEND_MUTATIONS == message.type) {
 						DownstreamPayload_AppendMutations payload = (DownstreamPayload_AppendMutations)message.payload;
-						_mainHandleAppendMutations(peer, payload);
+						_mainHandleAppendMutations(node, entry, payload);
 					} else if (DownstreamMessage.Type.REQUEST_VOTES == message.type) {
 						DownstreamPayload_RequestVotes payload = (DownstreamPayload_RequestVotes)message.payload;
-						boolean shouldVote = _callbacks.mainReceivedRequestForVotes(peer.entry, payload.newTermNumber, payload.previousMutationTerm, payload.previousMuationOffset);
+						boolean shouldVote = _callbacks.mainReceivedRequestForVotes(entry, payload.newTermNumber, payload.previousMutationTerm, payload.previousMuationOffset);
 						if (shouldVote) {
 							// We should now be in the follower state.
 							Assert.assertTrue(!_isLeader);
-							peer.pendingVoteToSend = UpstreamResponse.castVote(payload.newTermNumber);
+							_upstreamPeers.prepareToCastVote(node, payload.newTermNumber);
 						}
 					} else {
 						throw Assert.unreachable("Unknown message type from upstream");
 					}
 					// We either want to ack or send back the reset.
-					_trySendUpstream(peer);
+					_trySendUpstream(node);
 					// Update our last message time to avoid election.
 					_lastUpstreamMessageMillisTime = System.currentTimeMillis();
 				}
@@ -397,34 +393,16 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 		}
 	}
 
-	private void _trySendUpstream(UpstreamPeerState peer) {
+	private void _trySendUpstream(NetworkManager.NodeToken node) {
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		
-		if (peer.isWritable) {
-			UpstreamResponse messageToSend = null;
-			if (peer.pendingPeerStateMutationOffsetReceived > -1L) {
-				// Send the PEER_STATE.
-				messageToSend = UpstreamResponse.peerState(peer.pendingPeerStateMutationOffsetReceived);
-				peer.pendingPeerStateMutationOffsetReceived = -1L;
-			} else if (!_isLeader && (peer.lastMutationOffsetAcknowledged < peer.lastMutationOffsetReceived)) {
-				// Send the ack.
-				messageToSend = UpstreamResponse.receivedMutations(peer.lastMutationOffsetReceived);
-				peer.lastMutationOffsetAcknowledged = peer.lastMutationOffsetReceived;
-			} else if (!_isLeader && (null != peer.pendingVoteToSend)) {
-				messageToSend = peer.pendingVoteToSend;
-				peer.pendingVoteToSend = null;
-			}
-			
-			if (null != messageToSend) {
-				ByteBuffer buffer = ByteBuffer.allocate(messageToSend.serializedSize());
-				messageToSend.serializeInto(buffer);
-				boolean didSend = _networkManager.trySendMessage(peer.token, buffer.array());
-				// This path is only taken when they are writable.
-				Assert.assertTrue(didSend);
-				
-				// Update state for the next.
-				peer.isWritable = false;
-			}
+		UpstreamResponse messageToSend = _upstreamPeers.commitToSendNextMessage(node, _isLeader);
+		if (null != messageToSend) {
+			ByteBuffer buffer = ByteBuffer.allocate(messageToSend.serializedSize());
+			messageToSend.serializeInto(buffer);
+			boolean didSend = _networkManager.trySendMessage(node, buffer.array());
+			// This path is only taken when they are writable.
+			Assert.assertTrue(didSend);
 		}
 	}
 
@@ -472,14 +450,14 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 		}
 	}
 
-	private void _mainHandleAppendMutations(UpstreamPeerState peer, DownstreamPayload_AppendMutations payload) {
+	private void _mainHandleAppendMutations(NetworkManager.NodeToken node, ConfigEntry entry, DownstreamPayload_AppendMutations payload) {
 		// If there were no mutations, this is a heart-beat, and they are implicitly "applied".
 		boolean didApplyMutation = (0 == payload.records.length);
 		// The previous mutation term number is for the mutation prior to those in the list so we will update this as we see each mutation.
 		long previousMutationTermNumber = payload.previousMutationTermNumber;
 		for (MutationRecord record : payload.records) {
 			// Update our last offset received and notify the callbacks of this mutation.
-			long nextMutationToRequest = _callbacks.mainAppendMutationFromUpstream(peer.entry, payload.termNumber, previousMutationTermNumber, record);
+			long nextMutationToRequest = _callbacks.mainAppendMutationFromUpstream(entry, payload.termNumber, previousMutationTermNumber, record);
 			// Only if we are requesting the very next mutation does this mean we applied the one we received.
 			didApplyMutation = (nextMutationToRequest == (record.globalOffset + 1));
 			// If we move forward, it should only be by 1 record at a time.
@@ -494,18 +472,19 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 			Assert.assertTrue(_lastReceivedMutationOffset >= 0);
 			
 			if (didApplyMutation) {
-				peer.lastMutationOffsetReceived = nextMutationToRequest - 1L;
+				long lastMutationOffsetReceived = nextMutationToRequest - 1L;
 				// We are moving forward so we want to ack this.
-				peer.lastMutationOffsetAcknowledged = record.globalOffset - 1L;
+				long lastMutationOffsetAcknowledged = record.globalOffset - 1L;
+				_upstreamPeers.didApplyReceivedMutation(node, lastMutationOffsetReceived, lastMutationOffsetAcknowledged);
 			} else {
 				break;
 			}
 		}
 		if (didApplyMutation) {
 			// This is normal operation so proceed with committing.
-			_callbacks.mainCommittedMutationOffsetFromUpstream(peer.entry, payload.termNumber, payload.lastCommittedMutationOffset);
+			_callbacks.mainCommittedMutationOffsetFromUpstream(entry, payload.termNumber, payload.lastCommittedMutationOffset);
 		} else {
-			peer.pendingPeerStateMutationOffsetReceived = _lastReceivedMutationOffset;
+			_upstreamPeers.failedToApplyMutations(node, _lastReceivedMutationOffset);
 		}
 	}
 
