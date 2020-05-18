@@ -1,6 +1,5 @@
 package com.jeffdisher.laminar.state;
 
-import java.nio.ByteBuffer;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -453,12 +452,12 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 			throw Assert.unimplemented("Invalid message type");
 		case CREATE_TOPIC: {
 			// We don't change any internal state for this - we just log it.
-			System.out.println("GOT CREATE_TOPIC FROM " + mutation.clientId + " nonce " + mutation.clientNonce + ": " + TopicName.deserializeFrom(ByteBuffer.wrap(mutation.payload)));
+			System.out.println("GOT CREATE_TOPIC FROM " + mutation.clientId + " nonce " + mutation.clientNonce + ": " + mutation.topic);
 		}
 			break;
 		case DESTROY_TOPIC: {
 			// We don't change any internal state for this - we just log it.
-			System.out.println("GOT DESTROY_TOPIC FROM " + mutation.clientId + " nonce " + mutation.clientNonce + ": " + TopicName.deserializeFrom(ByteBuffer.wrap(mutation.payload)));
+			System.out.println("GOT DESTROY_TOPIC FROM " + mutation.clientId + " nonce " + mutation.clientNonce + ": " + mutation.topic);
 		}
 			break;
 		case TEMP: {

@@ -1,6 +1,5 @@
 package com.jeffdisher.laminar.state;
 
-import java.nio.ByteBuffer;
 import java.util.UUID;
 
 import com.jeffdisher.laminar.types.ClusterConfig;
@@ -39,16 +38,12 @@ public class Helpers {
 			break;
 		case CREATE_TOPIC: {
 			ClientMessagePayload_Topic payload = (ClientMessagePayload_Topic)message.payload;
-			ByteBuffer serializer = ByteBuffer.allocate(payload.topic.serializedSize());
-			payload.topic.serializeInto(serializer);
-			converted = MutationRecord.generateRecord(MutationRecordType.CREATE_TOPIC, termNumber, mutationOffsetToAssign, payload.topic, clientId, message.nonce, serializer.array());
+			converted = MutationRecord.generateRecord(MutationRecordType.CREATE_TOPIC, termNumber, mutationOffsetToAssign, payload.topic, clientId, message.nonce, new byte[0]);
 		}
 			break;
 		case DESTROY_TOPIC: {
 			ClientMessagePayload_Topic payload = (ClientMessagePayload_Topic)message.payload;
-			ByteBuffer serializer = ByteBuffer.allocate(payload.topic.serializedSize());
-			payload.topic.serializeInto(serializer);
-			converted = MutationRecord.generateRecord(MutationRecordType.DESTROY_TOPIC, termNumber, mutationOffsetToAssign, payload.topic, clientId, message.nonce, serializer.array());
+			converted = MutationRecord.generateRecord(MutationRecordType.DESTROY_TOPIC, termNumber, mutationOffsetToAssign, payload.topic, clientId, message.nonce, new byte[0]);
 		}
 			break;
 		case TEMP: {
