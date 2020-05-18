@@ -7,9 +7,8 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 
-import com.jeffdisher.laminar.types.EventRecord;
-import com.jeffdisher.laminar.types.CommittedMutationRecord;
 import com.jeffdisher.laminar.types.TopicName;
+import com.jeffdisher.laminar.types.event.EventRecord;
 import com.jeffdisher.laminar.utils.Assert;
 
 

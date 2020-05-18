@@ -6,11 +6,11 @@ import java.net.InetSocketAddress;
 
 import com.jeffdisher.laminar.components.INetworkManagerBackgroundCallbacks;
 import com.jeffdisher.laminar.components.NetworkManager;
-import com.jeffdisher.laminar.types.ClientMessage;
 import com.jeffdisher.laminar.types.ClusterConfig;
-import com.jeffdisher.laminar.types.EventRecord;
-import com.jeffdisher.laminar.types.EventRecordType;
 import com.jeffdisher.laminar.types.TopicName;
+import com.jeffdisher.laminar.types.event.EventRecord;
+import com.jeffdisher.laminar.types.event.EventRecordType;
+import com.jeffdisher.laminar.types.message.ClientMessage;
 import com.jeffdisher.laminar.utils.Assert;
 
 

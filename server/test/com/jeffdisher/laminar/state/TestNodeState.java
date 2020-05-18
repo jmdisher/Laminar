@@ -9,16 +9,16 @@ import org.junit.Assert;
 import org.junit.Test;
 
 import com.jeffdisher.laminar.console.IConsoleManager;
+import com.jeffdisher.laminar.disk.CommittedMutationRecord;
 import com.jeffdisher.laminar.network.IClusterManagerCallbacks;
-import com.jeffdisher.laminar.types.ClientMessage;
 import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.types.CommitInfo;
-import com.jeffdisher.laminar.types.CommittedMutationRecord;
 import com.jeffdisher.laminar.types.ConfigEntry;
-import com.jeffdisher.laminar.types.EventRecord;
-import com.jeffdisher.laminar.types.MutationRecord;
-import com.jeffdisher.laminar.types.MutationRecordType;
 import com.jeffdisher.laminar.types.TopicName;
+import com.jeffdisher.laminar.types.event.EventRecord;
+import com.jeffdisher.laminar.types.message.ClientMessage;
+import com.jeffdisher.laminar.types.mutation.MutationRecord;
+import com.jeffdisher.laminar.types.mutation.MutationRecordType;
 
 
 /**

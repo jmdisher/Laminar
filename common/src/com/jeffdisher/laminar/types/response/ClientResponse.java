@@ -1,7 +1,10 @@
-package com.jeffdisher.laminar.types;
+package com.jeffdisher.laminar.types.response;
 
 import java.nio.ByteBuffer;
 
+import com.jeffdisher.laminar.types.ClusterConfig;
+import com.jeffdisher.laminar.types.CommitInfo;
+import com.jeffdisher.laminar.types.ConfigEntry;
 import com.jeffdisher.laminar.utils.Assert;
 
 

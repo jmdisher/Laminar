@@ -7,10 +7,9 @@ import org.junit.Test;
 
 import com.jeffdisher.laminar.components.NetworkManager;
 import com.jeffdisher.laminar.types.ConfigEntry;
-import com.jeffdisher.laminar.types.MutationRecord;
-import com.jeffdisher.laminar.types.MutationRecordType;
 import com.jeffdisher.laminar.types.TopicName;
-
+import com.jeffdisher.laminar.types.mutation.MutationRecord;
+import com.jeffdisher.laminar.types.mutation.MutationRecordType;
 
 
 public class TestDownstreamPeerManager {

@@ -2,7 +2,7 @@ package com.jeffdisher.laminar.state;
 
 import java.util.LinkedList;
 
-import com.jeffdisher.laminar.types.MutationRecord;
+import com.jeffdisher.laminar.types.mutation.MutationRecord;
 import com.jeffdisher.laminar.utils.Assert;
 
 

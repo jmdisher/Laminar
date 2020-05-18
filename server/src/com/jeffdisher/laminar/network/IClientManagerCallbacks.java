@@ -4,9 +4,9 @@ import java.util.UUID;
 import java.util.function.Consumer;
 
 import com.jeffdisher.laminar.state.StateSnapshot;
-import com.jeffdisher.laminar.types.ClientMessage;
-import com.jeffdisher.laminar.types.MutationRecord;
 import com.jeffdisher.laminar.types.TopicName;
+import com.jeffdisher.laminar.types.message.ClientMessage;
+import com.jeffdisher.laminar.types.mutation.MutationRecord;
 
 
 public interface IClientManagerCallbacks {

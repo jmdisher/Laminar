@@ -8,12 +8,11 @@ import org.junit.Test;
 
 import com.jeffdisher.laminar.state.StateSnapshot;
 import com.jeffdisher.laminar.types.CommitInfo;
-import com.jeffdisher.laminar.types.CommittedMutationRecord;
-import com.jeffdisher.laminar.types.EventRecord;
-import com.jeffdisher.laminar.types.EventRecordType;
-import com.jeffdisher.laminar.types.MutationRecord;
-import com.jeffdisher.laminar.types.MutationRecordType;
 import com.jeffdisher.laminar.types.TopicName;
+import com.jeffdisher.laminar.types.event.EventRecord;
+import com.jeffdisher.laminar.types.event.EventRecordType;
+import com.jeffdisher.laminar.types.mutation.MutationRecord;
+import com.jeffdisher.laminar.types.mutation.MutationRecordType;
 
 
 public class TestDiskManager {

@@ -3,7 +3,7 @@ package com.jeffdisher.laminar.network;
 import com.jeffdisher.laminar.components.NetworkManager;
 import com.jeffdisher.laminar.network.p2p.DownstreamMessage;
 import com.jeffdisher.laminar.types.ConfigEntry;
-import com.jeffdisher.laminar.types.MutationRecord;
+import com.jeffdisher.laminar.types.mutation.MutationRecord;
 import com.jeffdisher.laminar.utils.Assert;
 
 

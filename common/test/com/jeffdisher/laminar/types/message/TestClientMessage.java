@@ -1,13 +1,13 @@
-package com.jeffdisher.laminar.types;
+package com.jeffdisher.laminar.types.message;
 
 import java.util.UUID;
 
 import org.junit.Assert;
 import org.junit.Test;
 
-import com.jeffdisher.laminar.types.ClientMessage;
-import com.jeffdisher.laminar.types.ClientMessagePayload_Handshake;
-import com.jeffdisher.laminar.types.ClientMessagePayload_Temp;
+import com.jeffdisher.laminar.types.TopicName;
+import com.jeffdisher.laminar.types.message.ClientMessagePayload_Handshake;
+import com.jeffdisher.laminar.types.message.ClientMessagePayload_Temp;
 
 
 /**

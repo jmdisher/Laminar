@@ -3,16 +3,16 @@ package com.jeffdisher.laminar.state;
 import java.nio.ByteBuffer;
 import java.util.UUID;
 
-import com.jeffdisher.laminar.types.ClientMessage;
-import com.jeffdisher.laminar.types.ClientMessagePayload_Temp;
-import com.jeffdisher.laminar.types.ClientMessagePayload_Topic;
-import com.jeffdisher.laminar.types.ClientMessagePayload_UpdateConfig;
 import com.jeffdisher.laminar.types.ClusterConfig;
-import com.jeffdisher.laminar.types.EventRecord;
-import com.jeffdisher.laminar.types.EventRecordType;
-import com.jeffdisher.laminar.types.MutationRecord;
-import com.jeffdisher.laminar.types.MutationRecordType;
 import com.jeffdisher.laminar.types.TopicName;
+import com.jeffdisher.laminar.types.event.EventRecord;
+import com.jeffdisher.laminar.types.event.EventRecordType;
+import com.jeffdisher.laminar.types.message.ClientMessage;
+import com.jeffdisher.laminar.types.message.ClientMessagePayload_Temp;
+import com.jeffdisher.laminar.types.message.ClientMessagePayload_Topic;
+import com.jeffdisher.laminar.types.message.ClientMessagePayload_UpdateConfig;
+import com.jeffdisher.laminar.types.mutation.MutationRecord;
+import com.jeffdisher.laminar.types.mutation.MutationRecordType;
 import com.jeffdisher.laminar.utils.Assert;
 
 

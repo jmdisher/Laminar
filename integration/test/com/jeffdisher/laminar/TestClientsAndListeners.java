@@ -17,14 +17,14 @@ import org.junit.Test;
 import com.jeffdisher.laminar.client.ClientConnection;
 import com.jeffdisher.laminar.client.ClientResult;
 import com.jeffdisher.laminar.client.ListenerConnection;
-import com.jeffdisher.laminar.types.ClientMessage;
-import com.jeffdisher.laminar.types.ClientResponse;
-import com.jeffdisher.laminar.types.ClientResponseType;
 import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.types.CommitInfo;
 import com.jeffdisher.laminar.types.ConfigEntry;
-import com.jeffdisher.laminar.types.EventRecord;
 import com.jeffdisher.laminar.types.TopicName;
+import com.jeffdisher.laminar.types.event.EventRecord;
+import com.jeffdisher.laminar.types.message.ClientMessage;
+import com.jeffdisher.laminar.types.response.ClientResponse;
+import com.jeffdisher.laminar.types.response.ClientResponseType;
 import com.jeffdisher.laminar.utils.TestingHelpers;
 
 

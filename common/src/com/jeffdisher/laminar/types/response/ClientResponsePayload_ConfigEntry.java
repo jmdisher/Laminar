@@ -1,6 +1,8 @@
-package com.jeffdisher.laminar.types;
+package com.jeffdisher.laminar.types.response;
 
 import java.nio.ByteBuffer;
+
+import com.jeffdisher.laminar.types.ConfigEntry;
 
 
 /**

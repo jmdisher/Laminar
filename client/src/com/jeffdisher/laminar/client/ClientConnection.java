@@ -15,15 +15,15 @@ import java.util.function.Function;
 
 import com.jeffdisher.laminar.components.INetworkManagerBackgroundCallbacks;
 import com.jeffdisher.laminar.components.NetworkManager;
-import com.jeffdisher.laminar.types.ClientMessage;
-import com.jeffdisher.laminar.types.ClientResponse;
-import com.jeffdisher.laminar.types.ClientResponsePayload_ClusterConfig;
-import com.jeffdisher.laminar.types.ClientResponsePayload_Commit;
-import com.jeffdisher.laminar.types.ClientResponsePayload_ConfigEntry;
 import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.types.CommitInfo;
 import com.jeffdisher.laminar.types.ConfigEntry;
 import com.jeffdisher.laminar.types.TopicName;
+import com.jeffdisher.laminar.types.message.ClientMessage;
+import com.jeffdisher.laminar.types.response.ClientResponse;
+import com.jeffdisher.laminar.types.response.ClientResponsePayload_ClusterConfig;
+import com.jeffdisher.laminar.types.response.ClientResponsePayload_Commit;
+import com.jeffdisher.laminar.types.response.ClientResponsePayload_ConfigEntry;
 import com.jeffdisher.laminar.utils.Assert;
 import com.jeffdisher.laminar.utils.UninterruptibleQueue;
 

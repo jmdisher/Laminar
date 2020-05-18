@@ -11,22 +11,22 @@ import java.util.function.Consumer;
 
 import com.jeffdisher.laminar.console.IConsoleManager;
 import com.jeffdisher.laminar.console.IConsoleManagerBackgroundCallbacks;
+import com.jeffdisher.laminar.disk.CommittedMutationRecord;
 import com.jeffdisher.laminar.disk.IDiskManager;
 import com.jeffdisher.laminar.disk.IDiskManagerBackgroundCallbacks;
 import com.jeffdisher.laminar.network.IClientManager;
 import com.jeffdisher.laminar.network.IClientManagerCallbacks;
 import com.jeffdisher.laminar.network.IClusterManager;
 import com.jeffdisher.laminar.network.IClusterManagerCallbacks;
-import com.jeffdisher.laminar.types.ClientMessage;
-import com.jeffdisher.laminar.types.ClientMessageType;
 import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.types.CommitInfo;
 import com.jeffdisher.laminar.types.ConfigEntry;
-import com.jeffdisher.laminar.types.EventRecord;
-import com.jeffdisher.laminar.types.CommittedMutationRecord;
-import com.jeffdisher.laminar.types.MutationRecord;
-import com.jeffdisher.laminar.types.MutationRecordType;
 import com.jeffdisher.laminar.types.TopicName;
+import com.jeffdisher.laminar.types.event.EventRecord;
+import com.jeffdisher.laminar.types.message.ClientMessage;
+import com.jeffdisher.laminar.types.message.ClientMessageType;
+import com.jeffdisher.laminar.types.mutation.MutationRecord;
+import com.jeffdisher.laminar.types.mutation.MutationRecordType;
 import com.jeffdisher.laminar.utils.Assert;
 import com.jeffdisher.laminar.utils.UninterruptibleQueue;
 

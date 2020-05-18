@@ -3,7 +3,7 @@ package com.jeffdisher.laminar.network.p2p;
 import java.nio.ByteBuffer;
 
 import com.jeffdisher.laminar.types.ConfigEntry;
-import com.jeffdisher.laminar.types.MutationRecord;
+import com.jeffdisher.laminar.types.mutation.MutationRecord;
 import com.jeffdisher.laminar.utils.Assert;
 
 

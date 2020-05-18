@@ -13,16 +13,16 @@ import java.util.UUID;
 import org.junit.Assert;
 import org.junit.Test;
 
-import com.jeffdisher.laminar.types.ClientMessage;
-import com.jeffdisher.laminar.types.ClientMessagePayload_Handshake;
-import com.jeffdisher.laminar.types.ClientMessagePayload_Reconnect;
-import com.jeffdisher.laminar.types.ClientMessagePayload_Temp;
-import com.jeffdisher.laminar.types.ClientMessageType;
-import com.jeffdisher.laminar.types.ClientResponse;
 import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.types.CommitInfo;
 import com.jeffdisher.laminar.types.ConfigEntry;
 import com.jeffdisher.laminar.types.TopicName;
+import com.jeffdisher.laminar.types.message.ClientMessage;
+import com.jeffdisher.laminar.types.message.ClientMessagePayload_Handshake;
+import com.jeffdisher.laminar.types.message.ClientMessagePayload_Reconnect;
+import com.jeffdisher.laminar.types.message.ClientMessagePayload_Temp;
+import com.jeffdisher.laminar.types.message.ClientMessageType;
+import com.jeffdisher.laminar.types.response.ClientResponse;
 
 
 public class TestClientConnection {

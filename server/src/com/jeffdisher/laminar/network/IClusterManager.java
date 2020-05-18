@@ -2,7 +2,7 @@ package com.jeffdisher.laminar.network;
 
 import com.jeffdisher.laminar.state.StateSnapshot;
 import com.jeffdisher.laminar.types.ConfigEntry;
-import com.jeffdisher.laminar.types.MutationRecord;
+import com.jeffdisher.laminar.types.mutation.MutationRecord;
 
 
 /**

@@ -3,9 +3,8 @@ package com.jeffdisher.laminar.disk;
 import java.util.function.Consumer;
 
 import com.jeffdisher.laminar.state.StateSnapshot;
-import com.jeffdisher.laminar.types.EventRecord;
-import com.jeffdisher.laminar.types.CommittedMutationRecord;
 import com.jeffdisher.laminar.types.TopicName;
+import com.jeffdisher.laminar.types.event.EventRecord;
 
 
 /**

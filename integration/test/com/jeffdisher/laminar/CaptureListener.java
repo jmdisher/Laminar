@@ -10,8 +10,8 @@ import org.junit.Assert;
 
 import com.jeffdisher.laminar.client.ListenerConnection;
 import com.jeffdisher.laminar.types.ClusterConfig;
-import com.jeffdisher.laminar.types.EventRecord;
 import com.jeffdisher.laminar.types.TopicName;
+import com.jeffdisher.laminar.types.event.EventRecord;
 
 
 /**

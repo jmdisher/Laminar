@@ -5,9 +5,9 @@ import java.util.UUID;
 import org.junit.Assert;
 import org.junit.Test;
 
-import com.jeffdisher.laminar.types.MutationRecord;
-import com.jeffdisher.laminar.types.MutationRecordType;
 import com.jeffdisher.laminar.types.TopicName;
+import com.jeffdisher.laminar.types.mutation.MutationRecord;
+import com.jeffdisher.laminar.types.mutation.MutationRecordType;
 
 
 /**

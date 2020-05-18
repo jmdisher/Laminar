@@ -1,8 +1,8 @@
 package com.jeffdisher.laminar.network;
 
 import com.jeffdisher.laminar.components.NetworkManager;
-import com.jeffdisher.laminar.types.EventRecord;
 import com.jeffdisher.laminar.types.TopicName;
+import com.jeffdisher.laminar.types.event.EventRecord;
 
 
 /**

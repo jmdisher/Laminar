@@ -1,11 +1,11 @@
 package com.jeffdisher.laminar.network;
 
+import com.jeffdisher.laminar.disk.CommittedMutationRecord;
 import com.jeffdisher.laminar.state.StateSnapshot;
 import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.types.ConfigEntry;
-import com.jeffdisher.laminar.types.EventRecord;
-import com.jeffdisher.laminar.types.CommittedMutationRecord;
 import com.jeffdisher.laminar.types.TopicName;
+import com.jeffdisher.laminar.types.event.EventRecord;
 
 
 /**

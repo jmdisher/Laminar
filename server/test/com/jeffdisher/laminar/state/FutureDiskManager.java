@@ -2,10 +2,10 @@ package com.jeffdisher.laminar.state;
 
 import org.junit.Assert;
 
+import com.jeffdisher.laminar.disk.CommittedMutationRecord;
 import com.jeffdisher.laminar.disk.IDiskManager;
-import com.jeffdisher.laminar.types.CommittedMutationRecord;
-import com.jeffdisher.laminar.types.EventRecord;
 import com.jeffdisher.laminar.types.TopicName;
+import com.jeffdisher.laminar.types.event.EventRecord;
 
 
 /**

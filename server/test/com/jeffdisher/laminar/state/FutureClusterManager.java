@@ -4,7 +4,7 @@ import org.junit.Assert;
 
 import com.jeffdisher.laminar.network.IClusterManager;
 import com.jeffdisher.laminar.types.ConfigEntry;
-import com.jeffdisher.laminar.types.MutationRecord;
+import com.jeffdisher.laminar.types.mutation.MutationRecord;
 
 
 /**

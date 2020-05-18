@@ -4,7 +4,7 @@ import java.util.function.Consumer;
 
 import com.jeffdisher.laminar.state.StateSnapshot;
 import com.jeffdisher.laminar.types.ConfigEntry;
-import com.jeffdisher.laminar.types.MutationRecord;
+import com.jeffdisher.laminar.types.mutation.MutationRecord;
 
 
 public interface IClusterManagerCallbacks {

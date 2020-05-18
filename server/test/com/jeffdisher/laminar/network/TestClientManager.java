@@ -12,22 +12,22 @@ import org.junit.Assert;
 import org.junit.Test;
 
 import com.jeffdisher.laminar.components.NetworkManager;
+import com.jeffdisher.laminar.disk.CommittedMutationRecord;
 import com.jeffdisher.laminar.state.Helpers;
 import com.jeffdisher.laminar.state.StateSnapshot;
-import com.jeffdisher.laminar.types.ClientMessage;
-import com.jeffdisher.laminar.types.ClientMessagePayload_Temp;
-import com.jeffdisher.laminar.types.ClientResponse;
-import com.jeffdisher.laminar.types.ClientResponsePayload_ClusterConfig;
-import com.jeffdisher.laminar.types.ClientResponsePayload_ConfigEntry;
-import com.jeffdisher.laminar.types.ClientResponseType;
 import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.types.CommitInfo;
-import com.jeffdisher.laminar.types.CommittedMutationRecord;
 import com.jeffdisher.laminar.types.ConfigEntry;
-import com.jeffdisher.laminar.types.EventRecord;
-import com.jeffdisher.laminar.types.EventRecordType;
-import com.jeffdisher.laminar.types.MutationRecord;
 import com.jeffdisher.laminar.types.TopicName;
+import com.jeffdisher.laminar.types.event.EventRecord;
+import com.jeffdisher.laminar.types.event.EventRecordType;
+import com.jeffdisher.laminar.types.message.ClientMessage;
+import com.jeffdisher.laminar.types.message.ClientMessagePayload_Temp;
+import com.jeffdisher.laminar.types.mutation.MutationRecord;
+import com.jeffdisher.laminar.types.response.ClientResponse;
+import com.jeffdisher.laminar.types.response.ClientResponsePayload_ClusterConfig;
+import com.jeffdisher.laminar.types.response.ClientResponsePayload_ConfigEntry;
+import com.jeffdisher.laminar.types.response.ClientResponseType;
 import com.jeffdisher.laminar.utils.TestingHelpers;
 
 

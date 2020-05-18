@@ -1,5 +1,7 @@
-package com.jeffdisher.laminar.types;
+package com.jeffdisher.laminar.disk;
 
+import com.jeffdisher.laminar.types.CommitInfo;
+import com.jeffdisher.laminar.types.mutation.MutationRecord;
 import com.jeffdisher.laminar.utils.Assert;
 
 

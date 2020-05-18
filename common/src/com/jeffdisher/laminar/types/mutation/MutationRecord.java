@@ -1,8 +1,9 @@
-package com.jeffdisher.laminar.types;
+package com.jeffdisher.laminar.types.mutation;
 
 import java.nio.ByteBuffer;
 import java.util.UUID;
 
+import com.jeffdisher.laminar.types.TopicName;
 import com.jeffdisher.laminar.utils.Assert;
 
 

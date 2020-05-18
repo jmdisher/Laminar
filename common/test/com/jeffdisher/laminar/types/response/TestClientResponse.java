@@ -1,9 +1,10 @@
-package com.jeffdisher.laminar.types;
+package com.jeffdisher.laminar.types.response;
 
 import org.junit.Assert;
 import org.junit.Test;
 
-import com.jeffdisher.laminar.types.ClientResponse;
+import com.jeffdisher.laminar.types.CommitInfo;
+import com.jeffdisher.laminar.types.response.ClientResponsePayload_Commit;
 
 
 /**

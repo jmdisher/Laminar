@@ -5,8 +5,8 @@ import java.util.List;
 import java.util.UUID;
 
 import com.jeffdisher.laminar.components.NetworkManager;
-import com.jeffdisher.laminar.types.ClientResponse;
 import com.jeffdisher.laminar.types.CommitInfo;
+import com.jeffdisher.laminar.types.response.ClientResponse;
 
 
 /**

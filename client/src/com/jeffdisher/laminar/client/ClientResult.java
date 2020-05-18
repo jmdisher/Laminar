@@ -1,7 +1,7 @@
 package com.jeffdisher.laminar.client;
 
-import com.jeffdisher.laminar.types.ClientMessage;
 import com.jeffdisher.laminar.types.CommitInfo;
+import com.jeffdisher.laminar.types.message.ClientMessage;
 import com.jeffdisher.laminar.utils.Assert;
 
 

@@ -2,12 +2,12 @@ package com.jeffdisher.laminar.state;
 
 import org.junit.Assert;
 
+import com.jeffdisher.laminar.disk.CommittedMutationRecord;
 import com.jeffdisher.laminar.network.IClientManager;
 import com.jeffdisher.laminar.types.ClusterConfig;
-import com.jeffdisher.laminar.types.CommittedMutationRecord;
 import com.jeffdisher.laminar.types.ConfigEntry;
-import com.jeffdisher.laminar.types.EventRecord;
 import com.jeffdisher.laminar.types.TopicName;
+import com.jeffdisher.laminar.types.event.EventRecord;
 
 
 /**

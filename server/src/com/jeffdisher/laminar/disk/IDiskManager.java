@@ -1,8 +1,7 @@
 package com.jeffdisher.laminar.disk;
 
-import com.jeffdisher.laminar.types.EventRecord;
-import com.jeffdisher.laminar.types.CommittedMutationRecord;
 import com.jeffdisher.laminar.types.TopicName;
+import com.jeffdisher.laminar.types.event.EventRecord;
 
 
 /**

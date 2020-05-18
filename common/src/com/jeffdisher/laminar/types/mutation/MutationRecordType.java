@@ -1,4 +1,4 @@
-package com.jeffdisher.laminar.types;
+package com.jeffdisher.laminar.types.mutation;
 
 
 /**

@@ -1,6 +1,8 @@
-package com.jeffdisher.laminar.types;
+package com.jeffdisher.laminar.types.message;
 
 import java.nio.ByteBuffer;
+
+import com.jeffdisher.laminar.types.ClusterConfig;
 
 
 /**
