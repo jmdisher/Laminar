@@ -3,12 +3,8 @@ package com.jeffdisher.laminar.network;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.ServerSocketChannel;
-import java.util.HashMap;
-import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
-import java.util.Map;
-import java.util.Set;
 import java.util.function.Consumer;
 
 import com.jeffdisher.laminar.components.INetworkManagerBackgroundCallbacks;
@@ -53,17 +49,14 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 	private long _currentElectionTimeoutMillisInterval;
 
 	// These elements are relevant when _THIS_ node is the LEADER.
-	DownstreamPeerManager _downstreamPeers;
+	private final DownstreamPeerManager _downstreamPeers;
 	// The last mutation offset received by _THIS_ node (either from a client or peer).
 	private long _lastReceivedMutationOffset = DownstreamPeerState.NO_NEXT_MUTATION;
 	// The last mutation offset committed on _THIS_ node.
 	private long _lastCommittedMutationOffset = DownstreamPeerState.NO_NEXT_MUTATION;
 
 	// These elements are relevant when _THIS_ node is a FOLLOWER.
-	// Much like ClientManager, we store new upstream peers until we get the handshake from them to know their state.
-	private final Set<NetworkManager.NodeToken> _newUpstreamNodes;
-	// (not addressable by ConfigEntry since they NodeState doesn't know about these).
-	private final Map<NetworkManager.NodeToken, UpstreamPeerState> _upstreamPeerByNode;
+	private final UpstreamPeerManager _upstreamPeers;
 
 	public ClusterManager(ConfigEntry self, ServerSocketChannel serverSocket, IClusterManagerCallbacks callbacks) throws IOException {
 		_mainThread = Thread.currentThread();
@@ -74,8 +67,7 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 		// We start assuming that we are the leader until told otherwise.
 		_isLeader = true;
 		_downstreamPeers = new DownstreamPeerManager();
-		_newUpstreamNodes = new HashSet<>();
-		_upstreamPeerByNode = new HashMap<>();
+		_upstreamPeers = new UpstreamPeerManager();
 	}
 
 	public void startAndWaitForReady() {
@@ -139,10 +131,7 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		_isLeader = false;
 		// Initialize our upstream state, since we haven't heard anything from them, yet.
-		for (UpstreamPeerState peer : _upstreamPeerByNode.values()) {
-			peer.lastMutationOffsetReceived = _lastReceivedMutationOffset;
-			peer.lastMutationOffsetAcknowledged = _lastReceivedMutationOffset;
-		}
+		_upstreamPeers.initializeForFollowerState(_lastReceivedMutationOffset);
 		// Schedule a timeout in case the leader disappears.
 		_mainStartNewElectionTimeout();
 	}
@@ -163,10 +152,9 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 		}
 		
 		// Close the upstream and wait for them to reconnect.
-		for (NetworkManager.NodeToken token : _upstreamPeerByNode.keySet()) {
+		for (NetworkManager.NodeToken token : _upstreamPeers.removeAllEstablishedPeers()) {
 			_networkManager.closeConnection(token);
 		}
-		_upstreamPeerByNode.clear();
 	}
 
 	@Override
@@ -201,9 +189,7 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 		_callbacks.ioEnqueueClusterCommandForMainThread(new Consumer<StateSnapshot>() {
 			@Override
 			public void accept(StateSnapshot arg0) {
-				// Until we get the cluster handshake from a node, we don't know what to do with it.
-				boolean didAdd = _newUpstreamNodes.add(node);
-				Assert.assertTrue(didAdd);
+				_upstreamPeers.newUpstreamConnected(node);
 			}});
 	}
 
@@ -213,13 +199,11 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 		_callbacks.ioEnqueueClusterCommandForMainThread(new Consumer<StateSnapshot>() {
 			@Override
 			public void accept(StateSnapshot arg0) {
-				// Check what kind of node this is, do the appropriate book-keeping, and send any required callback.
-				if (_newUpstreamNodes.contains(node)) {
-					// We were waiting for a handshake so just drop this.
-					_newUpstreamNodes.remove(node);
-				} else if (_upstreamPeerByNode.containsKey(node)) {
-					UpstreamPeerState state = _upstreamPeerByNode.remove(node);
-					Assert.assertTrue(null != state);
+				// Currently, we are just handling the disconnect by removing the node from its associated collection.
+				if (_upstreamPeers.isNewUpstream(node)) {
+					_upstreamPeers.removeNewNode(node);
+				} else if (_upstreamPeers.isEstablishedUpstream(node)) {
+					_upstreamPeers.removeEstablishedNode(node);
 				} else if (_downstreamPeers.containsNode(node)) {
 					_downstreamPeers.removeNode(node);
 				} else {
@@ -237,7 +221,8 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 		_callbacks.ioEnqueueClusterCommandForMainThread(new Consumer<StateSnapshot>() {
 			@Override
 			public void accept(StateSnapshot arg0) {
-				boolean isUpstream = _upstreamPeerByNode.containsKey(node);
+				// "new" nodes never send write-ready.
+				boolean isUpstream = _upstreamPeers.isEstablishedUpstream(node);
 				boolean isDownstream = _downstreamPeers.containsNode(node);
 				// They can't be write-ready as new and they must be one of these.
 				Assert.assertTrue(isUpstream != isDownstream);
@@ -246,7 +231,7 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 					ReadOnlyDownstreamPeerState peer = _downstreamPeers.setNodeWritable(node);
 					_tryFetchOrSend(peer, arg0.currentTermNumber);
 				} else {
-					UpstreamPeerState peer = _upstreamPeerByNode.get(node);
+					UpstreamPeerState peer = _upstreamPeers.getEstablishedPeerState(node);
 					Assert.assertTrue(!peer.isWritable);
 					peer.isWritable = true;
 					_trySendUpstream(peer);
@@ -295,17 +280,14 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 					} else {
 						Assert.unreachable("Unknown response type");
 					}
-				} else if (_newUpstreamNodes.contains(node)) {
+				} else if (_upstreamPeers.isNewUpstream(node)) {
 					// The only thing we can get from upstream nodes is IDENTITY.
 					byte[] payload = _networkManager.readWaitingMessage(node);
 					DownstreamMessage message = DownstreamMessage.deserializeFrom(ByteBuffer.wrap(payload));
 					Assert.assertTrue(DownstreamMessage.Type.IDENTITY == message.type);
 					ConfigEntry entry = ((DownstreamPayload_Identity)message.payload).self;
 					
-					// Create the upstream state and migrate this.
-					UpstreamPeerState state = new UpstreamPeerState(entry, node);
-					_newUpstreamNodes.remove(node);
-					_upstreamPeerByNode.put(node, state);
+					UpstreamPeerState state = _upstreamPeers.establishPeer(entry, node);
 					
 					// Send back our PEER_STATE.
 					state.pendingPeerStateMutationOffsetReceived = _lastReceivedMutationOffset;
@@ -314,8 +296,8 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 					// We don't tell the NodeState about this unless they upstream starts acting like a LEADER and sending mutations.
 				} else {
 					// Ready upstream nodes just means the leader sending us an APPEND_MUTATIONS, for now.
-					Assert.assertTrue(_upstreamPeerByNode.containsKey(node));
-					UpstreamPeerState peer = _upstreamPeerByNode.get(node);
+					Assert.assertTrue(_upstreamPeers.isEstablishedUpstream(node));
+					UpstreamPeerState peer = _upstreamPeers.getEstablishedPeerState(node);
 					
 					byte[] raw = _networkManager.readWaitingMessage(node);
 					DownstreamMessage message = DownstreamMessage.deserializeFrom(ByteBuffer.wrap(raw));
