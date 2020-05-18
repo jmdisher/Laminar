@@ -473,19 +473,18 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 	}
 
 	private void _mainHandleAppendMutations(UpstreamPeerState peer, DownstreamPayload_AppendMutations payload) {
+		// If there were no mutations, this is a heart-beat, and they are implicitly "applied".
 		boolean didApplyMutation = (0 == payload.records.length);
+		// The previous mutation term number is for the mutation prior to those in the list so we will update this as we see each mutation.
 		long previousMutationTermNumber = payload.previousMutationTermNumber;
 		for (MutationRecord record : payload.records) {
 			// Update our last offset received and notify the callbacks of this mutation.
 			long nextMutationToRequest = _callbacks.mainAppendMutationFromUpstream(peer.entry, payload.termNumber, previousMutationTermNumber, record);
+			// Only if we are requesting the very next mutation does this mean we applied the one we received.
 			didApplyMutation = (nextMutationToRequest == (record.globalOffset + 1));
-			// Set the last mutation received to the one before the one we should requuest (handles apply and rewind cases).
-			peer.lastMutationOffsetReceived = nextMutationToRequest - 1;
+			// If we move forward, it should only be by 1 record at a time.
 			if (nextMutationToRequest > record.globalOffset) {
-				// We are moving forward so we want to ack this.
-				peer.lastMutationOffsetAcknowledged = record.globalOffset - 1L;
-			} else {
-				peer.lastMutationOffsetAcknowledged = nextMutationToRequest - 1L;
+				Assert.assertTrue(didApplyMutation);
 			}
 			// Advance term number of the next mutation in the list.
 			previousMutationTermNumber = record.termNumber;
@@ -493,7 +492,12 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 			_lastReceivedMutationOffset = nextMutationToRequest - 1;
 			// Make sure that this never goes negative (would imply a bug somewhere).
 			Assert.assertTrue(_lastReceivedMutationOffset >= 0);
-			if (!didApplyMutation) {
+			
+			if (didApplyMutation) {
+				peer.lastMutationOffsetReceived = nextMutationToRequest - 1L;
+				// We are moving forward so we want to ack this.
+				peer.lastMutationOffsetAcknowledged = record.globalOffset - 1L;
+			} else {
 				break;
 			}
 		}

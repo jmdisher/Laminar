@@ -40,6 +40,13 @@ public interface IClusterManagerCallbacks {
 	 * Called when a new mutation arrives from an upstream peer.
 	 * The ClusterManager doesn't expose upstream nodes so the peer is only provided so the receiver can capture this
 	 * as the leader, for redirects.
+	 * The potential return value from this is somewhat complex so here is a break-down of the cases which may happen:
+	 * -the next mutation - this is the most common case and happens if this mutation was applied or it matches one we
+	 *  already had.
+	 * -the previous mutation - if we already had this mutation but there was a term mismatch, so we want to search back
+	 *  in the leader's history to get the correct sequence of mutations.
+	 * -a much earlier mutation - if the leader is far ahead of us, this is just to tell them to rewind to the next
+	 *  mutation we need.
 	 * 
 	 * @param peer The peer which sent the mutation.
 	 * @param upstreamTermNumber The term number of the upstream peer.
