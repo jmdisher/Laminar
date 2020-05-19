@@ -68,7 +68,7 @@ public class TestClientConnection {
 			ClientResult result = connection.sendTemp(topic, payload);
 			int topicSize = topic.serializedSize();
 			// Receive the message on the emulated server.
-			ByteBuffer readBuffer = ByteBuffer.allocate(Short.BYTES + Byte.BYTES + Long.BYTES + topicSize + payload.length);
+			ByteBuffer readBuffer = ByteBuffer.allocate(Short.BYTES + Byte.BYTES + Long.BYTES + topicSize + Short.BYTES + payload.length);
 			didRead = server.read(readBuffer);
 			Assert.assertEquals(readBuffer.position(), didRead);
 			readBuffer.flip();

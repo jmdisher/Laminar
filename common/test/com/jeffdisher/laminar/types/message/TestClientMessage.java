@@ -47,7 +47,7 @@ public class TestClientMessage {
 		byte[] payload = new byte[] { 0, 1, 2, 3 };
 		ClientMessage input = ClientMessage.temp(nonce, topic, payload);
 		byte[] serialized = input.serialize();
-		Assert.assertEquals(Byte.BYTES + Long.BYTES + topic.serializedSize() + payload.length, serialized.length);
+		Assert.assertEquals(Byte.BYTES + Long.BYTES + topic.serializedSize() + Short.BYTES + payload.length, serialized.length);
 		ClientMessage output = ClientMessage.deserialize(serialized);
 		Assert.assertEquals(input.type, output.type);
 		Assert.assertEquals(input.nonce, output.nonce);

@@ -3,6 +3,7 @@ package com.jeffdisher.laminar.types.message;
 import java.nio.ByteBuffer;
 
 import com.jeffdisher.laminar.types.TopicName;
+import com.jeffdisher.laminar.utils.MiscHelpers;
 
 
 /**
@@ -15,8 +16,7 @@ public class ClientMessagePayload_Temp implements IClientMessagePayload {
 
 	public static ClientMessagePayload_Temp deserialize(ByteBuffer serialized) {
 		TopicName topic = TopicName.deserializeFrom(serialized);
-		byte[] buffer = new byte[serialized.remaining()];
-		serialized.get(buffer);
+		byte[] buffer = MiscHelpers.readSizedBytes(serialized);
 		return new ClientMessagePayload_Temp(topic, buffer);
 	}
 
@@ -31,12 +31,12 @@ public class ClientMessagePayload_Temp implements IClientMessagePayload {
 
 	@Override
 	public int serializedSize() {
-		return this.topic.serializedSize() + this.contents.length;
+		return this.topic.serializedSize() + Short.BYTES + this.contents.length;
 	}
 
 	@Override
 	public void serializeInto(ByteBuffer buffer) {
 		this.topic.serializeInto(buffer);
-		buffer.put(this.contents);
+		MiscHelpers.writeSizedBytes(buffer, this.contents);
 	}
 }
