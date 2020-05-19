@@ -46,15 +46,16 @@ public class MutationRecord {
 		return new MutationRecord(MutationRecordType.DESTROY_TOPIC, termNumber, globalOffset, topic, clientId, clientNonce, MutationRecordPayload_Empty.create());
 	}
 
-	public static MutationRecord temp(long termNumber, long globalOffset, TopicName topic, UUID clientId, long clientNonce, byte[] payload) {
+	public static MutationRecord put(long termNumber, long globalOffset, TopicName topic, UUID clientId, long clientNonce, byte[] key, byte[] value) {
 		// The offsets must be positive.
 		Assert.assertTrue(termNumber > 0L);
 		Assert.assertTrue(globalOffset > 0L);
 		Assert.assertTrue(null != topic);
 		Assert.assertTrue(null != clientId);
 		Assert.assertTrue(clientNonce >= 0L);
-		Assert.assertTrue(null != payload);
-		return new MutationRecord(MutationRecordType.TEMP, termNumber, globalOffset, topic, clientId, clientNonce, MutationRecordPayload_Temp.create(payload));
+		Assert.assertTrue(null != key);
+		Assert.assertTrue(null != value);
+		return new MutationRecord(MutationRecordType.PUT, termNumber, globalOffset, topic, clientId, clientNonce, MutationRecordPayload_Put.create(key, value));
 	}
 
 	public static MutationRecord updateConfig(long termNumber, long globalOffset, UUID clientId, long clientNonce, ClusterConfig config) {
@@ -100,8 +101,8 @@ public class MutationRecord {
 		case DESTROY_TOPIC:
 			payload = MutationRecordPayload_Empty.deserialize(buffer);
 			break;
-		case TEMP:
-			payload = MutationRecordPayload_Temp.deserialize(buffer);
+		case PUT:
+			payload = MutationRecordPayload_Put.deserialize(buffer);
 			break;
 		case UPDATE_CONFIG:
 			payload = MutationRecordPayload_Config.deserialize(buffer);

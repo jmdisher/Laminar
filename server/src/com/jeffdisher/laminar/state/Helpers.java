@@ -9,7 +9,7 @@ import com.jeffdisher.laminar.types.message.ClientMessagePayload_Temp;
 import com.jeffdisher.laminar.types.message.ClientMessagePayload_Topic;
 import com.jeffdisher.laminar.types.message.ClientMessagePayload_UpdateConfig;
 import com.jeffdisher.laminar.types.mutation.MutationRecord;
-import com.jeffdisher.laminar.types.mutation.MutationRecordPayload_Temp;
+import com.jeffdisher.laminar.types.mutation.MutationRecordPayload_Put;
 import com.jeffdisher.laminar.utils.Assert;
 
 
@@ -45,15 +45,19 @@ public class Helpers {
 		}
 			break;
 		case TEMP: {
-			// This is just for initial testing:  send the received, log it, and send the commit.
 			ClientMessagePayload_Temp payload = (ClientMessagePayload_Temp)message.payload;
-			converted = MutationRecord.temp(termNumber, mutationOffsetToAssign, payload.topic, clientId, message.nonce, payload.contents);
+			// For now, just use the empty array as the key (until the ClientMessage defines the PUT type).
+			byte[] key = new byte[0];
+			byte[] value = payload.contents;
+			converted = MutationRecord.put(termNumber, mutationOffsetToAssign, payload.topic, clientId, message.nonce, key, value);
 		}
 			break;
 		case POISON: {
-			// This is just for initial testing:  send the received, log it, and send the commit.
 			ClientMessagePayload_Temp payload = (ClientMessagePayload_Temp)message.payload;
-			converted = MutationRecord.temp(termNumber, mutationOffsetToAssign, payload.topic, clientId, message.nonce, payload.contents);
+			// For now, just use the empty array as the key (until the ClientMessage defines the PUT type).
+			byte[] key = new byte[0];
+			byte[] value = payload.contents;
+			converted = MutationRecord.put(termNumber, mutationOffsetToAssign, payload.topic, clientId, message.nonce, key, value);
 		}
 			break;
 		case UPDATE_CONFIG: {
@@ -92,9 +96,9 @@ public class Helpers {
 			eventToReturn = EventRecord.destroyTopic(mutation.termNumber, mutation.globalOffset, eventOffsetToAssign, mutation.clientId, mutation.clientNonce);
 		}
 			break;
-		case TEMP: {
-			// For now, we just use the empty key until it is passed from the mutation.
-			eventToReturn = EventRecord.put(mutation.termNumber, mutation.globalOffset, eventOffsetToAssign, mutation.clientId, mutation.clientNonce, new byte[0], ((MutationRecordPayload_Temp)mutation.payload).contents);
+		case PUT: {
+			MutationRecordPayload_Put payload = (MutationRecordPayload_Put)mutation.payload;
+			eventToReturn = EventRecord.put(mutation.termNumber, mutation.globalOffset, eventOffsetToAssign, mutation.clientId, mutation.clientNonce, payload.key, payload.value);
 		}
 			break;
 		case UPDATE_CONFIG: {

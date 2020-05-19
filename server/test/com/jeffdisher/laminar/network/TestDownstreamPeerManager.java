@@ -49,7 +49,7 @@ public class TestDownstreamPeerManager {
 		
 		// Use one of these and see that it is no longer here.
 		TopicName topic = TopicName.fromString("test");
-		MutationRecord mutation = MutationRecord.temp(1L, 4L, topic, UUID.randomUUID(), 1, new byte[0]);
+		MutationRecord mutation = MutationRecord.put(1L, 4L, topic, UUID.randomUUID(), 1, new byte[0], new byte[0]);
 		manager.immutablePeersReadyToReceiveMutation(4L).iterator().next().commitToSendMutations(1L, 1L, mutation, 1L, 1L);
 		Assert.assertEquals(0, manager.immutablePeersReadyToReceiveMutation(4L).size());
 		

@@ -18,9 +18,9 @@ public enum MutationRecordType {
 	 */
 	DESTROY_TOPIC,
 	/**
-	 * This message is purely temporary to verify the client-server communication.
+	 * Encodes a key and value as raw byte[].
 	 */
-	TEMP,
+	PUT,
 	/**
 	 * The payload of this message is the serialized new config.
 	 */

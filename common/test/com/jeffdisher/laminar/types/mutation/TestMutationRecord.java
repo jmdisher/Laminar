@@ -2,6 +2,7 @@ package com.jeffdisher.laminar.types.mutation;
 
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 
 import org.junit.Assert;
@@ -23,8 +24,9 @@ public class TestMutationRecord {
 		TopicName topic = TopicName.fromString("test");
 		UUID clientId = UUID.randomUUID();
 		long clientNonce = 1L;
-		byte[] payload = new byte[] { 1, 2, 3 };
-		MutationRecord record = MutationRecord.temp(termNumber, globalOffset, topic, clientId, clientNonce, payload);
+		byte[] key = "key".getBytes(StandardCharsets.UTF_8);
+		byte[] value = "value".getBytes(StandardCharsets.UTF_8);
+		MutationRecord record = MutationRecord.put(termNumber, globalOffset, topic, clientId, clientNonce, key, value);
 		byte[] serialized = record.serialize();
 		MutationRecord deserialized = MutationRecord.deserialize(serialized);
 		Assert.assertEquals(record.type, deserialized.type);
@@ -32,7 +34,8 @@ public class TestMutationRecord {
 		Assert.assertEquals(record.globalOffset, deserialized.globalOffset);
 		Assert.assertEquals(record.clientId, deserialized.clientId);
 		Assert.assertEquals(record.clientNonce, deserialized.clientNonce);
-		Assert.assertArrayEquals(((MutationRecordPayload_Temp)record.payload).contents, ((MutationRecordPayload_Temp)deserialized.payload).contents);
+		Assert.assertArrayEquals(((MutationRecordPayload_Put)record.payload).key, ((MutationRecordPayload_Put)deserialized.payload).key);
+		Assert.assertArrayEquals(((MutationRecordPayload_Put)record.payload).value, ((MutationRecordPayload_Put)deserialized.payload).value);
 	}
 
 	@Test
@@ -42,8 +45,9 @@ public class TestMutationRecord {
 		TopicName topic = TopicName.fromString("test");
 		UUID clientId = UUID.randomUUID();
 		long clientNonce = 1L;
-		byte[] payload = new byte[] { 1, 2, 3 };
-		MutationRecord record = MutationRecord.temp(termNumber, globalOffset, topic, clientId, clientNonce, payload);
+		byte[] key = "key".getBytes(StandardCharsets.UTF_8);
+		byte[] value = "value".getBytes(StandardCharsets.UTF_8);
+		MutationRecord record = MutationRecord.put(termNumber, globalOffset, topic, clientId, clientNonce, key, value);
 		ByteBuffer buffer = ByteBuffer.allocate(record.serializedSize());
 		record.serializeInto(buffer);
 		buffer.flip();
@@ -53,7 +57,8 @@ public class TestMutationRecord {
 		Assert.assertEquals(record.globalOffset, deserialized.globalOffset);
 		Assert.assertEquals(record.clientId, deserialized.clientId);
 		Assert.assertEquals(record.clientNonce, deserialized.clientNonce);
-		Assert.assertArrayEquals(((MutationRecordPayload_Temp)record.payload).contents, ((MutationRecordPayload_Temp)deserialized.payload).contents);
+		Assert.assertArrayEquals(((MutationRecordPayload_Put)record.payload).key, ((MutationRecordPayload_Put)deserialized.payload).key);
+		Assert.assertArrayEquals(((MutationRecordPayload_Put)record.payload).value, ((MutationRecordPayload_Put)deserialized.payload).value);
 	}
 
 	@Test
