@@ -2,6 +2,8 @@ package com.jeffdisher.laminar.types.mutation;
 
 import java.nio.ByteBuffer;
 
+import com.jeffdisher.laminar.utils.MiscHelpers;
+
 
 /**
  * The TEMP message only contains a nameless payload.
@@ -12,9 +14,7 @@ public class MutationRecordPayload_Temp implements IMutationRecordPayload {
 	}
 
 	public static MutationRecordPayload_Temp deserialize(ByteBuffer serialized) {
-		int size = Short.toUnsignedInt(serialized.getShort());
-		byte[] buffer = new byte[size];
-		serialized.get(buffer);
+		byte[] buffer = MiscHelpers.readSizedBytes(serialized);
 		return new MutationRecordPayload_Temp(buffer);
 	}
 

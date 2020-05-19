@@ -2,6 +2,8 @@ package com.jeffdisher.laminar.types.event;
 
 import java.nio.ByteBuffer;
 
+import com.jeffdisher.laminar.utils.MiscHelpers;
+
 
 /**
  * The PUT message encodes a key-value pair of byte[].
@@ -12,22 +14,9 @@ public class EventRecordPayload_Put implements IEventRecordPayload {
 	}
 
 	public static EventRecordPayload_Put deserialize(ByteBuffer serialized) {
-		byte[] key = _readSizedBytes(serialized);
-		byte[] value = _readSizedBytes(serialized);
+		byte[] key = MiscHelpers.readSizedBytes(serialized);
+		byte[] value = MiscHelpers.readSizedBytes(serialized);
 		return new EventRecordPayload_Put(key, value);
-	}
-
-
-	private static byte[] _readSizedBytes(ByteBuffer serialized) {
-		int size = Short.toUnsignedInt(serialized.getShort());
-		byte[] buffer = new byte[size];
-		serialized.get(buffer);
-		return buffer;
-	}
-
-	private static void _writeSizedBytes(ByteBuffer buffer, byte[] toWrite) {
-		buffer.putShort((short)toWrite.length);
-		buffer.put(toWrite);
 	}
 
 
@@ -50,7 +39,7 @@ public class EventRecordPayload_Put implements IEventRecordPayload {
 
 	@Override
 	public void serializeInto(ByteBuffer buffer) {
-		_writeSizedBytes(buffer, this.key);
-		_writeSizedBytes(buffer, this.value);
+		MiscHelpers.writeSizedBytes(buffer, this.key);
+		MiscHelpers.writeSizedBytes(buffer, this.value);
 	}
 }
