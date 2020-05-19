@@ -7,7 +7,6 @@ import org.junit.Test;
 
 import com.jeffdisher.laminar.types.TopicName;
 import com.jeffdisher.laminar.types.mutation.MutationRecord;
-import com.jeffdisher.laminar.types.mutation.MutationRecordType;
 
 
 /**
@@ -24,8 +23,8 @@ public class TestInFlightMutations {
 		TopicName topic = TopicName.fromString("test");
 		UUID clientId = UUID.randomUUID();
 		long clientNonce = 1L;
-		byte[] payload = null;
-		MutationRecord test = MutationRecord.generateRecord(MutationRecordType.TEMP, termNumber, globalOffset, topic, clientId, clientNonce, payload);
+		byte[] payload = new byte[0];
+		MutationRecord test = MutationRecord.temp(termNumber, globalOffset, topic, clientId, clientNonce, payload);
 		mutations.add(test);
 		Assert.assertFalse(mutations.isEmpty());
 		Assert.assertEquals(2L, mutations.getNextMutationOffset());
@@ -49,8 +48,8 @@ public class TestInFlightMutations {
 		TopicName topic = TopicName.fromString("test");
 		UUID clientId = UUID.randomUUID();
 		long clientNonce = 1L;
-		byte[] payload = null;
-		MutationRecord test = MutationRecord.generateRecord(MutationRecordType.TEMP, termNumber, globalOffset, topic, clientId, clientNonce, payload);
+		byte[] payload = new byte[0];
+		MutationRecord test = MutationRecord.temp(termNumber, globalOffset, topic, clientId, clientNonce, payload);
 		mutations.add(test);
 		Assert.assertFalse(mutations.isEmpty());
 		Assert.assertEquals(4L, mutations.getNextMutationOffset());
@@ -68,14 +67,14 @@ public class TestInFlightMutations {
 		long termNumber = 1L;
 		TopicName topic = TopicName.fromString("test");
 		UUID clientId = UUID.randomUUID();
-		byte[] payload = null;
+		byte[] payload = new byte[0];
 		
 		long globalOffset1 = 1L;
 		long clientNonce1 = 1L;
-		MutationRecord test1 = MutationRecord.generateRecord(MutationRecordType.TEMP, termNumber, globalOffset1, topic, clientId, clientNonce1, payload);
+		MutationRecord test1 = MutationRecord.temp(termNumber, globalOffset1, topic, clientId, clientNonce1, payload);
 		long globalOffset2 = 2L;
 		long clientNonce2 = 2L;
-		MutationRecord test2 = MutationRecord.generateRecord(MutationRecordType.TEMP, termNumber, globalOffset2, topic, clientId, clientNonce2, payload);
+		MutationRecord test2 = MutationRecord.temp(termNumber, globalOffset2, topic, clientId, clientNonce2, payload);
 		mutations.add(test1);
 		mutations.add(test2);
 		Assert.assertFalse(mutations.isEmpty());
@@ -95,14 +94,14 @@ public class TestInFlightMutations {
 		long termNumber = 1L;
 		TopicName topic = TopicName.fromString("test");
 		UUID clientId = UUID.randomUUID();
-		byte[] payload = null;
+		byte[] payload = new byte[0];
 		
 		long globalOffset1 = 1L;
 		long clientNonce1 = 1L;
-		MutationRecord test1 = MutationRecord.generateRecord(MutationRecordType.TEMP, termNumber, globalOffset1, topic, clientId, clientNonce1, payload);
+		MutationRecord test1 = MutationRecord.temp(termNumber, globalOffset1, topic, clientId, clientNonce1, payload);
 		long globalOffset2 = 2L;
 		long clientNonce2 = 2L;
-		MutationRecord test2 = MutationRecord.generateRecord(MutationRecordType.TEMP, termNumber, globalOffset2, topic, clientId, clientNonce2, payload);
+		MutationRecord test2 = MutationRecord.temp(termNumber, globalOffset2, topic, clientId, clientNonce2, payload);
 		mutations.add(test1);
 		mutations.add(test2);
 		Assert.assertFalse(mutations.isEmpty());

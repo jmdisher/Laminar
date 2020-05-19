@@ -12,7 +12,6 @@ import com.jeffdisher.laminar.types.TopicName;
 import com.jeffdisher.laminar.types.event.EventRecord;
 import com.jeffdisher.laminar.types.event.EventRecordType;
 import com.jeffdisher.laminar.types.mutation.MutationRecord;
-import com.jeffdisher.laminar.types.mutation.MutationRecordType;
 
 
 public class TestDiskManager {
@@ -53,8 +52,8 @@ public class TestDiskManager {
 	@Test
 	public void testMutationAndEventCommitAndFetch() throws Throwable {
 		TopicName topic = TopicName.fromString("fake");
-		MutationRecord mutation1 = MutationRecord.generateRecord(MutationRecordType.TEMP, 1L, 1L, topic, UUID.randomUUID(), 1L, new byte[] {1});
-		MutationRecord mutation2 = MutationRecord.generateRecord(MutationRecordType.TEMP, 1L, 2L, topic, UUID.randomUUID(), 2L, new byte[] {1});
+		MutationRecord mutation1 = MutationRecord.temp(1L, 1L, topic, UUID.randomUUID(), 1L, new byte[] {1});
+		MutationRecord mutation2 = MutationRecord.temp(1L, 2L, topic, UUID.randomUUID(), 2L, new byte[] {1});
 		EventRecord event1 = EventRecord.generateRecord(EventRecordType.TEMP, 1L, 1L, 1L, UUID.randomUUID(), 1L, new byte[] {1});
 		EventRecord event2 = EventRecord.generateRecord(EventRecordType.TEMP, 1L, 2L, 2L, UUID.randomUUID(), 2L, new byte[] {1});
 		

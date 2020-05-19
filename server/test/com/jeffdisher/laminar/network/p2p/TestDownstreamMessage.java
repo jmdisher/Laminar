@@ -14,7 +14,7 @@ import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.types.ConfigEntry;
 import com.jeffdisher.laminar.types.TopicName;
 import com.jeffdisher.laminar.types.mutation.MutationRecord;
-import com.jeffdisher.laminar.types.mutation.MutationRecordType;
+import com.jeffdisher.laminar.types.mutation.MutationRecordPayload_Temp;
 
 
 public class TestDownstreamMessage {
@@ -38,7 +38,7 @@ public class TestDownstreamMessage {
 	@Test
 	public void testAppendMutations() throws Throwable {
 		TopicName topic = TopicName.fromString("test");
-		MutationRecord mutation = MutationRecord.generateRecord(MutationRecordType.TEMP, 1L, 1L, topic, UUID.randomUUID(), 1L, new byte[] {1,2,3});
+		MutationRecord mutation = MutationRecord.temp(1L, 1L, topic, UUID.randomUUID(), 1L, new byte[] {1,2,3});
 		long lastCommittedMutationOffset = 1L;
 		DownstreamMessage message = DownstreamMessage.appendMutations(1L, 0L, mutation, lastCommittedMutationOffset);
 		int size = message.serializedSize();
@@ -50,7 +50,7 @@ public class TestDownstreamMessage {
 		DownstreamPayload_AppendMutations payload = (DownstreamPayload_AppendMutations)test.payload;
 		Assert.assertEquals(1L, payload.termNumber);
 		Assert.assertEquals(lastCommittedMutationOffset, payload.lastCommittedMutationOffset);
-		Assert.assertArrayEquals(mutation.payload, payload.records[0].payload);
+		Assert.assertArrayEquals(((MutationRecordPayload_Temp)mutation.payload).contents, ((MutationRecordPayload_Temp)payload.records[0].payload).contents);
 	}
 
 	@Test

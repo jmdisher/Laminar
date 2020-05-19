@@ -3,6 +3,7 @@ package com.jeffdisher.laminar.types.mutation;
 import java.nio.ByteBuffer;
 import java.util.UUID;
 
+import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.types.TopicName;
 import com.jeffdisher.laminar.utils.Assert;
 
@@ -25,15 +26,47 @@ import com.jeffdisher.laminar.utils.Assert;
  * serialization/deserialization logic.
  */
 public class MutationRecord {
-	public static MutationRecord generateRecord(MutationRecordType type, long termNumber, long globalOffset, TopicName topic, UUID clientId, long clientNonce, byte[] payload) {
-		Assert.assertTrue(MutationRecordType.INVALID != type);
+	public static MutationRecord createTopic(long termNumber, long globalOffset, TopicName topic, UUID clientId, long clientNonce) {
 		// The offsets must be positive.
 		Assert.assertTrue(termNumber > 0L);
 		Assert.assertTrue(globalOffset > 0L);
 		Assert.assertTrue(null != topic);
 		Assert.assertTrue(null != clientId);
 		Assert.assertTrue(clientNonce >= 0L);
-		return new MutationRecord(type, termNumber, globalOffset, topic, clientId, clientNonce, payload);
+		return new MutationRecord(MutationRecordType.CREATE_TOPIC, termNumber, globalOffset, topic, clientId, clientNonce, MutationRecordPayload_Empty.create());
+	}
+
+	public static MutationRecord destroyTopic(long termNumber, long globalOffset, TopicName topic, UUID clientId, long clientNonce) {
+		// The offsets must be positive.
+		Assert.assertTrue(termNumber > 0L);
+		Assert.assertTrue(globalOffset > 0L);
+		Assert.assertTrue(null != topic);
+		Assert.assertTrue(null != clientId);
+		Assert.assertTrue(clientNonce >= 0L);
+		return new MutationRecord(MutationRecordType.DESTROY_TOPIC, termNumber, globalOffset, topic, clientId, clientNonce, MutationRecordPayload_Empty.create());
+	}
+
+	public static MutationRecord temp(long termNumber, long globalOffset, TopicName topic, UUID clientId, long clientNonce, byte[] payload) {
+		// The offsets must be positive.
+		Assert.assertTrue(termNumber > 0L);
+		Assert.assertTrue(globalOffset > 0L);
+		Assert.assertTrue(null != topic);
+		Assert.assertTrue(null != clientId);
+		Assert.assertTrue(clientNonce >= 0L);
+		Assert.assertTrue(null != payload);
+		return new MutationRecord(MutationRecordType.TEMP, termNumber, globalOffset, topic, clientId, clientNonce, MutationRecordPayload_Temp.create(payload));
+	}
+
+	public static MutationRecord updateConfig(long termNumber, long globalOffset, UUID clientId, long clientNonce, ClusterConfig config) {
+		// The offsets must be positive.
+		Assert.assertTrue(termNumber > 0L);
+		Assert.assertTrue(globalOffset > 0L);
+		Assert.assertTrue(null != clientId);
+		Assert.assertTrue(clientNonce >= 0L);
+		Assert.assertTrue(null != config);
+		// UPDATE_CONFIG is not posted to a topic.
+		TopicName topic = TopicName.syntheticTopic();
+		return new MutationRecord(MutationRecordType.UPDATE_CONFIG, termNumber, globalOffset, topic, clientId, clientNonce, MutationRecordPayload_Config.create(config));
 	}
 
 	public static MutationRecord deserialize(byte[] serialized) {
@@ -57,9 +90,25 @@ public class MutationRecord {
 		TopicName topic = TopicName.deserializeFrom(buffer);
 		UUID clientId = new UUID(buffer.getLong(), buffer.getLong());
 		long clientNonce = buffer.getLong();
-		int payloadSize = Short.toUnsignedInt(buffer.getShort());
-		byte[] payload = new byte[payloadSize];
-		buffer.get(payload);
+		IMutationRecordPayload payload;
+		switch (type) {
+		case INVALID:
+			throw Assert.unimplemented("Handle invalid deserialization");
+		case CREATE_TOPIC:
+			payload = MutationRecordPayload_Empty.deserialize(buffer);
+			break;
+		case DESTROY_TOPIC:
+			payload = MutationRecordPayload_Empty.deserialize(buffer);
+			break;
+		case TEMP:
+			payload = MutationRecordPayload_Temp.deserialize(buffer);
+			break;
+		case UPDATE_CONFIG:
+			payload = MutationRecordPayload_Config.deserialize(buffer);
+			break;
+		default:
+			throw Assert.unreachable("Unmatched deserialization type");
+		}
 		return new MutationRecord(type, termNumber, globalOffset, topic, clientId, clientNonce, payload);
 	}
 
@@ -70,9 +119,9 @@ public class MutationRecord {
 	public final TopicName topic;
 	public final UUID clientId;
 	public final long clientNonce;
-	public final byte[] payload;
+	public final IMutationRecordPayload payload;
 	
-	private MutationRecord(MutationRecordType type, long termNumber, long globalOffset, TopicName topic, UUID clientId, long clientNonce, byte[] payload) {
+	private MutationRecord(MutationRecordType type, long termNumber, long globalOffset, TopicName topic, UUID clientId, long clientNonce, IMutationRecordPayload payload) {
 		this.type = type;
 		this.termNumber = termNumber;
 		this.globalOffset = globalOffset;
@@ -105,8 +154,7 @@ public class MutationRecord {
 				+ this.topic.serializedSize()
 				+ (2 * Long.BYTES)
 				+ Long.BYTES
-				+ Short.BYTES
-				+ this.payload.length
+				+ this.payload.serializedSize()
 		;
 	}
 
@@ -120,8 +168,7 @@ public class MutationRecord {
 		buffer
 			.putLong(this.clientId.getMostSignificantBits()).putLong(this.clientId.getLeastSignificantBits())
 			.putLong(this.clientNonce)
-			.putShort((short)this.payload.length)
-			.put(this.payload)
 		;
+		this.payload.serializeInto(buffer);
 	}
 }

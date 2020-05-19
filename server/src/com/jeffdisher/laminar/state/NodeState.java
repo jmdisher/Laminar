@@ -25,6 +25,8 @@ import com.jeffdisher.laminar.types.event.EventRecord;
 import com.jeffdisher.laminar.types.message.ClientMessage;
 import com.jeffdisher.laminar.types.message.ClientMessageType;
 import com.jeffdisher.laminar.types.mutation.MutationRecord;
+import com.jeffdisher.laminar.types.mutation.MutationRecordPayload_Config;
+import com.jeffdisher.laminar.types.mutation.MutationRecordPayload_Temp;
 import com.jeffdisher.laminar.types.mutation.MutationRecordType;
 import com.jeffdisher.laminar.utils.Assert;
 import com.jeffdisher.laminar.utils.UninterruptibleQueue;
@@ -462,11 +464,11 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 			break;
 		case TEMP: {
 			// We don't change any internal state for this - we just log it.
-			System.out.println("GOT TEMP FROM " + mutation.clientId + " nonce " + mutation.clientNonce + " data " + mutation.payload[0]);
+			System.out.println("GOT TEMP FROM " + mutation.clientId + " nonce " + mutation.clientNonce + " data " + ((MutationRecordPayload_Temp)mutation.payload).contents[0]);
 		}
 			break;
 		case UPDATE_CONFIG: {
-			ClusterConfig newConfig = ClusterConfig.deserialize(mutation.payload);
+			ClusterConfig newConfig = ((MutationRecordPayload_Config)mutation.payload).config;
 			System.out.println("GOT UPDATE_CONFIG FROM " + mutation.clientId + ": " + newConfig.entries.length + " entries (nonce " + mutation.clientNonce + ")");
 			
 			// Notes about handling a new config:
@@ -804,7 +806,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 			break;
 		case TEMP: {
 			// We don't change any internal state for this - we just log it.
-			System.out.println("GOT TEMP FROM " + mutation.clientId + " nonce " + mutation.clientNonce + " data " + mutation.payload[0]);
+			System.out.println("GOT TEMP FROM " + mutation.clientId + " nonce " + mutation.clientNonce + " data " + ((MutationRecordPayload_Temp)mutation.payload).contents[0]);
 			// This is VALID if the topic exists but ERROR, if not.
 			effect = _activeTopics.contains(mutation.topic)
 					? CommitInfo.Effect.VALID

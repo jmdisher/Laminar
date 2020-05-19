@@ -3,7 +3,6 @@ package com.jeffdisher.laminar.state;
 import java.util.UUID;
 
 import com.jeffdisher.laminar.types.ClusterConfig;
-import com.jeffdisher.laminar.types.TopicName;
 import com.jeffdisher.laminar.types.event.EventRecord;
 import com.jeffdisher.laminar.types.event.EventRecordType;
 import com.jeffdisher.laminar.types.message.ClientMessage;
@@ -11,7 +10,7 @@ import com.jeffdisher.laminar.types.message.ClientMessagePayload_Temp;
 import com.jeffdisher.laminar.types.message.ClientMessagePayload_Topic;
 import com.jeffdisher.laminar.types.message.ClientMessagePayload_UpdateConfig;
 import com.jeffdisher.laminar.types.mutation.MutationRecord;
-import com.jeffdisher.laminar.types.mutation.MutationRecordType;
+import com.jeffdisher.laminar.types.mutation.MutationRecordPayload_Temp;
 import com.jeffdisher.laminar.utils.Assert;
 
 
@@ -38,24 +37,24 @@ public class Helpers {
 			break;
 		case CREATE_TOPIC: {
 			ClientMessagePayload_Topic payload = (ClientMessagePayload_Topic)message.payload;
-			converted = MutationRecord.generateRecord(MutationRecordType.CREATE_TOPIC, termNumber, mutationOffsetToAssign, payload.topic, clientId, message.nonce, new byte[0]);
+			converted = MutationRecord.createTopic(termNumber, mutationOffsetToAssign, payload.topic, clientId, message.nonce);
 		}
 			break;
 		case DESTROY_TOPIC: {
 			ClientMessagePayload_Topic payload = (ClientMessagePayload_Topic)message.payload;
-			converted = MutationRecord.generateRecord(MutationRecordType.DESTROY_TOPIC, termNumber, mutationOffsetToAssign, payload.topic, clientId, message.nonce, new byte[0]);
+			converted = MutationRecord.destroyTopic(termNumber, mutationOffsetToAssign, payload.topic, clientId, message.nonce);
 		}
 			break;
 		case TEMP: {
 			// This is just for initial testing:  send the received, log it, and send the commit.
 			ClientMessagePayload_Temp payload = (ClientMessagePayload_Temp)message.payload;
-			converted = MutationRecord.generateRecord(MutationRecordType.TEMP, termNumber, mutationOffsetToAssign, payload.topic, clientId, message.nonce, payload.contents);
+			converted = MutationRecord.temp(termNumber, mutationOffsetToAssign, payload.topic, clientId, message.nonce, payload.contents);
 		}
 			break;
 		case POISON: {
 			// This is just for initial testing:  send the received, log it, and send the commit.
 			ClientMessagePayload_Temp payload = (ClientMessagePayload_Temp)message.payload;
-			converted = MutationRecord.generateRecord(MutationRecordType.TEMP, termNumber, mutationOffsetToAssign, payload.topic, clientId, message.nonce, payload.contents);
+			converted = MutationRecord.temp(termNumber, mutationOffsetToAssign, payload.topic, clientId, message.nonce, payload.contents);
 		}
 			break;
 		case UPDATE_CONFIG: {
@@ -63,9 +62,7 @@ public class Helpers {
 			// For now, however, we just send the received ack and enqueue this for commit (note that it DOES NOT generate an event - only a mutation).
 			// The more complex operation happens after the commit completes since that is when we will change our state and broadcast the new config to all clients and listeners.
 			ClusterConfig newConfig = ((ClientMessagePayload_UpdateConfig)message.payload).config;
-			// UPDATE_CLUSTER is not posted to a topic.
-			TopicName topic = TopicName.syntheticTopic();
-			converted = MutationRecord.generateRecord(MutationRecordType.UPDATE_CONFIG, termNumber, mutationOffsetToAssign, topic, clientId, message.nonce, newConfig.serialize());
+			converted = MutationRecord.updateConfig(termNumber, mutationOffsetToAssign, clientId, message.nonce, newConfig);
 		}
 			break;
 		default:
@@ -89,15 +86,15 @@ public class Helpers {
 		case INVALID:
 			throw Assert.unimplemented("Invalid message type");
 		case CREATE_TOPIC: {
-			eventToReturn = EventRecord.generateRecord(EventRecordType.CREATE_TOPIC, mutation.termNumber, mutation.globalOffset, eventOffsetToAssign, mutation.clientId, mutation.clientNonce, mutation.payload);
+			eventToReturn = EventRecord.generateRecord(EventRecordType.CREATE_TOPIC, mutation.termNumber, mutation.globalOffset, eventOffsetToAssign, mutation.clientId, mutation.clientNonce, new byte[0]);
 		}
 			break;
 		case DESTROY_TOPIC: {
-			eventToReturn = EventRecord.generateRecord(EventRecordType.DESTROY_TOPIC, mutation.termNumber, mutation.globalOffset, eventOffsetToAssign, mutation.clientId, mutation.clientNonce, mutation.payload);
+			eventToReturn = EventRecord.generateRecord(EventRecordType.DESTROY_TOPIC, mutation.termNumber, mutation.globalOffset, eventOffsetToAssign, mutation.clientId, mutation.clientNonce, new byte[0]);
 		}
 			break;
 		case TEMP: {
-			eventToReturn = EventRecord.generateRecord(EventRecordType.TEMP, mutation.termNumber, mutation.globalOffset, eventOffsetToAssign, mutation.clientId, mutation.clientNonce, mutation.payload);
+			eventToReturn = EventRecord.generateRecord(EventRecordType.TEMP, mutation.termNumber, mutation.globalOffset, eventOffsetToAssign, mutation.clientId, mutation.clientNonce, ((MutationRecordPayload_Temp)mutation.payload).contents);
 		}
 			break;
 		case UPDATE_CONFIG: {
