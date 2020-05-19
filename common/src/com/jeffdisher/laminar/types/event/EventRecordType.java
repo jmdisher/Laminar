@@ -18,9 +18,9 @@ public enum EventRecordType {
 	 */
 	DESTROY_TOPIC,
 	/**
-	 * This message is purely temporary to verify the client-server communication.
+	 * Encodes a key and value as raw byte[].
 	 */
-	TEMP,
+	PUT,
 	/**
 	 * A synthetic EventRecord type which is never persisted or directly produced by a MutationRecord (although it is
 	 * indirectly created, in some cases) and only used over-the-wire when communicating with listeners.

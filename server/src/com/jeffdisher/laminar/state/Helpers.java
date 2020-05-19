@@ -93,7 +93,8 @@ public class Helpers {
 		}
 			break;
 		case TEMP: {
-			eventToReturn = EventRecord.temp(mutation.termNumber, mutation.globalOffset, eventOffsetToAssign, mutation.clientId, mutation.clientNonce, ((MutationRecordPayload_Temp)mutation.payload).contents);
+			// For now, we just use the empty key until it is passed from the mutation.
+			eventToReturn = EventRecord.put(mutation.termNumber, mutation.globalOffset, eventOffsetToAssign, mutation.clientId, mutation.clientNonce, new byte[0], ((MutationRecordPayload_Temp)mutation.payload).contents);
 		}
 			break;
 		case UPDATE_CONFIG: {

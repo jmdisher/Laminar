@@ -22,7 +22,7 @@ import com.jeffdisher.laminar.types.CommitInfo;
 import com.jeffdisher.laminar.types.ConfigEntry;
 import com.jeffdisher.laminar.types.TopicName;
 import com.jeffdisher.laminar.types.event.EventRecord;
-import com.jeffdisher.laminar.types.event.EventRecordPayload_Temp;
+import com.jeffdisher.laminar.types.event.EventRecordPayload_Put;
 import com.jeffdisher.laminar.types.message.ClientMessage;
 import com.jeffdisher.laminar.types.response.ClientResponse;
 import com.jeffdisher.laminar.types.response.ClientResponseType;
@@ -316,8 +316,8 @@ public class TestClientsAndListeners {
 			// Add a bias to skip the topic creation.
 			int index = i + 1;
 			// Check the after, first, since that happened after the poison was done and the difference can point to different bugs.
-			Assert.assertEquals(i, ((EventRecordPayload_Temp)afterEvents[index].payload).contents[0]);
-			Assert.assertEquals(i, ((EventRecordPayload_Temp)beforeEvents[index].payload).contents[0]);
+			Assert.assertEquals(i, ((EventRecordPayload_Put)afterEvents[index].payload).value[0]);
+			Assert.assertEquals(i, ((EventRecordPayload_Put)beforeEvents[index].payload).value[0]);
 		}
 		// Also verify that the listeners got the config.
 		Assert.assertNotNull(beforeListener.getCurrentConfig());
@@ -513,8 +513,8 @@ public class TestClientsAndListeners {
 			
 			if (i >= 2) {
 				// (these contain the raw TEMP payloads, too).
-				Assert.assertEquals((2 * i), Byte.toUnsignedInt(((EventRecordPayload_Temp)event1.payload).contents[0]));
-				Assert.assertEquals((2 * i) + 1, Byte.toUnsignedInt(((EventRecordPayload_Temp)event2.payload).contents[0]));
+				Assert.assertEquals((2 * i), Byte.toUnsignedInt(((EventRecordPayload_Put)event1.payload).value[0]));
+				Assert.assertEquals((2 * i) + 1, Byte.toUnsignedInt(((EventRecordPayload_Put)event2.payload).value[0]));
 			}
 		}
 		listener1.close();
@@ -579,7 +579,7 @@ public class TestClientsAndListeners {
 				} else {
 					// We only expect the one.
 					Assert.assertEquals(2L, record.localOffset);
-					Assert.assertArrayEquals(_message, ((EventRecordPayload_Temp)record.payload).contents);
+					Assert.assertArrayEquals(_message, ((EventRecordPayload_Put)record.payload).value);
 				}
 				_latch.countDown();
 				// ListenerConnection is safe against redundant closes (even though the underlying NetworkManager is not).

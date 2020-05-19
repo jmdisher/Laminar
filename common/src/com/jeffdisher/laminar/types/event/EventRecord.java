@@ -38,7 +38,7 @@ public class EventRecord {
 		return new EventRecord(EventRecordType.DESTROY_TOPIC, termNumber, globalOffset, localOffset, clientId, clientNonce, EventRecordPayload_Empty.create());
 	}
 
-	public static EventRecord temp(long termNumber, long globalOffset, long localOffset, UUID clientId, long clientNonce, byte[] payload) {
+	public static EventRecord put(long termNumber, long globalOffset, long localOffset, UUID clientId, long clientNonce, byte[] key, byte[] value) {
 		// The localOffset can never be larger than the globalOffset (since it is per-topic while the global is for the input mutation stream).
 		Assert.assertTrue(globalOffset >= localOffset);
 		// The offsets must be positive.
@@ -47,7 +47,9 @@ public class EventRecord {
 		Assert.assertTrue(localOffset > 0L);
 		Assert.assertTrue(null != clientId);
 		Assert.assertTrue(clientNonce >= 0L);
-		return new EventRecord(EventRecordType.TEMP, termNumber, globalOffset, localOffset, clientId, clientNonce, EventRecordPayload_Temp.create(payload));
+		Assert.assertTrue(null != key);
+		Assert.assertTrue(null != value);
+		return new EventRecord(EventRecordType.PUT, termNumber, globalOffset, localOffset, clientId, clientNonce, EventRecordPayload_Put.create(key, value));
 	}
 
 	/**
@@ -91,8 +93,8 @@ public class EventRecord {
 		case DESTROY_TOPIC:
 			payload = EventRecordPayload_Empty.deserialize(wrapper);
 			break;
-		case TEMP:
-			payload = EventRecordPayload_Temp.deserialize(wrapper);
+		case PUT:
+			payload = EventRecordPayload_Put.deserialize(wrapper);
 			break;
 		case CONFIG_CHANGE:
 			payload = EventRecordPayload_Config.deserialize(wrapper);

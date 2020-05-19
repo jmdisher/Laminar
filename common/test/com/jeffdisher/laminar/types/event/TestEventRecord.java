@@ -1,5 +1,6 @@
 package com.jeffdisher.laminar.types.event;
 
+import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 
 import org.junit.Assert;
@@ -17,8 +18,9 @@ public class TestEventRecord {
 		long localOffset = 1L;
 		UUID clientId = UUID.randomUUID();
 		long clientNonce = 1L;
-		byte[] payload = new byte[] { 1, 2, 3 };
-		EventRecord record = EventRecord.temp(termNumber, globalOffset, localOffset, clientId, clientNonce, payload);
+		byte[] key = "key".getBytes(StandardCharsets.UTF_8);
+		byte[] value = "value".getBytes(StandardCharsets.UTF_8);
+		EventRecord record = EventRecord.put(termNumber, globalOffset, localOffset, clientId, clientNonce, key, value);
 		byte[] serialized = record.serialize();
 		EventRecord deserialized = EventRecord.deserialize(serialized);
 		Assert.assertEquals(record.type, deserialized.type);
@@ -27,6 +29,9 @@ public class TestEventRecord {
 		Assert.assertEquals(record.localOffset, deserialized.localOffset);
 		Assert.assertEquals(record.clientId, deserialized.clientId);
 		Assert.assertEquals(record.clientNonce, deserialized.clientNonce);
-		Assert.assertArrayEquals(((EventRecordPayload_Temp)record.payload).contents, ((EventRecordPayload_Temp)deserialized.payload).contents);
+		Assert.assertArrayEquals(((EventRecordPayload_Put)record.payload).key, ((EventRecordPayload_Put)deserialized.payload).key);
+		Assert.assertArrayEquals(((EventRecordPayload_Put)record.payload).value, ((EventRecordPayload_Put)deserialized.payload).value);
+		Assert.assertArrayEquals(key, ((EventRecordPayload_Put)deserialized.payload).key);
+		Assert.assertArrayEquals(value, ((EventRecordPayload_Put)deserialized.payload).value);
 	}
 }

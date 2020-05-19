@@ -18,7 +18,7 @@ import com.jeffdisher.laminar.types.CommitInfo;
 import com.jeffdisher.laminar.types.ConfigEntry;
 import com.jeffdisher.laminar.types.TopicName;
 import com.jeffdisher.laminar.types.event.EventRecord;
-import com.jeffdisher.laminar.types.event.EventRecordPayload_Temp;
+import com.jeffdisher.laminar.types.event.EventRecordPayload_Put;
 import com.jeffdisher.laminar.types.message.ClientMessage;
 import com.jeffdisher.laminar.utils.TestingHelpers;
 
@@ -605,9 +605,9 @@ public class TestCluster {
 			for (int i = 0; i < 40; ++i) {
 				// Skip the topic creation.
 				int index = i + 1;
-				Assert.assertEquals((byte)i, ((EventRecordPayload_Temp)records1[index].payload).contents[0]);
-				Assert.assertEquals((byte)i, ((EventRecordPayload_Temp)records4[index].payload).contents[0]);
-				Assert.assertEquals((byte)i, ((EventRecordPayload_Temp)records5[index].payload).contents[0]);
+				Assert.assertEquals((byte)i, ((EventRecordPayload_Put)records1[index].payload).value[0]);
+				Assert.assertEquals((byte)i, ((EventRecordPayload_Put)records4[index].payload).value[0]);
+				Assert.assertEquals((byte)i, ((EventRecordPayload_Put)records5[index].payload).value[0]);
 			}
 		} finally {
 			// Shut down.
@@ -686,11 +686,11 @@ public class TestCluster {
 			for (int i = 0; i < 40; ++i) {
 				int index = i + 1;
 				
-				Assert.assertEquals((byte)i, ((EventRecordPayload_Temp)records1[index].payload).contents[0]);
-				Assert.assertEquals((byte)i, ((EventRecordPayload_Temp)records2[index].payload).contents[0]);
-				Assert.assertEquals((byte)i, ((EventRecordPayload_Temp)records3[index].payload).contents[0]);
-				Assert.assertEquals((byte)i, ((EventRecordPayload_Temp)records4[index].payload).contents[0]);
-				Assert.assertEquals((byte)i, ((EventRecordPayload_Temp)records5[index].payload).contents[0]);
+				Assert.assertEquals((byte)i, ((EventRecordPayload_Put)records1[index].payload).value[0]);
+				Assert.assertEquals((byte)i, ((EventRecordPayload_Put)records2[index].payload).value[0]);
+				Assert.assertEquals((byte)i, ((EventRecordPayload_Put)records3[index].payload).value[0]);
+				Assert.assertEquals((byte)i, ((EventRecordPayload_Put)records4[index].payload).value[0]);
+				Assert.assertEquals((byte)i, ((EventRecordPayload_Put)records5[index].payload).value[0]);
 			}
 		} finally {
 			// Shut down.
