@@ -43,7 +43,7 @@ public class TestClientsAndListeners {
 		
 		try (ClientConnection client = ClientConnection.open(new InetSocketAddress(InetAddress.getLocalHost(), 2002))) {
 			Assert.assertEquals(CommitInfo.Effect.VALID, client.sendCreateTopic(topic).waitForCommitted().effect);
-			ClientResult result = client.sendTemp(topic, "Hello World!".getBytes());
+			ClientResult result = client.sendPut(topic, new byte[0], "Hello World!".getBytes());
 			result.waitForReceived();
 			CommitInfo info = result.waitForCommitted();
 			Assert.assertEquals(CommitInfo.Effect.VALID, info.effect);
@@ -69,7 +69,7 @@ public class TestClientsAndListeners {
 		
 		try (ClientConnection client = ClientConnection.open(address)) {
 			Assert.assertEquals(CommitInfo.Effect.VALID, client.sendCreateTopic(topic).waitForCommitted().effect);
-			ClientResult result = client.sendTemp(topic, message);
+			ClientResult result = client.sendPut(topic, new byte[0], message);
 			result.waitForReceived();
 			CommitInfo info = result.waitForCommitted();
 			Assert.assertEquals(CommitInfo.Effect.VALID, info.effect);
@@ -103,9 +103,9 @@ public class TestClientsAndListeners {
 		
 		try (ClientConnection client = ClientConnection.open(address)) {
 			Assert.assertEquals(CommitInfo.Effect.VALID, client.sendCreateTopic(topic).waitForCommitted().effect);
-			ClientResult result1 = client.sendTemp(topic, message);
-			ClientResult result2 = client.sendTemp(topic, message);
-			ClientResult result3 = client.sendTemp(topic, message);
+			ClientResult result1 = client.sendPut(topic, new byte[0], message);
+			ClientResult result2 = client.sendPut(topic, new byte[0], message);
+			ClientResult result3 = client.sendPut(topic, new byte[0], message);
 			result1.waitForReceived();
 			result2.waitForReceived();
 			result3.waitForReceived();
@@ -124,7 +124,7 @@ public class TestClientsAndListeners {
 		
 		try (ClientConnection client = ClientConnection.open(address)) {
 			// Even though we aren't yet connected, the client can technically still attempt to send messages.
-			client.sendTemp(topic, message);
+			client.sendPut(topic, new byte[0], message);
 
 			// Block until the connection observes failure.
 			boolean didThrow = false;
@@ -169,7 +169,7 @@ public class TestClientsAndListeners {
 		try (ClientConnection client = ClientConnection.open(new InetSocketAddress(InetAddress.getLocalHost(), 2002))) {
 			client.waitForConnection();
 			Assert.assertEquals(CommitInfo.Effect.VALID, client.sendCreateTopic(topic).waitForCommitted().effect);
-			ClientResult result = client.sendTemp(topic, "Hello World!".getBytes());
+			ClientResult result = client.sendPut(topic, new byte[0], "Hello World!".getBytes());
 			client.waitForConnection();
 			result.waitForReceived();
 			client.waitForConnection();
@@ -287,11 +287,11 @@ public class TestClientsAndListeners {
 			// Send 10 messages, then a poison, then another 10 messages.  After, wait for them all to commit.
 			ClientResult[] results = new ClientResult[21];
 			for (int i = 0; i < 10; ++i) {
-				results[i] = client.sendTemp(topic, new byte[] {(byte)i});
+				results[i] = client.sendPut(topic, new byte[0], new byte[] {(byte)i});
 			}
-			results[10] = client.sendPoison(topic, new byte[] {10});
+			results[10] = client.sendPoison(topic, new byte[0], new byte[] {10});
 			for (int i = 11; i < results.length; ++i) {
-				results[i] = client.sendTemp(topic, new byte[] {(byte)i});
+				results[i] = client.sendPut(topic, new byte[0], new byte[] {(byte)i});
 			}
 			for (int i = 0; i < results.length; ++i) {
 				results[i].waitForReceived();
@@ -426,7 +426,7 @@ public class TestClientsAndListeners {
 			long commitOffset = info.mutationOffset;
 			Assert.assertEquals(1L, commitOffset);
 			Assert.assertEquals(CommitInfo.Effect.VALID, client.sendCreateTopic(topic).waitForCommitted().effect);
-			info = client.sendTemp(topic, new byte[] {1}).waitForCommitted();
+			info = client.sendPut(topic, new byte[0], new byte[] {1}).waitForCommitted();
 			Assert.assertEquals(CommitInfo.Effect.VALID, info.effect);
 			commitOffset = info.mutationOffset;
 			Assert.assertEquals(3L, commitOffset);
@@ -441,11 +441,11 @@ public class TestClientsAndListeners {
 				adhoc.getInputStream().read();
 			}
 			
-			info = client.sendTemp(topic, new byte[] {2}).waitForCommitted();
+			info = client.sendPut(topic, new byte[0], new byte[] {2}).waitForCommitted();
 			Assert.assertEquals(CommitInfo.Effect.VALID, info.effect);
 			commitOffset = info.mutationOffset;
 			Assert.assertEquals(4L, commitOffset);
-			info = client.sendTemp(topic, new byte[] {3}).waitForCommitted();
+			info = client.sendPut(topic, new byte[0], new byte[] {3}).waitForCommitted();
 			Assert.assertEquals(CommitInfo.Effect.VALID, info.effect);
 			commitOffset = info.mutationOffset;
 			Assert.assertEquals(5L, commitOffset);
@@ -481,7 +481,7 @@ public class TestClientsAndListeners {
 				TopicName topic = (0 == (i % 2))
 						? topic1
 						: topic2;
-				results[i] = client.sendTemp(topic, new byte[] { (byte)i });
+				results[i] = client.sendPut(topic, new byte[0], new byte[] { (byte)i });
 			}
 			for (int i = 0; i < 10; ++i) {
 				CommitInfo info = results[i].waitForCommitted();

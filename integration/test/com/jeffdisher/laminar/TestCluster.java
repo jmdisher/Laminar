@@ -60,8 +60,8 @@ public class TestCluster {
 		try {
 			// Send initial messages.
 			Assert.assertEquals(CommitInfo.Effect.VALID, client1.sendCreateTopic(topic).waitForCommitted().effect);
-			ClientResult result1_1 = client1.sendTemp(topic, new byte[] {1});
-			ClientResult result2_1 = client2.sendTemp(topic, new byte[] {2});
+			ClientResult result1_1 = client1.sendPut(topic, new byte[0], new byte[] {1});
+			ClientResult result2_1 = client2.sendPut(topic, new byte[0], new byte[] {2});
 			
 			// Send config update (wait for received to ensure one client got the initial config).
 			result1_1.waitForReceived();
@@ -80,8 +80,8 @@ public class TestCluster {
 			updateResult.waitForReceived();
 			
 			// Now send another from each client.
-			ClientResult result1_2 = client1.sendTemp(topic, new byte[] {1});
-			ClientResult result2_2 = client2.sendTemp(topic, new byte[] {2});
+			ClientResult result1_2 = client1.sendPut(topic, new byte[0], new byte[] {1});
+			ClientResult result2_2 = client2.sendPut(topic, new byte[0], new byte[] {2});
 			// We expect the previous messages to have committed, either way.
 			result1_1.waitForCommitted();
 			result2_1.waitForCommitted();
@@ -145,8 +145,8 @@ public class TestCluster {
 		try {
 			// Send initial messages.
 			Assert.assertEquals(CommitInfo.Effect.VALID, client1.sendCreateTopic(topic).waitForCommitted().effect);
-			ClientResult result1_1 = client1.sendTemp(topic, new byte[] {1});
-			ClientResult result2_1 = client2.sendTemp(topic, new byte[] {2});
+			ClientResult result1_1 = client1.sendPut(topic, new byte[0], new byte[] {1});
+			ClientResult result2_1 = client2.sendPut(topic, new byte[0], new byte[] {2});
 			
 			// Send config update (wait for received to ensure one client got the initial config).
 			result1_1.waitForReceived();
@@ -165,16 +165,16 @@ public class TestCluster {
 			updateResult.waitForReceived();
 			
 			// Now send another from each client so there is something queued up which can't be committed until the new node is online.
-			ClientResult result1_2 = client1.sendTemp(topic, new byte[] {1});
-			ClientResult result2_2 = client2.sendTemp(topic, new byte[] {2});
+			ClientResult result1_2 = client1.sendPut(topic, new byte[0], new byte[] {1});
+			ClientResult result2_2 = client2.sendPut(topic, new byte[0], new byte[] {2});
 			// We expect the previous messages to have committed, either way.
 			result1_1.waitForCommitted();
 			result2_1.waitForCommitted();
 			
 			// Now, send the poison and another couple messages.
-			ClientResult poisonResult = client1.sendPoison(topic, new byte[] {0});
-			ClientResult result1_3 = client1.sendTemp(topic, new byte[] {1});
-			ClientResult result2_3 = client2.sendTemp(topic, new byte[] {2});
+			ClientResult poisonResult = client1.sendPoison(topic, new byte[0], new byte[] {0});
+			ClientResult result1_3 = client1.sendPut(topic, new byte[0], new byte[] {1});
+			ClientResult result2_3 = client2.sendPut(topic, new byte[0], new byte[] {2});
 			
 			// Verify everything so far has been received.
 			result1_2.waitForReceived();
@@ -266,9 +266,9 @@ public class TestCluster {
 			
 			// Now, send another message on client1 and 2 on client2.
 			Assert.assertEquals(CommitInfo.Effect.VALID, client1.sendCreateTopic(topic).waitForCommitted().effect);
-			ClientResult client1_1 = client1.sendTemp(topic, new byte[] {1});
-			ClientResult client2_1 = client2.sendTemp(topic, new byte[] {2});
-			ClientResult client2_2 = client2.sendTemp(topic, new byte[] {3});
+			ClientResult client1_1 = client1.sendPut(topic, new byte[0], new byte[] {1});
+			ClientResult client2_1 = client2.sendPut(topic, new byte[0], new byte[] {2});
+			ClientResult client2_2 = client2.sendPut(topic, new byte[0], new byte[] {3});
 			
 			// We can wait for these to commit at once, to stress the ordering further.
 			client1_1.waitForCommitted();
@@ -328,9 +328,9 @@ public class TestCluster {
 			
 			// Now, send another message on client1 and 2 on client2.
 			Assert.assertEquals(CommitInfo.Effect.VALID, client1.sendCreateTopic(topic).waitForCommitted().effect);
-			ClientResult client1_1 = client1.sendTemp(topic, new byte[] {1});
-			ClientResult client2_1 = client2.sendTemp(topic, new byte[] {2});
-			ClientResult client2_2 = client2.sendTemp(topic, new byte[] {3});
+			ClientResult client1_1 = client1.sendPut(topic, new byte[0], new byte[] {1});
+			ClientResult client2_1 = client2.sendPut(topic, new byte[0], new byte[] {2});
+			ClientResult client2_2 = client2.sendPut(topic, new byte[0], new byte[] {3});
 			
 			// We can wait for these to commit at once, to stress the ordering further.
 			client1_1.waitForCommitted();
@@ -379,17 +379,17 @@ public class TestCluster {
 			
 			// Send a normal message, the config update, the poison, and a normal message on client1.
 			Assert.assertEquals(CommitInfo.Effect.VALID, client1.sendCreateTopic(topic).waitForCommitted().effect);
-			ClientResult client1_1 = client1.sendTemp(topic, new byte[] {1});
+			ClientResult client1_1 = client1.sendPut(topic, new byte[0], new byte[] {1});
 			ClientResult configResult = client1.sendUpdateConfig(config);
-			ClientResult client1_2 = client1.sendPoison(topic, new byte[] {2});
-			ClientResult client1_3 = client1.sendTemp(topic, new byte[] {3});
+			ClientResult client1_2 = client1.sendPoison(topic, new byte[0], new byte[] {2});
+			ClientResult client1_3 = client1.sendPut(topic, new byte[0], new byte[] {3});
 			
 			// Wait for them all to commit and then send a normal message on client2 and wait for it to commit.
 			client1_1.waitForCommitted();
 			configResult.waitForCommitted();
 			client1_2.waitForCommitted();
 			client1_3.waitForCommitted();
-			ClientResult client2_1 = client2.sendTemp(topic, new byte[] {1});
+			ClientResult client2_1 = client2.sendPut(topic, new byte[0], new byte[] {1});
 			client2_1.waitForCommitted();
 			
 			// Then, stop the existing follower, create another one.
@@ -398,9 +398,9 @@ public class TestCluster {
 			follower2 = ServerWrapper.startedServerWrapperWithUuid("testPoisonClusterSwitch-FOLLOWER2", follower2Uuid, 2007, 2006, new File("/tmp/laminar3"));
 			
 			// Send poison from client2 and a normal message from each client, then wait for everything to commit.
-			ClientResult client2_2 = client2.sendPoison(topic, new byte[] {2});
-			ClientResult client1_4 = client1.sendTemp(topic, new byte[] {4});
-			ClientResult client2_3 = client1.sendTemp(topic, new byte[] {3});
+			ClientResult client2_2 = client2.sendPoison(topic, new byte[0], new byte[] {2});
+			ClientResult client1_4 = client1.sendPut(topic, new byte[0], new byte[] {4});
+			ClientResult client2_3 = client1.sendPut(topic, new byte[0], new byte[] {3});
 			client2_2.waitForCommitted();
 			client1_4.waitForCommitted();
 			client2_3.waitForCommitted();
@@ -465,7 +465,7 @@ public class TestCluster {
 			
 			// Send the initial message and wait for it to commit (which means it has made it to both nodes).
 			Assert.assertEquals(CommitInfo.Effect.VALID, client.sendCreateTopic(topic).waitForCommitted().effect);
-			ClientResult result1 = client.sendTemp(topic, new byte[] {1});
+			ClientResult result1 = client.sendPut(topic, new byte[0], new byte[] {1});
 			result1.waitForCommitted();
 			// Wait until it commits on the other, too.
 			timingListener.waitForTerminate();
@@ -479,12 +479,12 @@ public class TestCluster {
 			}
 			
 			ClientConnection client2 = ClientConnection.open(server2Address);
-			client2.sendTemp(topic, new byte[] {2}).waitForCommitted();
+			client2.sendPut(topic, new byte[0], new byte[] {2}).waitForCommitted();
 			Assert.assertEquals(server2Address, client2.getCurrentServer());
 			client2.close();
 			
 			// Send the other message
-			ClientResult result2 = client.sendTemp(topic, new byte[] {3});
+			ClientResult result2 = client.sendPut(topic, new byte[0], new byte[] {3});
 			result2.waitForCommitted();
 			
 			// Finally, check that the listeners saw all the results.
@@ -516,17 +516,17 @@ public class TestCluster {
 		ClientConnection client = ClientConnection.open(serverAddress);
 		try {
 			Assert.assertEquals(CommitInfo.Effect.VALID, client.sendCreateTopic(topic).waitForCommitted().effect);
-			client.sendTemp(topic, new byte[] {-1}).waitForCommitted();
+			client.sendPut(topic, new byte[0], new byte[] {-1}).waitForCommitted();
 			// Send lots of messages and then force a reconnect, before we have blocked on any of them.
 			ClientResult[] results = new ClientResult[100];
 			for (int i = 0; i < 50; ++i) {
-				results[i] = client.sendTemp(topic, new byte[] {(byte)i});
+				results[i] = client.sendPut(topic, new byte[0], new byte[] {(byte)i});
 			}
 			// We can't force reconnect until the connection appears.
 			client.waitForConnection();
 			client.forceReconnect();
 			for (int i = 50; i < results.length; ++i) {
-				results[i] = client.sendTemp(topic, new byte[] {(byte)i});
+				results[i] = client.sendPut(topic, new byte[0], new byte[] {(byte)i});
 			}
 			for (int i = 0; i < results.length; ++i) {
 				results[i].waitForCommitted();
@@ -534,7 +534,7 @@ public class TestCluster {
 			client.forceReconnect();
 			ClientResult[] after = new ClientResult[10];
 			for (int i = 0; i < after.length; ++i) {
-				after[i] = client.sendTemp(topic, new byte[] {(byte)i});
+				after[i] = client.sendPut(topic, new byte[0], new byte[] {(byte)i});
 			}
 			for (int i = 0; i < after.length; ++i) {
 				after[i].waitForCommitted();
@@ -725,7 +725,7 @@ public class TestCluster {
 			// Send a message to the implicit topic and verify attempting to create it fails but we can destroy it.
 			ClientResult precreate1 = client.sendCreateTopic(implicit);
 			Assert.assertEquals(CommitInfo.Effect.VALID, precreate1.waitForCommitted().effect);
-			ClientResult result1 = client.sendTemp(implicit, new byte[] {1});
+			ClientResult result1 = client.sendPut(implicit, new byte[0], new byte[] {1});
 			ClientResult result2 = client.sendCreateTopic(implicit);
 			Assert.assertEquals(CommitInfo.Effect.VALID, result1.waitForCommitted().effect);
 			Assert.assertEquals(CommitInfo.Effect.INVALID, result2.waitForCommitted().effect);
@@ -736,8 +736,8 @@ public class TestCluster {
 			ClientResult precreate2 = client.sendCreateTopic(implicit);
 			Assert.assertEquals(CommitInfo.Effect.VALID, precreate2.waitForCommitted().effect);
 			ClientResult result4 = client.sendCreateTopic(explicit);
-			ClientResult result5 = client.sendTemp(implicit, new byte[] {2});
-			ClientResult result6 = client.sendTemp(explicit, new byte[] {3});
+			ClientResult result5 = client.sendPut(implicit, new byte[0], new byte[] {2});
+			ClientResult result6 = client.sendPut(explicit, new byte[0], new byte[] {3});
 			ClientResult result7 = client.sendDestroyTopic(implicit);
 			ClientResult result8 = client.sendDestroyTopic(explicit);
 			Assert.assertEquals(CommitInfo.Effect.VALID, result4.waitForCommitted().effect);
@@ -778,7 +778,7 @@ public class TestCluster {
 	private void _runBatch(ClientConnection client, TopicName topic, int size, int bias) throws Throwable {
 		ClientResult results[] = new ClientResult[size];
 		for (int i = 0; i < results.length; ++i) {
-			results[i] = client.sendTemp(topic, new byte[] {(byte)(i + bias)});
+			results[i] = client.sendPut(topic, new byte[0], new byte[] {(byte)(i + bias)});
 		}
 		for (int i = 0; i < results.length; ++i) {
 			results[i].waitForCommitted();

@@ -65,7 +65,7 @@ public class TestClientConnection {
 			_sendReady(server, 1L, lastCommitGlobalOffset, _synthesizeClientOnlyConfig(address));
 			
 			// Send the message.
-			ClientResult result = connection.sendTemp(topic, payload);
+			ClientResult result = connection.sendPut(topic, new byte[0], payload);
 			int topicSize = topic.serializedSize();
 			// Receive the message on the emulated server.
 			ByteBuffer readBuffer = ByteBuffer.allocate(Short.BYTES + Byte.BYTES + Long.BYTES + topicSize + Short.BYTES + payload.length + Short.BYTES);
@@ -154,27 +154,27 @@ public class TestClientConnection {
 			fakeServer.handleConnect();
 			
 			// Send normal messages.
-			results[0] = connection.sendTemp(topic, new byte[]{101});
+			results[0] = connection.sendPut(topic, new byte[0], new byte[]{101});
 			fakeServer.processNextMessage(true, true, true);
-			results[1] = connection.sendTemp(topic, new byte[]{102});
+			results[1] = connection.sendPut(topic, new byte[0], new byte[]{102});
 			fakeServer.processNextMessage(true, true, true);
-			results[2] = connection.sendTemp(topic, new byte[]{103});
+			results[2] = connection.sendPut(topic, new byte[0], new byte[]{103});
 			fakeServer.processNextMessage(true, true, true);
 			
 			// Send messages not committed, last not even written.
-			results[3] = connection.sendTemp(topic, new byte[]{104});
+			results[3] = connection.sendPut(topic, new byte[0], new byte[]{104});
 			fakeServer.processNextMessage(true, true, false);
-			results[4] = connection.sendTemp(topic, new byte[]{105});
+			results[4] = connection.sendPut(topic, new byte[0], new byte[]{105});
 			fakeServer.processNextMessage(true, true, false);
-			results[5] = connection.sendTemp(topic, new byte[]{106});
+			results[5] = connection.sendPut(topic, new byte[0], new byte[]{106});
 			fakeServer.processNextMessage(true, false, false);
 			
 			// Send messages with no response.
-			results[6] = connection.sendTemp(topic, new byte[]{107});
+			results[6] = connection.sendPut(topic, new byte[0], new byte[]{107});
 			fakeServer.processNextMessage(false, false, false);
-			results[7] = connection.sendTemp(topic, new byte[]{108});
+			results[7] = connection.sendPut(topic, new byte[0], new byte[]{108});
 			fakeServer.processNextMessage(false, false, false);
-			results[8] = connection.sendTemp(topic, new byte[]{109});
+			results[8] = connection.sendPut(topic, new byte[0], new byte[]{109});
 			fakeServer.processNextMessage(false, false, false);
 			
 			// Wait for expected states.
@@ -187,7 +187,7 @@ public class TestClientConnection {
 			
 			// Do the reconnect.
 			fakeServer.disconnect();
-			results[9] = connection.sendTemp(topic, new byte[]{110});
+			results[9] = connection.sendPut(topic, new byte[0], new byte[]{110});
 			// We should only have stored the next 2 commits after this one.
 			fakeServer.handleReconnect(2);
 			// Now, process all re-sent and the new message (index [5..9]).
@@ -239,7 +239,7 @@ public class TestClientConnection {
 			fakeServer1.handleConnect();
 			
 			// Send a message.
-			ClientResult result1 = connection.sendTemp(topic, new byte[]{101});
+			ClientResult result1 = connection.sendPut(topic, new byte[0], new byte[]{101});
 			fakeServer1.processNextMessage(true, true, false);
 			result1.waitForReceived();
 			
@@ -253,7 +253,7 @@ public class TestClientConnection {
 			// Verify that we got the commit and then send another message.
 			fakeServer2.processNextMessage(true, true, true);
 			result1.waitForCommitted();
-			ClientResult result2 = connection.sendTemp(topic, new byte[]{101});
+			ClientResult result2 = connection.sendPut(topic, new byte[0], new byte[]{101});
 			fakeServer2.processNextMessage(true, true, true);
 			result2.waitForCommitted();
 		}
