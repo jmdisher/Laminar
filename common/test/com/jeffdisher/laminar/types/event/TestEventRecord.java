@@ -5,8 +5,6 @@ import java.util.UUID;
 import org.junit.Assert;
 import org.junit.Test;
 
-import com.jeffdisher.laminar.types.event.EventRecordType;
-
 
 /**
  * Tests around serialization and deserialization of EventRecord objects.
@@ -20,7 +18,7 @@ public class TestEventRecord {
 		UUID clientId = UUID.randomUUID();
 		long clientNonce = 1L;
 		byte[] payload = new byte[] { 1, 2, 3 };
-		EventRecord record = EventRecord.generateRecord(EventRecordType.TEMP, termNumber, globalOffset, localOffset, clientId, clientNonce, payload);
+		EventRecord record = EventRecord.temp(termNumber, globalOffset, localOffset, clientId, clientNonce, payload);
 		byte[] serialized = record.serialize();
 		EventRecord deserialized = EventRecord.deserialize(serialized);
 		Assert.assertEquals(record.type, deserialized.type);
@@ -29,6 +27,6 @@ public class TestEventRecord {
 		Assert.assertEquals(record.localOffset, deserialized.localOffset);
 		Assert.assertEquals(record.clientId, deserialized.clientId);
 		Assert.assertEquals(record.clientNonce, deserialized.clientNonce);
-		Assert.assertArrayEquals(record.payload, deserialized.payload);
+		Assert.assertArrayEquals(((EventRecordPayload_Temp)record.payload).contents, ((EventRecordPayload_Temp)deserialized.payload).contents);
 	}
 }

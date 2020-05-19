@@ -20,7 +20,7 @@ import com.jeffdisher.laminar.types.CommitInfo;
 import com.jeffdisher.laminar.types.ConfigEntry;
 import com.jeffdisher.laminar.types.TopicName;
 import com.jeffdisher.laminar.types.event.EventRecord;
-import com.jeffdisher.laminar.types.event.EventRecordType;
+import com.jeffdisher.laminar.types.event.EventRecordPayload_Temp;
 import com.jeffdisher.laminar.types.message.ClientMessage;
 import com.jeffdisher.laminar.types.message.ClientMessagePayload_Temp;
 import com.jeffdisher.laminar.types.mutation.MutationRecord;
@@ -167,7 +167,7 @@ public class TestClientManager {
 	public void testSendEvent() throws Throwable {
 		// Create an event record.
 		TopicName topic = TopicName.fromString("test");
-		EventRecord record = EventRecord.generateRecord(EventRecordType.TEMP, 1L, 1L, 1L, UUID.randomUUID(), 1L, new byte[] { 1, 2, 3});
+		EventRecord record = EventRecord.temp(1L, 1L, 1L, UUID.randomUUID(), 1L, new byte[] { 1, 2, 3});
 		// Create a server.
 		int port = PORT_BASE + 3;
 		ServerSocketChannel socket = TestingHelpers.createServerSocket(port);
@@ -200,7 +200,7 @@ public class TestClientManager {
 			Assert.assertEquals(record.globalOffset, deserialized.globalOffset);
 			Assert.assertEquals(record.localOffset, deserialized.localOffset);
 			Assert.assertEquals(record.clientId, deserialized.clientId);
-			Assert.assertArrayEquals(record.payload, deserialized.payload);
+			Assert.assertArrayEquals(((EventRecordPayload_Temp)record.payload).contents, ((EventRecordPayload_Temp)deserialized.payload).contents);
 		}
 		NetworkManager.NodeToken noNode = callbacks.runRunnableAndGetNewClientNode(manager);
 		Assert.assertNull(noNode);

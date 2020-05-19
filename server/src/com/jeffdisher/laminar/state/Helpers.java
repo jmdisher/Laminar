@@ -4,7 +4,6 @@ import java.util.UUID;
 
 import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.types.event.EventRecord;
-import com.jeffdisher.laminar.types.event.EventRecordType;
 import com.jeffdisher.laminar.types.message.ClientMessage;
 import com.jeffdisher.laminar.types.message.ClientMessagePayload_Temp;
 import com.jeffdisher.laminar.types.message.ClientMessagePayload_Topic;
@@ -86,15 +85,15 @@ public class Helpers {
 		case INVALID:
 			throw Assert.unimplemented("Invalid message type");
 		case CREATE_TOPIC: {
-			eventToReturn = EventRecord.generateRecord(EventRecordType.CREATE_TOPIC, mutation.termNumber, mutation.globalOffset, eventOffsetToAssign, mutation.clientId, mutation.clientNonce, new byte[0]);
+			eventToReturn = EventRecord.createTopic(mutation.termNumber, mutation.globalOffset, eventOffsetToAssign, mutation.clientId, mutation.clientNonce);
 		}
 			break;
 		case DESTROY_TOPIC: {
-			eventToReturn = EventRecord.generateRecord(EventRecordType.DESTROY_TOPIC, mutation.termNumber, mutation.globalOffset, eventOffsetToAssign, mutation.clientId, mutation.clientNonce, new byte[0]);
+			eventToReturn = EventRecord.destroyTopic(mutation.termNumber, mutation.globalOffset, eventOffsetToAssign, mutation.clientId, mutation.clientNonce);
 		}
 			break;
 		case TEMP: {
-			eventToReturn = EventRecord.generateRecord(EventRecordType.TEMP, mutation.termNumber, mutation.globalOffset, eventOffsetToAssign, mutation.clientId, mutation.clientNonce, ((MutationRecordPayload_Temp)mutation.payload).contents);
+			eventToReturn = EventRecord.temp(mutation.termNumber, mutation.globalOffset, eventOffsetToAssign, mutation.clientId, mutation.clientNonce, ((MutationRecordPayload_Temp)mutation.payload).contents);
 		}
 			break;
 		case UPDATE_CONFIG: {

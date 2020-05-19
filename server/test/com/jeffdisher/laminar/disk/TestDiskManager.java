@@ -10,7 +10,6 @@ import com.jeffdisher.laminar.state.StateSnapshot;
 import com.jeffdisher.laminar.types.CommitInfo;
 import com.jeffdisher.laminar.types.TopicName;
 import com.jeffdisher.laminar.types.event.EventRecord;
-import com.jeffdisher.laminar.types.event.EventRecordType;
 import com.jeffdisher.laminar.types.mutation.MutationRecord;
 
 
@@ -29,8 +28,8 @@ public class TestDiskManager {
 	@Test
 	public void testSimpleWriteAndFetch() throws Throwable {
 		TopicName topic = TopicName.fromString("fake");
-		EventRecord event1 = EventRecord.generateRecord(EventRecordType.TEMP, 1L, 1L, 1L, UUID.randomUUID(), 1L, new byte[] {1});
-		EventRecord event2 = EventRecord.generateRecord(EventRecordType.TEMP, 1L, 2L, 2L, UUID.randomUUID(), 2L, new byte[] {1});
+		EventRecord event1 = EventRecord.temp(1L, 1L, 1L, UUID.randomUUID(), 1L, new byte[] {1});
+		EventRecord event2 = EventRecord.temp(1L, 2L, 2L, UUID.randomUUID(), 2L, new byte[] {1});
 		LatchedCallbacks callbacks = new LatchedCallbacks();
 		DiskManager manager = new DiskManager(null, callbacks);
 		manager.startAndWaitForReady();
@@ -54,8 +53,8 @@ public class TestDiskManager {
 		TopicName topic = TopicName.fromString("fake");
 		MutationRecord mutation1 = MutationRecord.temp(1L, 1L, topic, UUID.randomUUID(), 1L, new byte[] {1});
 		MutationRecord mutation2 = MutationRecord.temp(1L, 2L, topic, UUID.randomUUID(), 2L, new byte[] {1});
-		EventRecord event1 = EventRecord.generateRecord(EventRecordType.TEMP, 1L, 1L, 1L, UUID.randomUUID(), 1L, new byte[] {1});
-		EventRecord event2 = EventRecord.generateRecord(EventRecordType.TEMP, 1L, 2L, 2L, UUID.randomUUID(), 2L, new byte[] {1});
+		EventRecord event1 = EventRecord.temp(1L, 1L, 1L, UUID.randomUUID(), 1L, new byte[] {1});
+		EventRecord event2 = EventRecord.temp(1L, 2L, 2L, UUID.randomUUID(), 2L, new byte[] {1});
 		
 		LatchedCallbacks callbacks = new LatchedCallbacks();
 		DiskManager manager = new DiskManager(null, callbacks);

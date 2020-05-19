@@ -18,6 +18,7 @@ import com.jeffdisher.laminar.types.CommitInfo;
 import com.jeffdisher.laminar.types.ConfigEntry;
 import com.jeffdisher.laminar.types.TopicName;
 import com.jeffdisher.laminar.types.event.EventRecord;
+import com.jeffdisher.laminar.types.event.EventRecordPayload_Temp;
 import com.jeffdisher.laminar.types.message.ClientMessage;
 import com.jeffdisher.laminar.utils.TestingHelpers;
 
@@ -604,9 +605,9 @@ public class TestCluster {
 			for (int i = 0; i < 40; ++i) {
 				// Skip the topic creation.
 				int index = i + 1;
-				Assert.assertEquals((byte)i, records1[index].payload[0]);
-				Assert.assertEquals((byte)i, records4[index].payload[0]);
-				Assert.assertEquals((byte)i, records5[index].payload[0]);
+				Assert.assertEquals((byte)i, ((EventRecordPayload_Temp)records1[index].payload).contents[0]);
+				Assert.assertEquals((byte)i, ((EventRecordPayload_Temp)records4[index].payload).contents[0]);
+				Assert.assertEquals((byte)i, ((EventRecordPayload_Temp)records5[index].payload).contents[0]);
 			}
 		} finally {
 			// Shut down.
@@ -684,11 +685,12 @@ public class TestCluster {
 			EventRecord[] records5 = _listenOnServer(server5Address, topic, client.getClientId(), 41);
 			for (int i = 0; i < 40; ++i) {
 				int index = i + 1;
-				Assert.assertEquals((byte)i, records1[index].payload[0]);
-				Assert.assertEquals((byte)i, records2[index].payload[0]);
-				Assert.assertEquals((byte)i, records3[index].payload[0]);
-				Assert.assertEquals((byte)i, records4[index].payload[0]);
-				Assert.assertEquals((byte)i, records5[index].payload[0]);
+				
+				Assert.assertEquals((byte)i, ((EventRecordPayload_Temp)records1[index].payload).contents[0]);
+				Assert.assertEquals((byte)i, ((EventRecordPayload_Temp)records2[index].payload).contents[0]);
+				Assert.assertEquals((byte)i, ((EventRecordPayload_Temp)records3[index].payload).contents[0]);
+				Assert.assertEquals((byte)i, ((EventRecordPayload_Temp)records4[index].payload).contents[0]);
+				Assert.assertEquals((byte)i, ((EventRecordPayload_Temp)records5[index].payload).contents[0]);
 			}
 		} finally {
 			// Shut down.

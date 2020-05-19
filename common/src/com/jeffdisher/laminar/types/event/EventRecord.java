@@ -14,22 +14,7 @@ import com.jeffdisher.laminar.utils.Assert;
  * serialization/deserialization logic.
  */
 public class EventRecord {
-	/**
-	 * Creates a new event record.  This method is specifically meant for the common-cases, not special-cases like
-	 * CONFIG_CHANGE.
-	 * 
-	 * @param type The record type (cannot be INVALID or CONFIG_CHANGE).
-	 * @param termNumber The term number of the mutation which caused the event.
-	 * @param globalOffset The global offset of the mutation which caused the event.
-	 * @param localOffset The local offset of this event within its topic.
-	 * @param clientId The UUID of the client who sent the mutation which caused the event.
-	 * @param clientNonce The client nonce of the mutation which caused the event.
-	 * @param payload The payload of event data.
-	 * @return A new EventRecord instance for the common-case.
-	 */
-	public static EventRecord generateRecord(EventRecordType type, long termNumber, long globalOffset, long localOffset, UUID clientId, long clientNonce, byte[] payload) {
-		Assert.assertTrue(EventRecordType.INVALID != type);
-		Assert.assertTrue(EventRecordType.CONFIG_CHANGE != type);
+	public static EventRecord createTopic(long termNumber, long globalOffset, long localOffset, UUID clientId, long clientNonce) {
 		// The localOffset can never be larger than the globalOffset (since it is per-topic while the global is for the input mutation stream).
 		Assert.assertTrue(globalOffset >= localOffset);
 		// The offsets must be positive.
@@ -38,7 +23,31 @@ public class EventRecord {
 		Assert.assertTrue(localOffset > 0L);
 		Assert.assertTrue(null != clientId);
 		Assert.assertTrue(clientNonce >= 0L);
-		return new EventRecord(type, termNumber, globalOffset, localOffset, clientId, clientNonce, payload);
+		return new EventRecord(EventRecordType.CREATE_TOPIC, termNumber, globalOffset, localOffset, clientId, clientNonce, EventRecordPayload_Empty.create());
+	}
+
+	public static EventRecord destroyTopic(long termNumber, long globalOffset, long localOffset, UUID clientId, long clientNonce) {
+		// The localOffset can never be larger than the globalOffset (since it is per-topic while the global is for the input mutation stream).
+		Assert.assertTrue(globalOffset >= localOffset);
+		// The offsets must be positive.
+		Assert.assertTrue(termNumber > 0L);
+		Assert.assertTrue(globalOffset > 0L);
+		Assert.assertTrue(localOffset > 0L);
+		Assert.assertTrue(null != clientId);
+		Assert.assertTrue(clientNonce >= 0L);
+		return new EventRecord(EventRecordType.DESTROY_TOPIC, termNumber, globalOffset, localOffset, clientId, clientNonce, EventRecordPayload_Empty.create());
+	}
+
+	public static EventRecord temp(long termNumber, long globalOffset, long localOffset, UUID clientId, long clientNonce, byte[] payload) {
+		// The localOffset can never be larger than the globalOffset (since it is per-topic while the global is for the input mutation stream).
+		Assert.assertTrue(globalOffset >= localOffset);
+		// The offsets must be positive.
+		Assert.assertTrue(termNumber > 0L);
+		Assert.assertTrue(globalOffset > 0L);
+		Assert.assertTrue(localOffset > 0L);
+		Assert.assertTrue(null != clientId);
+		Assert.assertTrue(clientNonce >= 0L);
+		return new EventRecord(EventRecordType.TEMP, termNumber, globalOffset, localOffset, clientId, clientNonce, EventRecordPayload_Temp.create(payload));
 	}
 
 	/**
@@ -50,7 +59,7 @@ public class EventRecord {
 	 * @return A new EventRecord instance for this special-case.
 	 */
 	public static EventRecord synthesizeRecordForConfig(ClusterConfig config) {
-		return new EventRecord(EventRecordType.CONFIG_CHANGE, -1L, -1L, -1L, new UUID(0L, 0L), -1L, config.serialize());
+		return new EventRecord(EventRecordType.CONFIG_CHANGE, -1L, -1L, -1L, new UUID(0L, 0L), -1L, EventRecordPayload_Config.create(config));
 	}
 
 	/**
@@ -72,8 +81,25 @@ public class EventRecord {
 		long localOffset = wrapper.getLong();
 		UUID clientId = new UUID(wrapper.getLong(), wrapper.getLong());
 		long clientNonce = wrapper.getLong();
-		byte[] payload = new byte[wrapper.remaining()];
-		wrapper.get(payload);
+		IEventRecordPayload payload;
+		switch (type) {
+		case INVALID:
+			throw Assert.unimplemented("Handle invalid deserialization");
+		case CREATE_TOPIC:
+			payload = EventRecordPayload_Empty.deserialize(wrapper);
+			break;
+		case DESTROY_TOPIC:
+			payload = EventRecordPayload_Empty.deserialize(wrapper);
+			break;
+		case TEMP:
+			payload = EventRecordPayload_Temp.deserialize(wrapper);
+			break;
+		case CONFIG_CHANGE:
+			payload = EventRecordPayload_Config.deserialize(wrapper);
+			break;
+		default:
+			throw Assert.unreachable("Unmatched deserialization type");
+		}
 		return new EventRecord(type, termNumber, globalOffset, localOffset, clientId, clientNonce, payload);
 	}
 
@@ -84,9 +110,9 @@ public class EventRecord {
 	public final long localOffset;
 	public final UUID clientId;
 	public final long clientNonce;
-	public final byte[] payload;
+	public final IEventRecordPayload payload;
 	
-	private EventRecord(EventRecordType type, long termNumber, long globalOffset, long localOffset, UUID clientId, long clientNonce, byte[] payload) {
+	private EventRecord(EventRecordType type, long termNumber, long globalOffset, long localOffset, UUID clientId, long clientNonce, IEventRecordPayload payload) {
 		this.type = type;
 		this.termNumber = termNumber;
 		this.globalOffset = globalOffset;
@@ -103,7 +129,7 @@ public class EventRecord {
 	 * @return The raw bytes of the serialized receiver.
 	 */
 	public byte[] serialize() {
-		byte[] buffer = new byte[Byte.BYTES + Long.BYTES + Long.BYTES + Long.BYTES + (2 * Long.BYTES) + Long.BYTES + this.payload.length];
+		byte[] buffer = new byte[Byte.BYTES + Long.BYTES + Long.BYTES + Long.BYTES + (2 * Long.BYTES) + Long.BYTES + this.payload.serializedSize()];
 		ByteBuffer wrapper = ByteBuffer.wrap(buffer);
 		wrapper
 			.put((byte)this.type.ordinal())
@@ -112,8 +138,8 @@ public class EventRecord {
 			.putLong(this.localOffset)
 			.putLong(this.clientId.getMostSignificantBits()).putLong(this.clientId.getLeastSignificantBits())
 			.putLong(this.clientNonce)
-			.put(this.payload)
 		;
+		this.payload.serializeInto(wrapper);
 		return buffer;
 	}
 
