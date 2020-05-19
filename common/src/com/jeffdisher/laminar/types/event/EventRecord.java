@@ -52,6 +52,19 @@ public class EventRecord {
 		return new EventRecord(EventRecordType.PUT, termNumber, globalOffset, localOffset, clientId, clientNonce, EventRecordPayload_Put.create(key, value));
 	}
 
+	public static EventRecord delete(long termNumber, long globalOffset, long localOffset, UUID clientId, long clientNonce, byte[] key) {
+		// The localOffset can never be larger than the globalOffset (since it is per-topic while the global is for the input mutation stream).
+		Assert.assertTrue(globalOffset >= localOffset);
+		// The offsets must be positive.
+		Assert.assertTrue(termNumber > 0L);
+		Assert.assertTrue(globalOffset > 0L);
+		Assert.assertTrue(localOffset > 0L);
+		Assert.assertTrue(null != clientId);
+		Assert.assertTrue(clientNonce >= 0L);
+		Assert.assertTrue(null != key);
+		return new EventRecord(EventRecordType.DELETE, termNumber, globalOffset, localOffset, clientId, clientNonce, EventRecordPayload_Delete.create(key));
+	}
+
 	/**
 	 * Creates the special-case CONFIG_CHANGE EventRecord.  Since the listener only interprets EventRecords, and has no
 	 * message framing for any other kind of data, we package a change to the cluster config (which is not part of the
@@ -95,6 +108,9 @@ public class EventRecord {
 			break;
 		case PUT:
 			payload = EventRecordPayload_Put.deserialize(wrapper);
+			break;
+		case DELETE:
+			payload = EventRecordPayload_Delete.deserialize(wrapper);
 			break;
 		case CONFIG_CHANGE:
 			payload = EventRecordPayload_Config.deserialize(wrapper);

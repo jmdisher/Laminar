@@ -58,6 +58,17 @@ public class MutationRecord {
 		return new MutationRecord(MutationRecordType.PUT, termNumber, globalOffset, topic, clientId, clientNonce, MutationRecordPayload_Put.create(key, value));
 	}
 
+	public static MutationRecord delete(long termNumber, long globalOffset, TopicName topic, UUID clientId, long clientNonce, byte[] key) {
+		// The offsets must be positive.
+		Assert.assertTrue(termNumber > 0L);
+		Assert.assertTrue(globalOffset > 0L);
+		Assert.assertTrue(null != topic);
+		Assert.assertTrue(null != clientId);
+		Assert.assertTrue(clientNonce >= 0L);
+		Assert.assertTrue(null != key);
+		return new MutationRecord(MutationRecordType.DELETE, termNumber, globalOffset, topic, clientId, clientNonce, MutationRecordPayload_Delete.create(key));
+	}
+
 	public static MutationRecord updateConfig(long termNumber, long globalOffset, UUID clientId, long clientNonce, ClusterConfig config) {
 		// The offsets must be positive.
 		Assert.assertTrue(termNumber > 0L);
@@ -103,6 +114,9 @@ public class MutationRecord {
 			break;
 		case PUT:
 			payload = MutationRecordPayload_Put.deserialize(buffer);
+			break;
+		case DELETE:
+			payload = MutationRecordPayload_Delete.deserialize(buffer);
 			break;
 		case UPDATE_CONFIG:
 			payload = MutationRecordPayload_Config.deserialize(buffer);

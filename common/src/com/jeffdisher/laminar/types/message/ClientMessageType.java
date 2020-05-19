@@ -46,6 +46,10 @@ public enum ClientMessageType {
 	 */
 	PUT,
 	/**
+	 * Encodes a key as raw byte[].
+	 */
+	DELETE,
+	/**
 	 * This message type is for stress-testing reconnect.  When a server receives it, it will disconnect all clients
 	 * and listeners.
 	 */

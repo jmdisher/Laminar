@@ -5,10 +5,12 @@ import java.util.UUID;
 import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.types.event.EventRecord;
 import com.jeffdisher.laminar.types.message.ClientMessage;
+import com.jeffdisher.laminar.types.message.ClientMessagePayload_Delete;
 import com.jeffdisher.laminar.types.message.ClientMessagePayload_Put;
 import com.jeffdisher.laminar.types.message.ClientMessagePayload_Topic;
 import com.jeffdisher.laminar.types.message.ClientMessagePayload_UpdateConfig;
 import com.jeffdisher.laminar.types.mutation.MutationRecord;
+import com.jeffdisher.laminar.types.mutation.MutationRecordPayload_Delete;
 import com.jeffdisher.laminar.types.mutation.MutationRecordPayload_Put;
 import com.jeffdisher.laminar.utils.Assert;
 
@@ -49,6 +51,12 @@ public class Helpers {
 			byte[] key = payload.key;
 			byte[] value = payload.value;
 			converted = MutationRecord.put(termNumber, mutationOffsetToAssign, payload.topic, clientId, message.nonce, key, value);
+		}
+			break;
+		case DELETE: {
+			ClientMessagePayload_Delete payload = (ClientMessagePayload_Delete)message.payload;
+			byte[] key = payload.key;
+			converted = MutationRecord.delete(termNumber, mutationOffsetToAssign, payload.topic, clientId, message.nonce, key);
 		}
 			break;
 		case POISON: {
@@ -97,6 +105,11 @@ public class Helpers {
 		case PUT: {
 			MutationRecordPayload_Put payload = (MutationRecordPayload_Put)mutation.payload;
 			eventToReturn = EventRecord.put(mutation.termNumber, mutation.globalOffset, eventOffsetToAssign, mutation.clientId, mutation.clientNonce, payload.key, payload.value);
+		}
+			break;
+		case DELETE: {
+			MutationRecordPayload_Delete payload = (MutationRecordPayload_Delete)mutation.payload;
+			eventToReturn = EventRecord.delete(mutation.termNumber, mutation.globalOffset, eventOffsetToAssign, mutation.clientId, mutation.clientNonce, payload.key);
 		}
 			break;
 		case UPDATE_CONFIG: {

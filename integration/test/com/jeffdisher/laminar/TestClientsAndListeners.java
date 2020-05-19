@@ -8,6 +8,7 @@ import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.nio.ByteBuffer;
 import java.nio.channels.SocketChannel;
+import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 
@@ -22,7 +23,9 @@ import com.jeffdisher.laminar.types.CommitInfo;
 import com.jeffdisher.laminar.types.ConfigEntry;
 import com.jeffdisher.laminar.types.TopicName;
 import com.jeffdisher.laminar.types.event.EventRecord;
+import com.jeffdisher.laminar.types.event.EventRecordPayload_Delete;
 import com.jeffdisher.laminar.types.event.EventRecordPayload_Put;
+import com.jeffdisher.laminar.types.event.EventRecordType;
 import com.jeffdisher.laminar.types.message.ClientMessage;
 import com.jeffdisher.laminar.types.response.ClientResponse;
 import com.jeffdisher.laminar.types.response.ClientResponseType;
@@ -524,6 +527,52 @@ public class TestClientsAndListeners {
 		Assert.assertEquals(0, server1.stop());
 	}
 
+	/**
+	 * Tests that PUT/DELETE to various keys are properly observed.
+	 * Note that the server doesn't do anything special with these so this is just to make sure that the plumbing works.
+	 */
+	@Test
+	public void testPutAndDelete() throws Throwable {
+		TopicName topic = TopicName.fromString("topic");
+		ServerWrapper server1 = ServerWrapper.startedServerWrapper("testPutAndDelete", 3001, 2001, new File("/tmp/laminar1"));
+		InetSocketAddress serverAddress = new InetSocketAddress(InetAddress.getLocalHost(), 2001);
+		
+		byte[] key1 = new byte[0];
+		byte[] key2 = new byte[] { 1,2,3,4,5 };
+		
+		try (ClientConnection client = ClientConnection.open(serverAddress)) {
+			Assert.assertEquals(CommitInfo.Effect.VALID, client.sendCreateTopic(topic).waitForCommitted().effect);
+			
+			// Send puts and deletes to the topic.
+			ClientResult delete1 = client.sendDelete(topic, key1);
+			ClientResult put1 = client.sendPut(topic, key2, "One".getBytes(StandardCharsets.UTF_8));
+			ClientResult put2 = client.sendPut(topic, key2, "Two".getBytes(StandardCharsets.UTF_8));
+			ClientResult put3 = client.sendPut(topic, key1, "Back".getBytes(StandardCharsets.UTF_8));
+			ClientResult delete2 = client.sendDelete(topic, key2);
+			ClientResult put4 = client.sendPut(topic, key2, "Three".getBytes(StandardCharsets.UTF_8));
+			
+			// Wait for them all.
+			Assert.assertEquals(CommitInfo.Effect.VALID, delete1.waitForCommitted().effect);
+			Assert.assertEquals(CommitInfo.Effect.VALID, put1.waitForCommitted().effect);
+			Assert.assertEquals(CommitInfo.Effect.VALID, put2.waitForCommitted().effect);
+			Assert.assertEquals(CommitInfo.Effect.VALID, put3.waitForCommitted().effect);
+			Assert.assertEquals(CommitInfo.Effect.VALID, delete2.waitForCommitted().effect);
+			Assert.assertEquals(CommitInfo.Effect.VALID, put4.waitForCommitted().effect);
+		}
+		ListenerConnection listener = ListenerConnection.open(serverAddress, topic, 0L);
+		_checkRecord(listener.pollForNextEvent(), 1L, EventRecordType.CREATE_TOPIC, null, null);
+		_checkRecord(listener.pollForNextEvent(), 2L, EventRecordType.DELETE, key1, null);
+		_checkRecord(listener.pollForNextEvent(), 3L, EventRecordType.PUT, key2, "One".getBytes(StandardCharsets.UTF_8));
+		_checkRecord(listener.pollForNextEvent(), 4L, EventRecordType.PUT, key2, "Two".getBytes(StandardCharsets.UTF_8));
+		_checkRecord(listener.pollForNextEvent(), 5L, EventRecordType.PUT, key1, "Back".getBytes(StandardCharsets.UTF_8));
+		_checkRecord(listener.pollForNextEvent(), 6L, EventRecordType.DELETE, key2, null);
+		_checkRecord(listener.pollForNextEvent(), 7L, EventRecordType.PUT, key2, "Three".getBytes(StandardCharsets.UTF_8));
+		listener.close();
+		
+		// Shut down.
+		Assert.assertEquals(0, server1.stop());
+	}
+
 
 	private void _sendMessage(SocketChannel socket, ClientMessage message) throws IOException {
 		byte[] serialized = message.serialize();
@@ -552,6 +601,19 @@ public class TestClientsAndListeners {
 		read = socket.read(buffer);
 		Assert.assertEquals(buffer.capacity(), read);
 		return buffer.array();
+	}
+
+	private void _checkRecord(EventRecord event, long offset, EventRecordType type, byte[] key, byte[] value) {
+		Assert.assertEquals(offset, event.globalOffset);
+		Assert.assertEquals(type, event.type);
+		if (EventRecordType.PUT == type) {
+			EventRecordPayload_Put payload = (EventRecordPayload_Put)event.payload;
+			Assert.assertArrayEquals(key, payload.key);
+			Assert.assertArrayEquals(value, payload.value);
+		} else if (EventRecordType.DELETE == type) {
+			EventRecordPayload_Delete payload = (EventRecordPayload_Delete)event.payload;
+			Assert.assertArrayEquals(key, payload.key);
+		}
 	}
 
 

@@ -184,6 +184,14 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 		return _externalWaitForMessageSetup((nonce) -> ClientMessage.put(nonce, topic, key, value));
 	}
 
+	public ClientResult sendDelete(TopicName topic, byte[] key) {
+		Assert.assertTrue(Thread.currentThread() != _internalThread);
+		if (topic.string.isEmpty()) {
+			throw new IllegalArgumentException("Cannot post to empty topic");
+		}
+		return _externalWaitForMessageSetup((nonce) -> ClientMessage.delete(nonce, topic, key));
+	}
+
 	public ClientResult sendPoison(TopicName topic, byte[] key, byte[] value) {
 		Assert.assertTrue(Thread.currentThread() != _internalThread);
 		if (topic.string.isEmpty()) {

@@ -22,6 +22,10 @@ public enum EventRecordType {
 	 */
 	PUT,
 	/**
+	 * Encodes a key as raw byte[].
+	 */
+	DELETE,
+	/**
 	 * A synthetic EventRecord type which is never persisted or directly produced by a MutationRecord (although it is
 	 * indirectly created, in some cases) and only used over-the-wire when communicating with listeners.
 	 * This type is used to communicate the cluster config when a listener first connects to a server or when a

@@ -121,6 +121,18 @@ public class ClientMessage {
 	}
 
 	/**
+	 * Creates a key-value "delete" message.
+	 * 
+	 * @param nonce Per-client nonce.
+	 * @param topic The topic to which this message must be posted.
+	 * @param key A message key.
+	 * @return A new ClientMessage instance.
+	 */
+	public static ClientMessage delete(long nonce, TopicName topic, byte[] key) {
+		return new ClientMessage(ClientMessageType.DELETE, nonce, ClientMessagePayload_Delete.create(topic, key));
+	}
+
+	/**
 	 * Creates a poison message.  This message is purely for testing and will either be removed or further restricted,
 	 * later on.
 	 * When a server receives a poison message, it will disconnect all clients and listeners.  Note that it will still
@@ -194,6 +206,9 @@ public class ClientMessage {
 			break;
 		case PUT:
 			payload = ClientMessagePayload_Put.deserialize(buffer);
+			break;
+		case DELETE:
+			payload = ClientMessagePayload_Delete.deserialize(buffer);
 			break;
 		case POISON:
 			payload = ClientMessagePayload_Put.deserialize(buffer);

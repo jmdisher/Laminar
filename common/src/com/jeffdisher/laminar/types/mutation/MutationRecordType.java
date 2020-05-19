@@ -22,6 +22,10 @@ public enum MutationRecordType {
 	 */
 	PUT,
 	/**
+	 * Encodes a key as raw byte[].
+	 */
+	DELETE,
+	/**
 	 * The payload of this message is the serialized new config.
 	 */
 	UPDATE_CONFIG,

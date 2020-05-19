@@ -26,6 +26,7 @@ import com.jeffdisher.laminar.types.message.ClientMessage;
 import com.jeffdisher.laminar.types.message.ClientMessageType;
 import com.jeffdisher.laminar.types.mutation.MutationRecord;
 import com.jeffdisher.laminar.types.mutation.MutationRecordPayload_Config;
+import com.jeffdisher.laminar.types.mutation.MutationRecordPayload_Delete;
 import com.jeffdisher.laminar.types.mutation.MutationRecordPayload_Put;
 import com.jeffdisher.laminar.types.mutation.MutationRecordType;
 import com.jeffdisher.laminar.utils.Assert;
@@ -467,6 +468,11 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 			System.out.println("GOT PUT FROM " + mutation.clientId + " nonce " + mutation.clientNonce + " key length " + ((MutationRecordPayload_Put)mutation.payload).key.length + " value " + ((MutationRecordPayload_Put)mutation.payload).value[0]);
 		}
 			break;
+		case DELETE: {
+			// We don't change any internal state for this - we just log it.
+			System.out.println("GOT DELETE FROM " + mutation.clientId + " nonce " + mutation.clientNonce + " key length " + ((MutationRecordPayload_Delete)mutation.payload).key.length);
+		}
+			break;
 		case UPDATE_CONFIG: {
 			ClusterConfig newConfig = ((MutationRecordPayload_Config)mutation.payload).config;
 			System.out.println("GOT UPDATE_CONFIG FROM " + mutation.clientId + ": " + newConfig.entries.length + " entries (nonce " + mutation.clientNonce + ")");
@@ -807,6 +813,15 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		case PUT: {
 			// We don't change any internal state for this - we just log it.
 			System.out.println("GOT PUT FROM " + mutation.clientId + " nonce " + mutation.clientNonce + " key length " + ((MutationRecordPayload_Put)mutation.payload).key.length + " value " + ((MutationRecordPayload_Put)mutation.payload).value[0]);
+			// This is VALID if the topic exists but ERROR, if not.
+			effect = _activeTopics.contains(mutation.topic)
+					? CommitInfo.Effect.VALID
+					: CommitInfo.Effect.ERROR;
+		}
+			break;
+		case DELETE: {
+			// We don't change any internal state for this - we just log it.
+			System.out.println("GOT DELETE FROM " + mutation.clientId + " nonce " + mutation.clientNonce + " key length " + ((MutationRecordPayload_Delete)mutation.payload).key.length);
 			// This is VALID if the topic exists but ERROR, if not.
 			effect = _activeTopics.contains(mutation.topic)
 					? CommitInfo.Effect.VALID
