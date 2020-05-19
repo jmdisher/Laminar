@@ -7,7 +7,7 @@ import org.junit.Test;
 
 import com.jeffdisher.laminar.types.TopicName;
 import com.jeffdisher.laminar.types.message.ClientMessagePayload_Handshake;
-import com.jeffdisher.laminar.types.message.ClientMessagePayload_Temp;
+import com.jeffdisher.laminar.types.message.ClientMessagePayload_Put;
 
 
 /**
@@ -44,13 +44,15 @@ public class TestClientMessage {
 	public void testTempMessage() throws Throwable {
 		long nonce = 1000;
 		TopicName topic = TopicName.fromString("test");
-		byte[] payload = new byte[] { 0, 1, 2, 3 };
-		ClientMessage input = ClientMessage.temp(nonce, topic, payload);
+		byte[] key = new byte[0];
+		byte[] value = new byte[] { 0, 1, 2, 3 };
+		ClientMessage input = ClientMessage.put(nonce, topic, key, value);
 		byte[] serialized = input.serialize();
-		Assert.assertEquals(Byte.BYTES + Long.BYTES + topic.serializedSize() + Short.BYTES + payload.length, serialized.length);
+		Assert.assertEquals(Byte.BYTES + Long.BYTES + topic.serializedSize() + Short.BYTES + key.length + Short.BYTES + value.length, serialized.length);
 		ClientMessage output = ClientMessage.deserialize(serialized);
 		Assert.assertEquals(input.type, output.type);
 		Assert.assertEquals(input.nonce, output.nonce);
-		Assert.assertArrayEquals(((ClientMessagePayload_Temp)input.payload).contents, ((ClientMessagePayload_Temp)output.payload).contents);
+		Assert.assertArrayEquals(((ClientMessagePayload_Put)input.payload).key, ((ClientMessagePayload_Put)output.payload).key);
+		Assert.assertArrayEquals(((ClientMessagePayload_Put)input.payload).value, ((ClientMessagePayload_Put)output.payload).value);
 	}
 }

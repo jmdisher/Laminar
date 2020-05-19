@@ -108,16 +108,16 @@ public class ClientMessage {
 	}
 
 	/**
-	 * Creates a temp message.
-	 * Note that, as the name implies, this only exists for temporary testing of the flow and will be removed, later.
+	 * Creates a key-value "put" message.
 	 * 
 	 * @param nonce Per-client nonce.
 	 * @param topic The topic to which this message must be posted.
-	 * @param message A message payload.
+	 * @param key A message key.
+	 * @param value A message value.
 	 * @return A new ClientMessage instance.
 	 */
-	public static ClientMessage temp(long nonce, TopicName topic, byte[] message) {
-		return new ClientMessage(ClientMessageType.TEMP, nonce, ClientMessagePayload_Temp.create(topic, message));
+	public static ClientMessage put(long nonce, TopicName topic, byte[] key, byte[] value) {
+		return new ClientMessage(ClientMessageType.PUT, nonce, ClientMessagePayload_Put.create(topic, key, value));
 	}
 
 	/**
@@ -128,12 +128,13 @@ public class ClientMessage {
 	 * 
 	 * @param nonce Per-client nonce.
 	 * @param topic The topic to which this message must be posted.
-	 * @param message A message payload.
+	 * @param key A message key.
+	 * @param value A message value.
 	 * @return A new ClientMessage instance.
 	 */
-	public static ClientMessage poison(long nonce, TopicName topic, byte[] message) {
-		// Note that poison uses the TEMP payload since it is just a nameless buffer for testing in both cases.
-		return new ClientMessage(ClientMessageType.POISON, nonce, ClientMessagePayload_Temp.create(topic, message));
+	public static ClientMessage poison(long nonce, TopicName topic, byte[] key, byte[] value) {
+		// Note that poison uses the PUT payload and is converted to a PUT message, on the lead server.
+		return new ClientMessage(ClientMessageType.POISON, nonce, ClientMessagePayload_Put.create(topic, key, value));
 	}
 
 	/**
@@ -191,11 +192,11 @@ public class ClientMessage {
 		case DESTROY_TOPIC:
 			payload = ClientMessagePayload_Topic.deserialize(buffer);
 			break;
-		case TEMP:
-			payload = ClientMessagePayload_Temp.deserialize(buffer);
+		case PUT:
+			payload = ClientMessagePayload_Put.deserialize(buffer);
 			break;
 		case POISON:
-			payload = ClientMessagePayload_Temp.deserialize(buffer);
+			payload = ClientMessagePayload_Put.deserialize(buffer);
 			break;
 		case UPDATE_CONFIG:
 			payload = ClientMessagePayload_UpdateConfig.deserialize(buffer);

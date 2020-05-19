@@ -42,9 +42,9 @@ public enum ClientMessageType {
 	 */
 	DESTROY_TOPIC,
 	/**
-	 * This message is purely temporary to verify the client-server communication.
+	 * Encodes a key and value as raw byte[].
 	 */
-	TEMP,
+	PUT,
 	/**
 	 * This message type is for stress-testing reconnect.  When a server receives it, it will disconnect all clients
 	 * and listeners.

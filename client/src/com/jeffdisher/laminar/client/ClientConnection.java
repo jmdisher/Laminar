@@ -181,7 +181,8 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 		if (topic.string.isEmpty()) {
 			throw new IllegalArgumentException("Cannot post to empty topic");
 		}
-		return _externalWaitForMessageSetup((nonce) -> ClientMessage.temp(nonce, topic, payload));
+		// For now, just pass the empty key until we update ClientConnection and all the tests.
+		return _externalWaitForMessageSetup((nonce) -> ClientMessage.put(nonce, topic, new byte[0], payload));
 	}
 
 	public ClientResult sendPoison(TopicName topic, byte[] payload) {
@@ -189,7 +190,8 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 		if (topic.string.isEmpty()) {
 			throw new IllegalArgumentException("Cannot post to empty topic");
 		}
-		return _externalWaitForMessageSetup((nonce) -> ClientMessage.poison(nonce, topic, payload));
+		// For now, just pass the empty key until we update ClientConnection and all the tests.
+		return _externalWaitForMessageSetup((nonce) -> ClientMessage.poison(nonce, topic, new byte[0], payload));
 	}
 
 	public ClientResult sendUpdateConfig(ClusterConfig config) {

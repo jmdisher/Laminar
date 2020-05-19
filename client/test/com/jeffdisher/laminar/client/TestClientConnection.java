@@ -20,7 +20,7 @@ import com.jeffdisher.laminar.types.TopicName;
 import com.jeffdisher.laminar.types.message.ClientMessage;
 import com.jeffdisher.laminar.types.message.ClientMessagePayload_Handshake;
 import com.jeffdisher.laminar.types.message.ClientMessagePayload_Reconnect;
-import com.jeffdisher.laminar.types.message.ClientMessagePayload_Temp;
+import com.jeffdisher.laminar.types.message.ClientMessagePayload_Put;
 import com.jeffdisher.laminar.types.message.ClientMessageType;
 import com.jeffdisher.laminar.types.response.ClientResponse;
 
@@ -68,16 +68,16 @@ public class TestClientConnection {
 			ClientResult result = connection.sendTemp(topic, payload);
 			int topicSize = topic.serializedSize();
 			// Receive the message on the emulated server.
-			ByteBuffer readBuffer = ByteBuffer.allocate(Short.BYTES + Byte.BYTES + Long.BYTES + topicSize + Short.BYTES + payload.length);
+			ByteBuffer readBuffer = ByteBuffer.allocate(Short.BYTES + Byte.BYTES + Long.BYTES + topicSize + Short.BYTES + payload.length + Short.BYTES);
 			didRead = server.read(readBuffer);
 			Assert.assertEquals(readBuffer.position(), didRead);
 			readBuffer.flip();
 			raw = new byte[readBuffer.getShort()];
 			readBuffer.get(raw);
 			ClientMessage observed = ClientMessage.deserialize(raw);
-			Assert.assertEquals(ClientMessageType.TEMP, observed.type);
+			Assert.assertEquals(ClientMessageType.PUT, observed.type);
 			Assert.assertEquals(1L, observed.nonce);
-			Assert.assertArrayEquals(payload, ((ClientMessagePayload_Temp)observed.payload).contents);
+			Assert.assertArrayEquals(payload, ((ClientMessagePayload_Put)observed.payload).value);
 			// Send the received from the server.
 			_sendReceived(server, observed.nonce, lastCommitGlobalOffset);
 			// Wait for it on the client.
@@ -205,7 +205,7 @@ public class TestClientConnection {
 		byte messagePayloadBias = 101;
 		for (byte i = 0; i < 10; ++i) {
 			ClientMessage message = fakeServer.messageByMutationOffset.get(baseMutationOffset + (long)i);
-			Assert.assertEquals(messagePayloadBias + i, ((ClientMessagePayload_Temp)message.payload).contents[0]);
+			Assert.assertEquals(messagePayloadBias + i, ((ClientMessagePayload_Put)message.payload).value[0]);
 			
 		}
 	}
@@ -338,7 +338,7 @@ public class TestClientConnection {
 		
 		public void processNextMessage(boolean received, boolean store, boolean committed) throws IOException {
 			ClientMessage message = _readNextMessage();
-			Assert.assertEquals(ClientMessageType.TEMP, message.type);
+			Assert.assertEquals(ClientMessageType.PUT, message.type);
 			Assert.assertEquals(_clientNextNonce, message.nonce);
 			_clientNextNonce += 1L;
 			if (received) {

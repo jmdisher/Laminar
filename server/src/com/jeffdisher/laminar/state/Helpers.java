@@ -5,7 +5,7 @@ import java.util.UUID;
 import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.types.event.EventRecord;
 import com.jeffdisher.laminar.types.message.ClientMessage;
-import com.jeffdisher.laminar.types.message.ClientMessagePayload_Temp;
+import com.jeffdisher.laminar.types.message.ClientMessagePayload_Put;
 import com.jeffdisher.laminar.types.message.ClientMessagePayload_Topic;
 import com.jeffdisher.laminar.types.message.ClientMessagePayload_UpdateConfig;
 import com.jeffdisher.laminar.types.mutation.MutationRecord;
@@ -44,19 +44,17 @@ public class Helpers {
 			converted = MutationRecord.destroyTopic(termNumber, mutationOffsetToAssign, payload.topic, clientId, message.nonce);
 		}
 			break;
-		case TEMP: {
-			ClientMessagePayload_Temp payload = (ClientMessagePayload_Temp)message.payload;
-			// For now, just use the empty array as the key (until the ClientMessage defines the PUT type).
-			byte[] key = new byte[0];
-			byte[] value = payload.contents;
+		case PUT: {
+			ClientMessagePayload_Put payload = (ClientMessagePayload_Put)message.payload;
+			byte[] key = payload.key;
+			byte[] value = payload.value;
 			converted = MutationRecord.put(termNumber, mutationOffsetToAssign, payload.topic, clientId, message.nonce, key, value);
 		}
 			break;
 		case POISON: {
-			ClientMessagePayload_Temp payload = (ClientMessagePayload_Temp)message.payload;
-			// For now, just use the empty array as the key (until the ClientMessage defines the PUT type).
-			byte[] key = new byte[0];
-			byte[] value = payload.contents;
+			ClientMessagePayload_Put payload = (ClientMessagePayload_Put)message.payload;
+			byte[] key = payload.key;
+			byte[] value = payload.value;
 			converted = MutationRecord.put(termNumber, mutationOffsetToAssign, payload.topic, clientId, message.nonce, key, value);
 		}
 			break;

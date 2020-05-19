@@ -68,7 +68,7 @@ public class TestNodeState {
 		// Send the ClientMessage.
 		F<CommittedMutationRecord> mutation = test.diskManager.get_commitMutation();
 		F<EventRecord> event = test.diskManager.get_commitEvent();
-		mutationNumber = runner.run((snapshot) -> test.nodeState.mainHandleValidClientMessage(UUID.randomUUID(), ClientMessage.temp(2L, topic, new byte[] {1})));
+		mutationNumber = runner.run((snapshot) -> test.nodeState.mainHandleValidClientMessage(UUID.randomUUID(), ClientMessage.put(2L, topic, new byte[0], new byte[] {1})));
 		Assert.assertEquals(2L, mutationNumber);
 		Assert.assertEquals(mutationNumber, mutation.get().record.globalOffset);
 		Assert.assertEquals(mutationNumber, event.get().globalOffset);
@@ -182,7 +182,7 @@ public class TestNodeState {
 		MutationRecord mutation = runner.run((snapshot) -> nodeState.mainClientFetchMutationIfAvailable(2L));
 		Assert.assertEquals(tempRecord, mutation);
 		// Create new mutation (3).
-		ClientMessage newTemp = ClientMessage.temp(1L, TopicName.fromString("fake"), new byte[]{2});
+		ClientMessage newTemp = ClientMessage.put(1L, TopicName.fromString("fake"), new byte[0], new byte[]{2});
 		long mutationOffset = runner.run((snapshot) -> nodeState.mainHandleValidClientMessage(UUID.randomUUID(), newTemp));
 		Assert.assertEquals(3L, mutationOffset);
 		// Ask it to send the new mutation downstream.

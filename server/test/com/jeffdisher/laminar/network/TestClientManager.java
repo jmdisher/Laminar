@@ -22,7 +22,7 @@ import com.jeffdisher.laminar.types.TopicName;
 import com.jeffdisher.laminar.types.event.EventRecord;
 import com.jeffdisher.laminar.types.event.EventRecordPayload_Put;
 import com.jeffdisher.laminar.types.message.ClientMessage;
-import com.jeffdisher.laminar.types.message.ClientMessagePayload_Temp;
+import com.jeffdisher.laminar.types.message.ClientMessagePayload_Put;
 import com.jeffdisher.laminar.types.mutation.MutationRecord;
 import com.jeffdisher.laminar.types.response.ClientResponse;
 import com.jeffdisher.laminar.types.response.ClientResponsePayload_ClusterConfig;
@@ -42,7 +42,7 @@ public class TestClientManager {
 	@Test
 	public void testReceiveTempMessage() throws Throwable {
 		// Create a message.
-		ClientMessage message = ClientMessage.temp(1L, TopicName.fromString("test"), new byte[] {0,1,2,3});
+		ClientMessage message = ClientMessage.put(1L, TopicName.fromString("test"), new byte[0], new byte[] {0,1,2,3});
 		// Create a server.
 		int port = PORT_BASE + 1;
 		ServerSocketChannel socket = TestingHelpers.createServerSocket(port);
@@ -86,7 +86,8 @@ public class TestClientManager {
 		Assert.assertNull(noNode);
 		Assert.assertEquals(message.type, output.type);
 		Assert.assertEquals(message.nonce, output.nonce);
-		Assert.assertArrayEquals(((ClientMessagePayload_Temp)message.payload).contents, ((ClientMessagePayload_Temp)output.payload).contents);
+		Assert.assertArrayEquals(((ClientMessagePayload_Put)message.payload).key, ((ClientMessagePayload_Put)output.payload).key);
+		Assert.assertArrayEquals(((ClientMessagePayload_Put)message.payload).value, ((ClientMessagePayload_Put)output.payload).value);
 		
 		manager.stopAndWaitForTermination();
 		socket.close();
@@ -100,7 +101,7 @@ public class TestClientManager {
 	public void testSendCommitResponse() throws Throwable {
 		// Create a message.
 		TopicName topic = TopicName.fromString("test");
-		ClientMessage message = ClientMessage.temp(1L, topic, new byte[] {0,1,2,3});
+		ClientMessage message = ClientMessage.put(1L, topic, new byte[0], new byte[] {0,1,2,3});
 		// Create a server.
 		int port = PORT_BASE + 2;
 		ServerSocketChannel socket = TestingHelpers.createServerSocket(port);
