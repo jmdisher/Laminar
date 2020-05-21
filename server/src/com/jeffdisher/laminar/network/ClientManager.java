@@ -41,7 +41,7 @@ import com.jeffdisher.laminar.utils.Assert;
  */
 public class ClientManager implements IClientManager, INetworkManagerBackgroundCallbacks {
 	private final Thread _mainThread;
-	private final UUID _serverUuid;
+	private final ConfigEntry _selfConfig;
 	private final NetworkManager _networkManager;
 	private final IClientManagerCallbacks _callbacks;
 
@@ -65,9 +65,9 @@ public class ClientManager implements IClientManager, INetworkManagerBackgroundC
 	private final Map<Long, List<ReconnectingClientState>> _reconnectingClientsByGlobalOffset;
 	private final ListenerManager _listenerManager;
 
-	public ClientManager(UUID serverUuid, ServerSocketChannel serverSocket, IClientManagerCallbacks callbacks) throws IOException {
+	public ClientManager(ConfigEntry selfConfig, ServerSocketChannel serverSocket, IClientManagerCallbacks callbacks) throws IOException {
 		_mainThread = Thread.currentThread();
-		_serverUuid = serverUuid;
+		_selfConfig = selfConfig;
 		// This is really just a high-level wrapper over the common NetworkManager so create that here.
 		_networkManager = NetworkManager.bidirectional(serverSocket, this);
 		_callbacks = callbacks;
@@ -489,15 +489,13 @@ public class ClientManager implements IClientManager, INetworkManagerBackgroundC
 			_callbacks.mainForceLeader();
 			break;
 		}
-		case GET_UUID: {
-			// Send them the UUID and close this as soon as they become writable, again.
+		case GET_SELF_CONFIG: {
+			// Send them the ConfigEntry and close this as soon as they become writable, again.
 			boolean didRemove = _newClients.remove(client);
 			Assert.assertTrue(didRemove);
-			byte[] payload = ByteBuffer.allocate(2 * Long.BYTES)
-					.putLong(_serverUuid.getMostSignificantBits())
-					.putLong(_serverUuid.getLeastSignificantBits())
-					.array();
-			_networkManager.trySendMessage(client, payload);
+			ByteBuffer buffer = ByteBuffer.allocate(_selfConfig.serializedSize());
+			_selfConfig.serializeInto(buffer);
+			_networkManager.trySendMessage(client, buffer.array());
 			_closingClients.add(client);
 			break;
 		}

@@ -113,7 +113,7 @@ public class Laminar {
 		// Now, create the managers.
 		ClientManager clientManager = null;
 		try {
-			clientManager = new ClientManager(serverUuid, clientSocket, thisNodeState);
+			clientManager = new ClientManager(self, clientSocket, thisNodeState);
 		} catch (IOException e1) {
 			// Not sure how creating the Selector would fail but we can handle it since we haven't started, yet.
 			failStart("Failure creating ClientManager: " + e1.getLocalizedMessage());

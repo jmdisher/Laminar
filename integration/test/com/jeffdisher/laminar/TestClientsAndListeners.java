@@ -370,9 +370,9 @@ public class TestClientsAndListeners {
 	}
 
 	@Test
-	public void testGetUuid() throws Throwable {
+	public void testGetSelfConfig() throws Throwable {
 		// Start up a fake client to verify that the RECEIVED and COMMITTED responses have the expected commit offsets.
-		ServerWrapper wrapper = ServerWrapper.startedServerWrapper("testGetUuid", 2003, 2002, new File("/tmp/laminar"));
+		ServerWrapper wrapper = ServerWrapper.startedServerWrapper("testGetSelfConfig", 2003, 2002, new File("/tmp/laminar"));
 		
 		// HACK - wait for startup.
 		Thread.sleep(500);
@@ -383,10 +383,11 @@ public class TestClientsAndListeners {
 		outbound.configureBlocking(true);
 		outbound.connect(address);
 		
-		_sendMessage(outbound, ClientMessage.getUuid());
-		// We want this to be precisely a UUID in a message frame.
+		_sendMessage(outbound, ClientMessage.getSelfConfig());
+		// Make sure that this is a ConfigEntry.
 		byte[] payload = _readFramedMessage(outbound);
-		Assert.assertEquals(2 * Long.BYTES, payload.length);
+		ConfigEntry entry = ConfigEntry.deserializeFrom(ByteBuffer.wrap(payload));
+		Assert.assertEquals(payload.length, entry.serializedSize());
 		// Read EOF.
 		Assert.assertEquals(-1, outbound.read(ByteBuffer.allocate(1)));
 		

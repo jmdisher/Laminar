@@ -45,9 +45,10 @@ public class TestClientManager {
 		ClientMessage message = ClientMessage.put(1L, TopicName.fromString("test"), new byte[0], new byte[] {0,1,2,3});
 		// Create a server.
 		int port = PORT_BASE + 1;
+		ConfigEntry self = new ConfigEntry(UUID.randomUUID(), new InetSocketAddress(9999), new InetSocketAddress(port));
 		ServerSocketChannel socket = TestingHelpers.createServerSocket(port);
 		LatchedCallbacks callbacks = new LatchedCallbacks();
-		ClientManager manager = new ClientManager(UUID.randomUUID(), socket, callbacks);
+		ClientManager manager = new ClientManager(self, socket, callbacks);
 		manager.startAndWaitForReady();
 		
 		// Create the connection and send the "temp" message through, directly.
@@ -104,10 +105,11 @@ public class TestClientManager {
 		ClientMessage message = ClientMessage.put(1L, topic, new byte[0], new byte[] {0,1,2,3});
 		// Create a server.
 		int port = PORT_BASE + 2;
+		ConfigEntry self = new ConfigEntry(UUID.randomUUID(), new InetSocketAddress(9999), new InetSocketAddress(port));
 		ServerSocketChannel socket = TestingHelpers.createServerSocket(port);
 		LatchedCallbacks callbacks = new LatchedCallbacks();
 		UUID clientId = UUID.randomUUID();
-		ClientManager manager = new ClientManager(clientId, socket, callbacks);
+		ClientManager manager = new ClientManager(self, socket, callbacks);
 		manager.startAndWaitForReady();
 		
 		// Create the connection, send the commit message, and read it, directly.
@@ -171,9 +173,10 @@ public class TestClientManager {
 		EventRecord record = EventRecord.put(1L, 1L, 1L, UUID.randomUUID(), 1L, new byte[0], new byte[] { 1, 2, 3});
 		// Create a server.
 		int port = PORT_BASE + 3;
+		ConfigEntry self = new ConfigEntry(UUID.randomUUID(), new InetSocketAddress(9999), new InetSocketAddress(port));
 		ServerSocketChannel socket = TestingHelpers.createServerSocket(port);
 		LatchedCallbacks callbacks = new LatchedCallbacks();
-		ClientManager manager = new ClientManager(UUID.randomUUID(), socket, callbacks);
+		ClientManager manager = new ClientManager(self, socket, callbacks);
 		manager.startAndWaitForReady();
 		
 		// Create the connection, send the commit message, and read it, directly.
@@ -219,9 +222,10 @@ public class TestClientManager {
 	public void testClientRedirectExisting() throws Throwable {
 		// Create a server.
 		int port = PORT_BASE + 4;
+		ConfigEntry self = new ConfigEntry(UUID.randomUUID(), new InetSocketAddress(9999), new InetSocketAddress(port));
 		ServerSocketChannel socket = TestingHelpers.createServerSocket(port);
 		LatchedCallbacks callbacks = new LatchedCallbacks();
-		ClientManager manager = new ClientManager(UUID.randomUUID(), socket, callbacks);
+		ClientManager manager = new ClientManager(self, socket, callbacks);
 		manager.startAndWaitForReady();
 		
 		// Create the connection, send the commit message, and read it, directly.
@@ -266,9 +270,10 @@ public class TestClientManager {
 	public void testClientRedirectNew() throws Throwable {
 		// Create a server.
 		int port = PORT_BASE + 5;
+		ConfigEntry self = new ConfigEntry(UUID.randomUUID(), new InetSocketAddress(9999), new InetSocketAddress(port));
 		ServerSocketChannel socket = TestingHelpers.createServerSocket(port);
 		LatchedCallbacks callbacks = new LatchedCallbacks();
-		ClientManager manager = new ClientManager(UUID.randomUUID(), socket, callbacks);
+		ClientManager manager = new ClientManager(self, socket, callbacks);
 		manager.startAndWaitForReady();
 		
 		// Now, tell the ClientManager to enter the follower state.

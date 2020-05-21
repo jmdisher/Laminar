@@ -78,15 +78,14 @@ public class ClientMessage {
 	}
 
 	/**
-	 * Creates a message to retrieve the UUID of the contacted server.
-	 * This is only used in tools which wish to create a new cluster config since that now includes the UUIDs of each
-	 * server.
+	 * Creates a message to retrieve the ConfigEntry of the contacted server.
+	 * This is only used in tools which wish to create a new cluster config.
 	 * Note that this message is sent on a fresh connection, not an established one (to avoid redirects).
 	 * 
 	 * @return A new ClientMessage instance.
 	 */
-	public static ClientMessage getUuid() {
-		return new ClientMessage(ClientMessageType.GET_UUID, -1L, ClientMessagePayload_Empty.create());
+	public static ClientMessage getSelfConfig() {
+		return new ClientMessage(ClientMessageType.GET_SELF_CONFIG, -1L, ClientMessagePayload_Empty.create());
 	}
 
 	/**
@@ -195,7 +194,7 @@ public class ClientMessage {
 		case FORCE_LEADER:
 			payload = ClientMessagePayload_Empty.deserialize(buffer);
 			break;
-		case GET_UUID:
+		case GET_SELF_CONFIG:
 			payload = ClientMessagePayload_Empty.deserialize(buffer);
 			break;
 		case CREATE_TOPIC:

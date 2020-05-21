@@ -30,9 +30,10 @@ public enum ClientMessageType {
 	FORCE_LEADER,
 	/**
 	 * This message is used when a tool wants to build a cluster config.
-	 * Returns the UUID of the server and disconnects the caller.
+	 * Returns the ConfigEntry the contacted node uses to identify itself and which it considers valid for use in
+	 * cluster configurations.
 	 */
-	GET_UUID,
+	GET_SELF_CONFIG,
 	/**
 	 * Creates the named topic, generating an INVALID effect if it already exists.
 	 */
