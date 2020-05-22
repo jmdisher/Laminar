@@ -1,11 +1,9 @@
-package com.jeffdisher.laminar;
+package com.jeffdisher.laminar.tools;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.SocketChannel;
-
-import org.junit.Assert;
 
 import com.jeffdisher.laminar.client.ClientConnection;
 import com.jeffdisher.laminar.client.ClientResult;
@@ -13,6 +11,7 @@ import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.types.CommitInfo;
 import com.jeffdisher.laminar.types.ConfigEntry;
 import com.jeffdisher.laminar.types.message.ClientMessage;
+import com.jeffdisher.laminar.utils.Assert;
 
 
 /**
@@ -88,12 +87,12 @@ public class ConfigBuilder {
 	private static byte[] _readFramedMessage(SocketChannel socket) throws IOException {
 		ByteBuffer buffer = ByteBuffer.allocate(Short.BYTES);
 		int read = socket.read(buffer);
-		Assert.assertEquals(buffer.capacity(), read);
+		Assert.assertTrue(buffer.capacity() == read);
 		buffer.flip();
 		int size = Short.toUnsignedInt(buffer.getShort());
 		buffer = ByteBuffer.allocate(size);
 		read = socket.read(buffer);
-		Assert.assertEquals(buffer.capacity(), read);
+		Assert.assertTrue(buffer.capacity() == read);
 		return buffer.array();
 	}
 }
