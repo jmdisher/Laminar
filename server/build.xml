@@ -3,8 +3,8 @@
 	<property name="global.build" value="${basedir}/../build"/>
 	<property name="global.lib" value="${basedir}/../lib"/>
 	<property name="global.jars" value="${basedir}/../jars"/>
-	<property name="global.jars.common" value="${basedir}/../jars/common.jar"/>
-	<property name="global.jars.server" value="${basedir}/../jars/server.jar"/>
+	<property name="global.jars.common" value="${global.jars}/common.jar"/>
+	<property name="global.jars.server" value="${global.jars}/server.jar"/>
 
 	<property name="local.src" value="${basedir}/src"/>
 	<property name="local.test" value="${basedir}/test"/>

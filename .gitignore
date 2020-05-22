@@ -5,3 +5,4 @@ bin/
 # Ant build
 build/
 /jars/
+/products/

@@ -1,7 +1,10 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <project basedir="." default="all" name="Laminar">
 	<!-- We don't use inherited properties since each subdirection should be indepdnently buildable -->
-	<property name="global.jars" value="${basedir}/../jars"/>
+	<!-- "jars" is where each subcomponent will produce its intermediary build artifact -->
+	<property name="global.jars" value="${basedir}/jars"/>
+	<!-- "products" is where integration will produce its final combined build artifacts (essentially statically linked) -->
+	<property name="global.products" value="${basedir}/products"/>
 
 	<target name="all" >
 		<antcall target="clean" />
@@ -15,6 +18,7 @@
 		<ant antfile="${basedir}/client/build.xml" inheritAll="false" target="clean" />
 		<ant antfile="${basedir}/integration/build.xml" inheritAll="false" target="clean" />
 		<delete dir="${global.jars}"/>
+		<delete dir="${global.products}"/>
 	</target>
 
 	<target name="build" >
