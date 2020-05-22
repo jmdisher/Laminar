@@ -1,8 +1,12 @@
 package com.jeffdisher.laminar;
 
 import java.io.File;
+import java.io.InputStream;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.util.Arrays;
+import java.util.LinkedList;
+import java.util.List;
 
 import org.junit.Assert;
 import org.junit.Test;
@@ -10,7 +14,6 @@ import org.junit.Test;
 import com.jeffdisher.laminar.client.ClientConnection;
 import com.jeffdisher.laminar.client.ClientResult;
 import com.jeffdisher.laminar.client.ListenerConnection;
-import com.jeffdisher.laminar.tools.ConfigBuilder;
 import com.jeffdisher.laminar.types.CommitInfo;
 import com.jeffdisher.laminar.types.TopicName;
 import com.jeffdisher.laminar.types.event.EventRecord;
@@ -20,6 +23,9 @@ import com.jeffdisher.laminar.types.event.EventRecordType;
 
 /**
  * Integration tests of ConfigBuilder to ensure that it can build and post a cluster config for a bunch of nodes.
+ * This requires env vars to be set:
+ * -WRAPPER_SERVER_JAR - points to the JAR of the complete Laminar server
+ * -CONFIG_BUILDER_JAR - points to the JAR of the ConfigBuilder tool
  */
 public class TestConfigBuilder {
 	/**
@@ -38,7 +44,7 @@ public class TestConfigBuilder {
 		// Invoke the builder - it will return once the config change commits.
 		// (HACK: we need to wait for the servers to start up).
 		Thread.sleep(500);
-		ConfigBuilder.main(new String[] {leaderAddress.getAddress().getHostAddress(), Integer.toString(leaderAddress.getPort()), followerAddress.getAddress().getHostAddress(), Integer.toString(followerAddress.getPort())});
+		_runConfigBuilder(new String[] {leaderAddress.getAddress().getHostAddress(), Integer.toString(leaderAddress.getPort()), followerAddress.getAddress().getHostAddress(), Integer.toString(followerAddress.getPort())});
 		
 		// Create the client and send the normal update (use the follower address to force the redirect).
 		byte[] messageKey = new byte[] {1,2,3};
@@ -92,14 +98,14 @@ public class TestConfigBuilder {
 		// Invoke the builder - it will return once the config change commits.
 		// (HACK: we need to wait for the servers to start up).
 		Thread.sleep(500);
-		ConfigBuilder.main(new String[] {leaderAddress.getAddress().getHostAddress(), Integer.toString(leaderAddress.getPort()), follower1Address.getAddress().getHostAddress(), Integer.toString(follower1Address.getPort())});
+		_runConfigBuilder(new String[] {leaderAddress.getAddress().getHostAddress(), Integer.toString(leaderAddress.getPort()), follower1Address.getAddress().getHostAddress(), Integer.toString(follower1Address.getPort())});
 		
 		ServerWrapper follower2 = ServerWrapper.startedServerWrapper("testClusterChange-FOLLOWER2", 2003, 3003, new File("/tmp/laminar3"));
 		InetSocketAddress follower2Address = new InetSocketAddress(InetAddress.getLocalHost(), 3003);
 		// Invoke the builder - it will return once the config change commits.
 		// (HACK: we need to wait for the servers to start up).
 		Thread.sleep(500);
-		ConfigBuilder.main(new String[] {leaderAddress.getAddress().getHostAddress(), Integer.toString(leaderAddress.getPort()), follower2Address.getAddress().getHostAddress(), Integer.toString(follower2Address.getPort())});
+		_runConfigBuilder(new String[] {leaderAddress.getAddress().getHostAddress(), Integer.toString(leaderAddress.getPort()), follower2Address.getAddress().getHostAddress(), Integer.toString(follower2Address.getPort())});
 		Assert.assertEquals(0, follower1.stop());
 		
 		// Create the client and send the normal update (use the follower address to force the redirect).
@@ -134,5 +140,31 @@ public class TestConfigBuilder {
 		// Shut down.
 		Assert.assertEquals(0, leader.stop());
 		Assert.assertEquals(0, follower2.stop());
+	}
+
+
+	private static void _runConfigBuilder(String[] mainArgs) throws Throwable {
+		String javaLauncherPath = System.getProperty("java.home") + File.separator + "bin" + File.separator + "java";
+		String jarPath = System.getenv("CONFIG_BUILDER_JAR");
+		if (null == jarPath) {
+			throw new IllegalArgumentException("Missing CONFIG_BUILDER_JAR env var");
+		}
+		if (!new File(jarPath).exists()) {
+			throw new IllegalArgumentException("JAR \"" + jarPath + "\" doesn't exist");
+		}
+		
+		// Start the processes.
+		List<String> args = new LinkedList<>();
+		args.add(javaLauncherPath);
+		args.add("-jar");
+		args.add(jarPath);
+		args.addAll(Arrays.asList(mainArgs));
+		Process process = new ProcessBuilder(args)
+				.start();
+		// We just drain stdout until it terminates.0
+		InputStream stdout = process.getInputStream();
+		while (-1 != stdout.read()) {
+		}
+		Assert.assertEquals(0, process.waitFor());
 	}
 }

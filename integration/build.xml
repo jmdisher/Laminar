@@ -115,10 +115,10 @@
 				<pathelement location="${global.lib}/junit-4.12.jar"/>
 				<pathelement location="${global.lib}/hamcrest-all-1.3.jar"/>
 				<pathelement location="${global.products.LaminarClientLib}"/>
-				<pathelement location="${global.products.ConfigBuilder}"/>
 				<pathelement location="${local.build.test}" />
 			</classpath>
 			<env key="WRAPPER_SERVER_JAR" value="${global.products.Laminar}" />
+			<env key="CONFIG_BUILDER_JAR" value="${global.products.ConfigBuilder}" />
 			<formatter type="plain" usefile="false" />
 			<batchtest todir="${build.testreports}">
 				<fileset dir="${local.test}" includes="**/${test}.java" />
