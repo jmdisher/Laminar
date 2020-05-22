@@ -142,8 +142,17 @@ public class TestConfigBuilder {
 		Assert.assertEquals(0, follower2.stop());
 	}
 
+	@Test
+	public void testInvocationError() throws Throwable {
+		_runConfigBuilderWithResult(1, new String[0]);
+	}
+
 
 	private static void _runConfigBuilder(String[] mainArgs) throws Throwable {
+		_runConfigBuilderWithResult(0, mainArgs);
+	}
+
+	private static void _runConfigBuilderWithResult(int resultCode, String[] mainArgs) throws Throwable {
 		String javaLauncherPath = System.getProperty("java.home") + File.separator + "bin" + File.separator + "java";
 		String jarPath = System.getenv("CONFIG_BUILDER_JAR");
 		if (null == jarPath) {
@@ -165,6 +174,6 @@ public class TestConfigBuilder {
 		InputStream stdout = process.getInputStream();
 		while (-1 != stdout.read()) {
 		}
-		Assert.assertEquals(0, process.waitFor());
+		Assert.assertEquals(resultCode, process.waitFor());
 	}
 }
