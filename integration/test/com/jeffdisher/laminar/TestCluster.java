@@ -19,6 +19,7 @@ import com.jeffdisher.laminar.types.ConfigEntry;
 import com.jeffdisher.laminar.types.TopicName;
 import com.jeffdisher.laminar.types.event.EventRecord;
 import com.jeffdisher.laminar.types.event.EventRecordPayload_Put;
+import com.jeffdisher.laminar.types.event.EventRecordType;
 import com.jeffdisher.laminar.types.message.ClientMessage;
 import com.jeffdisher.laminar.utils.TestingHelpers;
 
@@ -759,6 +760,51 @@ public class TestCluster {
 				Assert.assertEquals(result4.message.nonce, followerExplicit.pollForNextEvent().clientNonce);
 				Assert.assertEquals(result6.message.nonce, followerExplicit.pollForNextEvent().clientNonce);
 				Assert.assertEquals(result8.message.nonce, followerExplicit.pollForNextEvent().clientNonce);
+			}
+		} finally {
+			// Shut down.
+			Assert.assertEquals(0, leader.stop());
+			Assert.assertEquals(0, follower.stop());
+		}
+	}
+
+	/**
+	 * Tests that downstream connections are automatically re-established when broken.
+	 */
+	@Test
+	public void testDownstreamReconnection() throws Throwable {
+		TopicName topic = TopicName.fromString("test");
+		UUID leaderUuid = UUID.randomUUID();
+		ServerWrapper leader = ServerWrapper.startedServerWrapperWithUuid("testDownstreamReconnection-LEADER", leaderUuid, 3001, 2001, new File("/tmp/laminar1"));
+		InetSocketAddress leaderClientAddress = new InetSocketAddress(InetAddress.getLocalHost(), 2001);
+		UUID followerUuid = UUID.randomUUID();
+		ServerWrapper follower = ServerWrapper.startedServerWrapperWithUuid("testDownstreamReconnection-FOLLOWER", followerUuid, 3002, 2002, new File("/tmp/laminar2"));
+		InetSocketAddress followerClientAddress= new InetSocketAddress(InetAddress.getLocalHost(), 2002);
+		
+		try(ClientConnection client = ClientConnection.open(leaderClientAddress)) {
+			ClusterConfig config = ClusterConfig.configFromEntries(new ConfigEntry[] {
+					new ConfigEntry(leaderUuid, new InetSocketAddress(InetAddress.getLocalHost(), 3001), leaderClientAddress),
+					new ConfigEntry(followerUuid, new InetSocketAddress(InetAddress.getLocalHost(), 3002), followerClientAddress),
+			});
+			Assert.assertEquals(CommitInfo.Effect.VALID, client.sendUpdateConfig(config).waitForCommitted().effect);
+			Assert.assertEquals(CommitInfo.Effect.VALID, client.sendCreateTopic(topic).waitForCommitted().effect);
+			
+			// Stop the follower, send another message, wait for it to be received.
+			Assert.assertEquals(0, follower.stop());
+			ClientResult result1 = client.sendPut(topic, new byte[0], new byte[] {1});
+			result1.waitForReceived();
+			
+			// Now restart the follower, send another message, and wait for both to commit.
+			follower = ServerWrapper.startedServerWrapperWithUuid("testDownstreamReconnection-FOLLOWER", followerUuid, 3002, 2002, new File("/tmp/laminar2"));
+			ClientResult result2 = client.sendPut(topic, new byte[0], new byte[] {2});
+			Assert.assertEquals(CommitInfo.Effect.VALID, result1.waitForCommitted().effect);
+			Assert.assertEquals(CommitInfo.Effect.VALID, result2.waitForCommitted().effect);
+			
+			// Now, attach a listener the follower and make sure we see the create and the 2 puts.
+			try (ListenerConnection leaderImplicit = ListenerConnection.open(followerClientAddress, topic, 0L)) {
+				Assert.assertEquals(EventRecordType.CREATE_TOPIC, leaderImplicit.pollForNextEvent().type);
+				Assert.assertEquals(EventRecordType.PUT, leaderImplicit.pollForNextEvent().type);
+				Assert.assertEquals(EventRecordType.PUT, leaderImplicit.pollForNextEvent().type);
 			}
 		} finally {
 			// Shut down.
