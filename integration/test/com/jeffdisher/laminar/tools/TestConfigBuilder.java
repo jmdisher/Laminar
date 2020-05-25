@@ -1,4 +1,4 @@
-package com.jeffdisher.laminar;
+package com.jeffdisher.laminar.tools;
 
 import java.io.File;
 import java.io.InputStream;
@@ -11,6 +11,7 @@ import java.util.List;
 import org.junit.Assert;
 import org.junit.Test;
 
+import com.jeffdisher.laminar.ServerWrapper;
 import com.jeffdisher.laminar.client.ClientConnection;
 import com.jeffdisher.laminar.client.ClientResult;
 import com.jeffdisher.laminar.client.ListenerConnection;
