@@ -1,16 +1,13 @@
 package com.jeffdisher.laminar.tools;
 
 import java.io.File;
-import java.io.InputStream;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
-import java.util.Arrays;
-import java.util.LinkedList;
-import java.util.List;
 
 import org.junit.Assert;
 import org.junit.Test;
 
+import com.jeffdisher.laminar.ProcessWrapper;
 import com.jeffdisher.laminar.ServerWrapper;
 import com.jeffdisher.laminar.client.ClientConnection;
 import com.jeffdisher.laminar.client.ClientResult;
@@ -154,7 +151,6 @@ public class TestConfigBuilder {
 	}
 
 	private static void _runConfigBuilderWithResult(int resultCode, String[] mainArgs) throws Throwable {
-		String javaLauncherPath = System.getProperty("java.home") + File.separator + "bin" + File.separator + "java";
 		String jarPath = System.getenv("CONFIG_BUILDER_JAR");
 		if (null == jarPath) {
 			throw new IllegalArgumentException("Missing CONFIG_BUILDER_JAR env var");
@@ -164,17 +160,9 @@ public class TestConfigBuilder {
 		}
 		
 		// Start the processes.
-		List<String> args = new LinkedList<>();
-		args.add(javaLauncherPath);
-		args.add("-jar");
-		args.add(jarPath);
-		args.addAll(Arrays.asList(mainArgs));
-		Process process = new ProcessBuilder(args)
-				.start();
-		// We just drain stdout until it terminates.0
-		InputStream stdout = process.getInputStream();
-		while (-1 != stdout.read()) {
-		}
-		Assert.assertEquals(resultCode, process.waitFor());
+		ProcessWrapper process = ProcessWrapper.startedJavaProcess(jarPath, mainArgs);
+		// We don't use any filters.
+		process.startFiltering();
+		Assert.assertEquals(resultCode, process.waitForTermination());
 	}
 }
