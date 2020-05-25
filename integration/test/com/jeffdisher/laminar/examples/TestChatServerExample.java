@@ -31,11 +31,11 @@ public class TestChatServerExample {
 		
 		// (HACK: we need to wait for the servers to start up).
 		Thread.sleep(500);
-		ProcessWrapper user1 = _startChatClient(leaderAddress.getAddress().getHostAddress(), Integer.toString(leaderAddress.getPort()), roomName, "user1");
+		ProcessWrapper user1 = _startChatClient("user1", leaderAddress.getAddress().getHostAddress(), Integer.toString(leaderAddress.getPort()), roomName, "user1");
 		CountDownLatch roomCreation = user1.filterStdout("(room created)");
 		user1.startFiltering();
 		roomCreation.await();
-		ProcessWrapper user2 = _startChatClient(leaderAddress.getAddress().getHostAddress(), Integer.toString(leaderAddress.getPort()), roomName, "user2");
+		ProcessWrapper user2 = _startChatClient("user2", leaderAddress.getAddress().getHostAddress(), Integer.toString(leaderAddress.getPort()), roomName, "user2");
 		user2.startFiltering();
 		
 		// Both clients should see the other message and their own.
@@ -63,7 +63,7 @@ public class TestChatServerExample {
 	}
 
 
-	private static ProcessWrapper _startChatClient(String... mainArgs) throws Throwable {
+	private static ProcessWrapper _startChatClient(String clientName, String... mainArgs) throws Throwable {
 		String jarPath = System.getenv("CHAT_CLIENT_JAR");
 		if (null == jarPath) {
 			throw new IllegalArgumentException("Missing CHAT_CLIENT_JAR env var");
@@ -72,6 +72,6 @@ public class TestChatServerExample {
 			throw new IllegalArgumentException("JAR \"" + jarPath + "\" doesn't exist");
 		}
 		
-		return ProcessWrapper.startedJavaProcess(jarPath, mainArgs);
+		return ProcessWrapper.startedJavaProcess(clientName, jarPath, mainArgs);
 	}
 }

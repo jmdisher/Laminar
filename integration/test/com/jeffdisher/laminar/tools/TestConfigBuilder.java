@@ -160,7 +160,7 @@ public class TestConfigBuilder {
 		}
 		
 		// Start the processes.
-		ProcessWrapper process = ProcessWrapper.startedJavaProcess(jarPath, mainArgs);
+		ProcessWrapper process = ProcessWrapper.startedJavaProcess("ConfigBuilder", jarPath, mainArgs);
 		// We don't use any filters.
 		process.startFiltering();
 		Assert.assertEquals(resultCode, process.waitForTermination());

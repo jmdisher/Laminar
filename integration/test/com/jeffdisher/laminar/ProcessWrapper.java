@@ -5,6 +5,7 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.OutputStream;
 import java.io.PrintStream;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -22,18 +23,46 @@ import com.jeffdisher.laminar.utils.Assert;
  * A wrapper over an arbitrary process to allow high-level management of its STDIO and waiting for termination.
  * Of specific note is the ability to create Filter objects which will allow a test to wait on a certain string
  * appearing on STDOUT.
+ * An optional "WRAPPER_VERBOSE" environment variable can be used to pass server output through (since it is normally
+ * dropped).
  */
 public class ProcessWrapper {
 	/**
 	 * Returns the started Java process but note that filtering is not yet enabled so startFiltering() must be called
 	 * after any initial filtering setup in order for the process to run properly.
 	 * 
+	 * @param processName The name prefix which will be added to output when running in a verbose mode.
 	 * @param jarPath The path of the JAR to execute.
 	 * @param mainArgs The arguments to the main class of the JAR.
 	 * @return The running process with filtering not yet enabled.
 	 * @throws IOException Starting the process failed.
 	 */
-	public static ProcessWrapper startedJavaProcess(String jarPath, String... mainArgs) throws IOException {
+	public static ProcessWrapper startedJavaProcess(String processName, String jarPath, String... mainArgs) throws IOException {
+		boolean verbose = (null != System.getenv("WRAPPER_VERBOSE"));
+		PrintStream outTarget = verbose ? System.out : null;
+		PrintStream errTarget = verbose ? System.err : null;
+		return _startedJavaProcess(processName, outTarget, errTarget, jarPath, mainArgs);
+	}
+
+	/**
+	 * Used in some special-cases to run tests such that the STDERR of the sub-process can be directly read by the test.
+	 * 
+	 * @param errorStream The STDERR stream to use for the sub-process.
+	 * @param jarPath The path of the JAR to execute.
+	 * @param mainArgs The arguments to the main class of the JAR.
+	 * @return The running process with filtering not yet enabled.
+	 * @throws IOException Starting the process failed.
+	 */
+	public static ProcessWrapper startedJavaProcessWithRawErr(OutputStream errorStream, String jarPath, String... mainArgs) throws IOException {
+		boolean verbose = (null != System.getenv("WRAPPER_VERBOSE"));
+		PrintStream outTarget = verbose ? System.out : null;
+		// We always want to flush immediately to this error stream.
+		PrintStream errTarget = new PrintStream(errorStream, true);
+		return _startedJavaProcess(null, outTarget, errTarget, jarPath, mainArgs);
+	}
+
+
+	private static ProcessWrapper _startedJavaProcess(String linePrefix, PrintStream stdout, PrintStream stderr, String jarPath, String... mainArgs) throws IOException {
 		String javaLauncherPath = System.getProperty("java.home") + File.separator + "bin" + File.separator + "java";
 		
 		if (!new File(jarPath).exists()) {
@@ -52,9 +81,9 @@ public class ProcessWrapper {
 		PrintStream stdin = new PrintStream(process.getOutputStream(), true);
 		
 		// Start the threads to filter the STDOUT and STDERR streams (we will just use the simple thread approach for this).
-		FilteringThread stdout = new FilteringThread(process.getInputStream());
-		FilteringThread stderr = new FilteringThread(process.getErrorStream());
-		return new ProcessWrapper(process, stdin, stdout, stderr);
+		FilteringThread filteredOut = new FilteringThread(process.getInputStream(), linePrefix, stdout);
+		FilteringThread filteredErr = new FilteringThread(process.getErrorStream(), linePrefix, stderr);
+		return new ProcessWrapper(process, stdin, filteredOut, filteredErr);
 	}
 
 
@@ -115,10 +144,14 @@ public class ProcessWrapper {
 
 	private static class FilteringThread extends Thread {
 		private final InputStream _source;
+		private final String _linePrefix;
+		private final PrintStream _sink;
 		private final Map<String, CountDownLatch> _filters;
 		
-		public FilteringThread(InputStream source) {
+		public FilteringThread(InputStream source, String linePrefix, PrintStream sink) {
 			_source = source;
+			_linePrefix = (null != linePrefix) ? (linePrefix + ": ") : "";
+			_sink = sink;
 			_filters = new HashMap<>();
 		}
 		
@@ -149,6 +182,10 @@ public class ProcessWrapper {
 							CountDownLatch latch = _filters.remove(matched);
 							latch.countDown();
 						}
+					}
+					// If we have a sink, pass this line down to it.
+					if (null != _sink) {
+						_sink.println(_linePrefix + line);
 					}
 					line = reader.readLine();
 				}
