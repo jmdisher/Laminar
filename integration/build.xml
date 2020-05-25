@@ -10,6 +10,7 @@
 	<property name="global.products.Laminar" value="${global.products}/Laminar.jar"/>
 	<property name="global.products.LaminarClientLib" value="${global.products}/Laminar-clientlib.jar"/>
 	<property name="global.products.ConfigBuilder" value="${global.products}/ConfigBuilder.jar"/>
+	<property name="global.products.ChatServerExample" value="${global.products}/ChatServerExample.jar"/>
 
 	<property name="local.src" value="${basedir}/src"/>
 	<property name="local.test" value="${basedir}/test"/>
@@ -83,6 +84,14 @@
 				<attribute name="Main-Class" value="com.jeffdisher.laminar.tools.ConfigBuilder"/>
 			</manifest>
 		</jar>
+		<jar destfile="${global.products.ChatServerExample}">
+			<fileset dir="${local.build.src}"/>
+			<zipfileset src="${global.jars.common}"/>
+			<zipfileset src="${global.jars.client}"/>
+			<manifest>
+				<attribute name="Main-Class" value="com.jeffdisher.laminar.examples.ChatServerExample"/>
+			</manifest>
+		</jar>
 	</target>
 
 	<target name="build_test">
@@ -118,6 +127,7 @@
 			</classpath>
 			<env key="WRAPPER_SERVER_JAR" value="${global.products.Laminar}" />
 			<env key="CONFIG_BUILDER_JAR" value="${global.products.ConfigBuilder}" />
+			<env key="CHAT_CLIENT_JAR" value="${global.products.ChatServerExample}" />
 			<formatter type="plain" usefile="false" />
 			<batchtest todir="${build.testreports}">
 				<fileset dir="${local.test}" includes="**/${test}.java" />
