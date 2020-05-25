@@ -29,8 +29,6 @@ public class TestChatServerExample {
 		ServerWrapper leader = ServerWrapper.startedServerWrapper("test2Clients-LEADER", 2001, 3001, new File("/tmp/laminar1"));
 		InetSocketAddress leaderAddress = new InetSocketAddress(InetAddress.getLocalHost(), 3001);
 		
-		// (HACK: we need to wait for the servers to start up).
-		Thread.sleep(500);
 		ProcessWrapper user1 = _startChatClient("user1", leaderAddress.getAddress().getHostAddress(), Integer.toString(leaderAddress.getPort()), roomName, "user1");
 		CountDownLatch roomCreation = user1.filterStdout("(room created)");
 		user1.startFiltering();

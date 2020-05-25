@@ -43,7 +43,14 @@ public class ServerWrapper {
 						, "--data", storagePath.getAbsolutePath()
 						};
 		ProcessWrapper wrapper = ProcessWrapper.startedJavaProcess(serverName, _getJarPath(), args);
+		CountDownLatch startLatch = wrapper.filterStdout("Laminar ready for leader connection or config upload...");
 		wrapper.startFiltering();
+		try {
+			startLatch.await();
+		} catch (InterruptedException e) {
+			// We don't use interruption in our tests.
+			throw Assert.unexpected(e);
+		}
 		return new ServerWrapper(wrapper);
 	}
 

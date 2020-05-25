@@ -40,8 +40,6 @@ public class TestConfigBuilder {
 		InetSocketAddress followerAddress = new InetSocketAddress(InetAddress.getLocalHost(), 3002);
 		
 		// Invoke the builder - it will return once the config change commits.
-		// (HACK: we need to wait for the servers to start up).
-		Thread.sleep(500);
 		_runConfigBuilder(new String[] {leaderAddress.getAddress().getHostAddress(), Integer.toString(leaderAddress.getPort()), followerAddress.getAddress().getHostAddress(), Integer.toString(followerAddress.getPort())});
 		
 		// Create the client and send the normal update (use the follower address to force the redirect).
@@ -94,15 +92,11 @@ public class TestConfigBuilder {
 		InetSocketAddress follower1Address = new InetSocketAddress(InetAddress.getLocalHost(), 3002);
 		
 		// Invoke the builder - it will return once the config change commits.
-		// (HACK: we need to wait for the servers to start up).
-		Thread.sleep(500);
 		_runConfigBuilder(new String[] {leaderAddress.getAddress().getHostAddress(), Integer.toString(leaderAddress.getPort()), follower1Address.getAddress().getHostAddress(), Integer.toString(follower1Address.getPort())});
 		
 		ServerWrapper follower2 = ServerWrapper.startedServerWrapper("testClusterChange-FOLLOWER2", 2003, 3003, new File("/tmp/laminar3"));
 		InetSocketAddress follower2Address = new InetSocketAddress(InetAddress.getLocalHost(), 3003);
 		// Invoke the builder - it will return once the config change commits.
-		// (HACK: we need to wait for the servers to start up).
-		Thread.sleep(500);
 		_runConfigBuilder(new String[] {leaderAddress.getAddress().getHostAddress(), Integer.toString(leaderAddress.getPort()), follower2Address.getAddress().getHostAddress(), Integer.toString(follower2Address.getPort())});
 		Assert.assertEquals(0, follower1.stop());
 		

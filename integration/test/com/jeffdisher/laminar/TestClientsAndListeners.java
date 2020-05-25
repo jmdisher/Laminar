@@ -190,9 +190,6 @@ public class TestClientsAndListeners {
 		// Start up a fake client to verify that the RECEIVED and COMMITTED responses have the expected commit offsets.
 		ServerWrapper wrapper = ServerWrapper.startedServerWrapper("testGlobalMutationCommitOffset", 2003, 2002, new File("/tmp/laminar"));
 		
-		// HACK - wait for startup.
-		Thread.sleep(500);
-		
 		// Fake a connection from a client:  send the handshake and a few messages, then disconnect.
 		InetSocketAddress address = new InetSocketAddress(InetAddress.getLocalHost(), 2002);
 		UUID clientId = UUID.randomUUID();
@@ -220,9 +217,6 @@ public class TestClientsAndListeners {
 	public void testSimulatedClientReconnect() throws Throwable {
 		// Here, we start up, connect a client, send one message, wait for it to commit, then shut everything down.
 		ServerWrapper wrapper = ServerWrapper.startedServerWrapper("testSimulatedClientReconnect", 2003, 2002, new File("/tmp/laminar"));
-		
-		// HACK - wait for startup.
-		Thread.sleep(500);
 		
 		// Fake a connection from a client:  send the handshake and a few messages, then disconnect.
 		InetSocketAddress address = new InetSocketAddress(InetAddress.getLocalHost(), 2002);
@@ -373,9 +367,6 @@ public class TestClientsAndListeners {
 	public void testGetSelfConfig() throws Throwable {
 		// Start up a fake client to verify that the RECEIVED and COMMITTED responses have the expected commit offsets.
 		ServerWrapper wrapper = ServerWrapper.startedServerWrapper("testGetSelfConfig", 2003, 2002, new File("/tmp/laminar"));
-		
-		// HACK - wait for startup.
-		Thread.sleep(500);
 		
 		// Fake a connection from a client:  send the handshake and a few messages, then disconnect.
 		InetSocketAddress address = new InetSocketAddress(InetAddress.getLocalHost(), 2002);
