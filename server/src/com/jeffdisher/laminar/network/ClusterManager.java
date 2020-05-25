@@ -290,9 +290,8 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 					_trySendUpstream(node);
 					
 					// We don't tell the NodeState about this unless they upstream starts acting like a LEADER and sending mutations.
-				} else {
+				} else if (_upstreamPeers.isEstablishedUpstream(node)) {
 					// Ready upstream nodes just means the leader sending us an APPEND_MUTATIONS, for now.
-					Assert.assertTrue(_upstreamPeers.isEstablishedUpstream(node));
 					ConfigEntry entry = _upstreamPeers.getEstablishedNodeConfig(node);
 					
 					byte[] raw = _networkManager.readWaitingMessage(node);
@@ -317,6 +316,9 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 					_trySendUpstream(node);
 					// Update our last message time to avoid election.
 					_lastUpstreamMessageMillisTime = System.currentTimeMillis();
+				} else {
+					// This happens in cases where we explicitly disconnected this peer but they may still have readable messages pending.
+					System.out.println("NOTE: Processed read ready from disconnected peer");
 				}
 			}});
 	}

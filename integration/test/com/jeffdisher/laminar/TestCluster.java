@@ -397,6 +397,8 @@ public class TestCluster {
 			Assert.assertEquals(0, follower.stop());
 			follower = null;
 			follower2 = ServerWrapper.startedServerWrapperWithUuid("testPoisonClusterSwitch-FOLLOWER2", follower2Uuid, 2007, 2006, new File("/tmp/laminar3"));
+			// Interestingly, delaying the client's attempt to reconnect by 100 ms makes a racy message read in the ClusterManager more likely.
+			Thread.sleep(100);
 			
 			// Send poison from client2 and a normal message from each client, then wait for everything to commit.
 			ClientResult client2_2 = client2.sendPoison(topic, new byte[0], new byte[] {2});
