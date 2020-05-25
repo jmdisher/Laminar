@@ -98,8 +98,7 @@
 		>
 			<classpath>
 				<pathelement location="${global.lib}/junit-4.12.jar"/>
-				<pathelement location="${global.products.client}"/>
-				<pathelement location="${global.products.ConfigBuilder}"/>
+				<pathelement location="${global.products.LaminarClientLib}"/>
 			</classpath>
 		</javac>
 	</target>
