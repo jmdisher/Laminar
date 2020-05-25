@@ -15,19 +15,19 @@ import com.jeffdisher.laminar.network.ClusterManager;
 import com.jeffdisher.laminar.state.NodeState;
 import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.types.ConfigEntry;
-import com.jeffdisher.laminar.utils.Assert;
 
 
 /**
  * The main class of a Laminar node.
  * Required command-line arguments:
- * -"--client" &lt;port&gt; - the port which will be bound for listening to client connections
- * -"--cluster" &lt;port&gt; - the port which will be bound for listening to connections from other cluster members
+ * -"--clientIp" &lt;ip&gt; - the IP address which will be bound for listening to client connections
+ * -"--clientPort" &lt;port&gt; - the port which will be bound for listening to client connections
+ * -"--clusterIp" &lt;port&gt; - the IP address which will be bound for listening to connections from other cluster members
+ * -"--clusterPort" &lt;port&gt; - the port which will be bound for listening to connections from other cluster members
  * -"--data" - the directory which will be used for storing incoming and committed stream files
  * Optional arguments:
  * -"--uuid" &lt;UUID&gt; - forces the UUID of the server to be this instead of randomly generated on start-up
  * NOTE:  Port settings will be made optional in the future (mostly just for testing multiple nodes on one machine).
- * NOTE:  At some point, forcing interfaces for binding will be enabled but not in the short-term.
  */
 public class Laminar {
 	public static void main(String[] args) {
@@ -36,8 +36,10 @@ public class Laminar {
 		// completed, and then the main thread transitions into its state management mode where it runs until shutdown.
 		
 		// Parse command-line options.
-		String clientPortString = parseOption(args, "--client");
-		String clusterPortString = parseOption(args, "--cluster");
+		String clientIpString = parseOption(args, "--clientIp");
+		String clientPortString = parseOption(args, "--clientPort");
+		String clusterIpString = parseOption(args, "--clusterIp");
+		String clusterPortString = parseOption(args, "--clusterPort");
 		String dataDirectoryName = parseOption(args, "--data");
 		String uuidString = parseOption(args, "--uuid");
 		
@@ -48,24 +50,13 @@ public class Laminar {
 		System.out.println("Laminar server starting up:  " + serverUuid);
 		
 		// Make sure we were given our required options.
-		if ((null == clientPortString) || (null == clusterPortString) || (null == dataDirectoryName)) {
-			failStart("Missing options!  Usage:  Laminar --client <client_port> --cluster <cluster_port> --data <data_directory_path>");
+		if ((null == clientIpString) || (null == clientPortString) || (null == clusterIpString) || (null == clusterPortString) || (null == dataDirectoryName)) {
+			failStart("Missing options!  Usage:  Laminar --clientIp <client_ip> --clientPort <client_port> --clusterIp <cluster_ip> --clusterPort <cluster_port> --data <data_directory_path>");
 		}
 		
-		// Parse ports.
-		int clientPort = Integer.parseInt(clientPortString);
-		int clusterPort = Integer.parseInt(clusterPortString);
-		
-		// Create the socket addresses we will use for initial binding and initial config.
-		InetAddress localhost;
-		try {
-			localhost = InetAddress.getLocalHost();
-		} catch (UnknownHostException e2) {
-			// If localhost can't be resolved, there is something wrong with the host.
-			throw Assert.unexpected(e2);
-		}
-		InetSocketAddress clientSocketAddress = ClusterConfig.cleanSocketAddress(new InetSocketAddress(localhost, clientPort));
-		InetSocketAddress clusterSocketAddress = ClusterConfig.cleanSocketAddress(new InetSocketAddress(localhost, clusterPort));
+		// Parse IPs and ports.
+		InetSocketAddress clientSocketAddress = _parseIpAndPort(clientIpString, clientPortString);
+		InetSocketAddress clusterSocketAddress = _parseIpAndPort(clusterIpString, clusterPortString);
 		
 		// Bind ports.
 		ServerSocketChannel clientSocket = null;
@@ -90,8 +81,8 @@ public class Laminar {
 		}
 		
 		// Log the successful start-up.
-		System.out.println("Client-facing socket bound: " + clientPort);
-		System.out.println("Cluster-facing socket bound: " + clusterPort);
+		System.out.println("Client-facing socket bound: " + clientSocketAddress);
+		System.out.println("Cluster-facing socket bound: " + clusterSocketAddress);
 		System.out.println("Data directory configured: " + dataDirectoryName);
 		
 		// By this point, all requirements of the system should be satisfied so create the subsystems.
@@ -184,5 +175,16 @@ public class Laminar {
 			}
 		}
 		return result;
+	}
+
+	private static InetSocketAddress _parseIpAndPort(String ipString, String portString) {
+		InetAddress ip = null;
+		try {
+			ip = InetAddress.getByName(ipString);
+		} catch (UnknownHostException e) {
+			failStart("Invalid hostname or IP provided: \"" + ipString + "\"");
+		}
+		int port = Integer.parseInt(portString);
+		return ClusterConfig.cleanSocketAddress(new InetSocketAddress(ip, port));
 	}
 }

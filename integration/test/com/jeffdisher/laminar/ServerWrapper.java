@@ -3,6 +3,7 @@ package com.jeffdisher.laminar;
 import java.io.File;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.net.InetAddress;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 
@@ -18,11 +19,19 @@ import com.jeffdisher.laminar.utils.Assert;
  */
 public class ServerWrapper {
 	public static ServerWrapper startedServerWrapper(String serverName, int clusterPort, int clientPort, File storagePath) throws IOException {
-		return _startedServerWrapper(serverName, null, clusterPort, clientPort, storagePath);
+		// We will use a default address, here.
+		String localhost = InetAddress.getLocalHost().getHostAddress();
+		return _startedServerWrapper(serverName, null, localhost, clusterPort, clientPort, storagePath);
 	}
 
 	public static ServerWrapper startedServerWrapperWithUuid(String serverName, UUID serverUuid, int clusterPort, int clientPort, File storagePath) throws IOException {
-		return _startedServerWrapper(serverName, serverUuid, clusterPort, clientPort, storagePath);
+		// We will use a default address, here.
+		String localhost = InetAddress.getLocalHost().getHostAddress();
+		return _startedServerWrapper(serverName, serverUuid, localhost, clusterPort, clientPort, storagePath);
+	}
+
+	public static ServerWrapper startedServerWrapperWithUuidAndIp(String serverName, UUID serverUuid, String ipToBindBoth, int clusterPort, int clientPort, File storagePath) throws IOException {
+		return _startedServerWrapper(serverName, serverUuid, ipToBindBoth, clusterPort, clientPort, storagePath);
 	}
 
 	public static ServerWrapper startedServerWrapperRaw(String[] args, OutputStream errorStream) throws IOException {
@@ -31,15 +40,19 @@ public class ServerWrapper {
 		return new ServerWrapper(wrapper);
 	}
 
-	private static ServerWrapper _startedServerWrapper(String serverName, UUID serverUuid, int clusterPort, int clientPort, File storagePath) throws IOException {
+	private static ServerWrapper _startedServerWrapper(String serverName, UUID serverUuid, String ipToBindBoth, int clusterPort, int clientPort, File storagePath) throws IOException {
 		String[] args = (null == serverUuid)
-				? new String[]{"--cluster", Integer.toString(clusterPort)
-						, "--client", Integer.toString(clientPort)
+				? new String[]{"--clusterIp", ipToBindBoth
+						, "--clusterPort", Integer.toString(clusterPort)
+						, "--clientIp", ipToBindBoth
+						, "--clientPort", Integer.toString(clientPort)
 						, "--data", storagePath.getAbsolutePath()
 						}
 				: new String[]{"--uuid", serverUuid.toString()
-						, "--cluster", Integer.toString(clusterPort)
-						, "--client", Integer.toString(clientPort)
+						, "--clusterIp", ipToBindBoth
+						, "--clusterPort", Integer.toString(clusterPort)
+						, "--clientIp", ipToBindBoth
+						, "--clientPort", Integer.toString(clientPort)
 						, "--data", storagePath.getAbsolutePath()
 						};
 		ProcessWrapper wrapper = ProcessWrapper.startedJavaProcess(serverName, _getJarPath(), args);
