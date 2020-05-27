@@ -34,5 +34,9 @@
 		<ant antfile="${basedir}/client/build.xml" inheritAll="false" target="test" />
 		<ant antfile="${basedir}/integration/build.xml" inheritAll="false" target="test" />
 	</target>
+
+	<target name="perf" >
+		<ant antfile="${basedir}/integration/build.xml" inheritAll="false" target="perf" />
+	</target>
 </project>
 

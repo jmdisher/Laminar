@@ -22,6 +22,7 @@
 
 	<!-- Set this property to run a specific test. -->
 	<property name="test" value="Test*" />
+	<property name="perf" value="Perf*" />
 	<property name="heap" value="32m"/>
 
 	<target name="all" >
@@ -45,6 +46,12 @@
 		<!-- We will build test in both "build" and "test" targets -->
 		<antcall target="build_test" />
 		<antcall target="run_test" />
+	</target>
+
+	<target name="perf" >
+		<!-- We will build test in this target, as well, since we depend on it -->
+		<antcall target="build_test" />
+		<antcall target="run_perf" />
 	</target>
 
 	<target name="build_src">
@@ -131,6 +138,27 @@
 			<formatter type="plain" usefile="false" />
 			<batchtest todir="${build.testreports}">
 				<fileset dir="${local.test}" includes="**/${test}.java" />
+			</batchtest>
+		</junit>
+	</target>
+
+	<target name="run_perf">
+		<echo message="Running performance in ${local.test}..."/>
+		<mkdir dir="${local.testreports}" />
+		<mkdir dir="${local.testdir}" />
+		<!-- We use JUnit as the entry-point for performance tests and we need to run them single-threaded so different perf tests don't fight over CPU resources. -->
+		<!-- We want "showoutput" since that is where we write out collected data (and this target is only run when explicitly requested). -->
+		<junit printsummary="on" showoutput="true" haltonfailure="true" fork="true" threads="1" maxmemory="${heap}" dir="${local.testdir}">
+			<classpath>
+				<pathelement location="${global.lib}/junit-4.12.jar"/>
+				<pathelement location="${global.lib}/hamcrest-all-1.3.jar"/>
+				<pathelement location="${global.products.LaminarClientLib}"/>
+				<pathelement location="${local.build.test}" />
+			</classpath>
+			<env key="WRAPPER_SERVER_JAR" value="${global.products.Laminar}" />
+			<formatter type="plain" usefile="false" />
+			<batchtest todir="${build.testreports}">
+				<fileset dir="${local.test}" includes="**/${perf}.java" />
 			</batchtest>
 		</junit>
 	</target>
