@@ -14,6 +14,7 @@
 
 	<target name="clean" >
 		<ant antfile="${basedir}/common/build.xml" inheritAll="false" target="clean" />
+		<ant antfile="${basedir}/bridge/build.xml" inheritAll="false" target="clean" />
 		<ant antfile="${basedir}/server/build.xml" inheritAll="false" target="clean" />
 		<ant antfile="${basedir}/client/build.xml" inheritAll="false" target="clean" />
 		<ant antfile="${basedir}/integration/build.xml" inheritAll="false" target="clean" />
@@ -23,6 +24,7 @@
 
 	<target name="build" >
 		<ant antfile="${basedir}/common/build.xml" inheritAll="false" target="build" />
+		<ant antfile="${basedir}/bridge/build.xml" inheritAll="false" target="build" />
 		<ant antfile="${basedir}/server/build.xml" inheritAll="false" target="build" />
 		<ant antfile="${basedir}/client/build.xml" inheritAll="false" target="build" />
 		<ant antfile="${basedir}/integration/build.xml" inheritAll="false" target="build" />
@@ -30,6 +32,7 @@
 
 	<target name="test" >
 		<ant antfile="${basedir}/common/build.xml" inheritAll="false" target="test" />
+		<ant antfile="${basedir}/bridge/build.xml" inheritAll="false" target="test" />
 		<ant antfile="${basedir}/server/build.xml" inheritAll="false" target="test" />
 		<ant antfile="${basedir}/client/build.xml" inheritAll="false" target="test" />
 		<ant antfile="${basedir}/integration/build.xml" inheritAll="false" target="test" />

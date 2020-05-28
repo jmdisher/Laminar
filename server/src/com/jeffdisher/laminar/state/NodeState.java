@@ -8,6 +8,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.function.Consumer;
 
+import com.jeffdisher.laminar.bridge.MutationExecutor;
 import com.jeffdisher.laminar.console.IConsoleManager;
 import com.jeffdisher.laminar.console.IConsoleManagerBackgroundCallbacks;
 import com.jeffdisher.laminar.disk.CommittedMutationRecord;
@@ -50,6 +51,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 	private IClusterManager _clusterManager;
 	private IDiskManager _diskManager;
 	private IConsoleManager _consoleManager;
+	private final MutationExecutor _mutationExecutor;
 
 	private RaftState _currentState;
 	private ConfigEntry _clusterLeader;
@@ -64,9 +66,6 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 	private SyncProgress _currentConfig;
 	// This map is usually empty but contains any ClusterConfigs which haven't yet committed (meaning they are part of joint consensus).
 	private final Map<Long, SyncProgress> _configsPendingCommit;
-	// Note that we need to describe active topics and next event by topic separately since topic event offsets don't reset when a topic is recreated.
-	private final Set<TopicName> _activeTopics;
-	private final Map<TopicName, Long> _nextEventOffsetByTopic;
 	// The offset of the mutation most recently committed to disk (used to keep both the clients and other nodes in sync).
 	private long _lastCommittedMutationOffset;
 	// The term number of the mutation most recently removed from in-flight (used to avoid conflict in sync).
@@ -96,9 +95,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		_currentConfig = new SyncProgress(initialConfig, Collections.singleton(_selfState));
 		_configsPendingCommit = new HashMap<>();
 		
-		// Global offsets are 1-indexed so the first one is 1L.
-		_activeTopics = new HashSet<>();
-		_nextEventOffsetByTopic = new HashMap<>();
+		_mutationExecutor = new MutationExecutor();
 		
 		_inFlightMutations = new InFlightMutations();
 		
@@ -128,6 +125,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 			StateSnapshot snapshot = new StateSnapshot(_currentConfig.config, _lastCommittedMutationOffset, _selfState.lastMutationOffsetReceived, _currentTermNumber);
 			next.accept(snapshot);
 		}
+		_mutationExecutor.stop();
 	}
 
 	public void registerClientManager(IClientManager clientManager) {
@@ -742,25 +740,6 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		}
 	}
 
-	private EventRecord _createEventAndIncrementOffset(TopicName topic, MutationRecord mutation) {
-		boolean isSynthetic = topic.string.isEmpty();
-		// By the time we get to this point, writes to invalid topics would be converted into a non-event.
-		// Destroy, however, is a special-case since it renders the topic invalid but we still want to use it for the destroy, itself.
-		if (MutationRecordType.DESTROY_TOPIC != mutation.type) {
-			Assert.assertTrue(isSynthetic || _activeTopics.contains(topic));
-		}
-		long offsetToPropose = isSynthetic
-				? 0L
-				: _nextEventOffsetByTopic.get(topic);
-		EventRecord event = Helpers.convertMutationToEvent(mutation, offsetToPropose);
-		// Note that mutations to synthetic topics cannot be converted to events.
-		Assert.assertTrue(isSynthetic == (null == event));
-		if (null != event) {
-			_nextEventOffsetByTopic.put(topic, offsetToPropose + 1L);
-		}
-		return event;
-	}
-
 	private void _considerBecomingFollower(ConfigEntry peer, long upstreamTermNumber) {
 		// If we are a LEADER, we will become follower if this message is from a leader in a later term.
 		// If we are a CANDIDATE, we will become follower if this message is from a leader in this term or later.
@@ -771,70 +750,9 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		}
 	}
 
-	private CommitInfo.Effect _executeMutationForCommit(MutationRecord mutation) {
-		// Main thread helper.
-		Assert.assertTrue(Thread.currentThread() == _mainThread);
-		
-		CommitInfo.Effect effect;
-		switch (mutation.type) {
-		case INVALID:
-			throw Assert.unimplemented("Invalid message type");
-		case CREATE_TOPIC: {
-			// We want to create the topic but should fail with Effect.INVALID if it is already there.
-			if (_activeTopics.contains(mutation.topic)) {
-				effect = CommitInfo.Effect.INVALID;
-			} else {
-				// 1-indexed.
-				_activeTopics.add(mutation.topic);
-				if (!_nextEventOffsetByTopic.containsKey(mutation.topic)) {
-					_nextEventOffsetByTopic.put(mutation.topic, 1L);
-				}
-				effect = CommitInfo.Effect.VALID;
-			}
-		}
-			break;
-		case DESTROY_TOPIC: {
-			// We want to destroy the topic but should fail with Effect.ERROR if it doesn't exist.
-			if (_activeTopics.contains(mutation.topic)) {
-				_activeTopics.remove(mutation.topic);
-				effect = CommitInfo.Effect.VALID;
-			} else {
-				effect = CommitInfo.Effect.INVALID;
-			}
-		}
-			break;
-		case PUT: {
-			// This is VALID if the topic exists but ERROR, if not.
-			effect = _activeTopics.contains(mutation.topic)
-					? CommitInfo.Effect.VALID
-					: CommitInfo.Effect.ERROR;
-		}
-			break;
-		case DELETE: {
-			// This is VALID if the topic exists but ERROR, if not.
-			effect = _activeTopics.contains(mutation.topic)
-					? CommitInfo.Effect.VALID
-					: CommitInfo.Effect.ERROR;
-		}
-			break;
-		case UPDATE_CONFIG: {
-			// We always just apply configs.
-			effect = CommitInfo.Effect.VALID;
-		}
-			break;
-		default:
-			throw Assert.unimplemented("Case missing in mutation processing");
-		}
-		return effect;
-	}
-
 	private void _executeAndCommit(MutationRecord mutation) {
 		TopicName topic = mutation.topic;
-		CommitInfo.Effect effect = _executeMutationForCommit(mutation);
-		// We only create an event if the effect was valid.
-		EventRecord event = (CommitInfo.Effect.VALID == effect)
-				? _createEventAndIncrementOffset(topic, mutation)
-				: null;
-		_commit(mutation, effect, topic, event);
+		MutationExecutor.ExecutionResult result = _mutationExecutor.execute(mutation);
+		_commit(mutation, result.effect, topic, result.event);
 	}
 }

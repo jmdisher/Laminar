@@ -6,6 +6,7 @@
 	<property name="global.products" value="${basedir}/../products"/>
 	<property name="global.jars.common" value="${global.jars}/common.jar"/>
 	<property name="global.jars.client" value="${global.jars}/client.jar"/>
+	<property name="global.jars.bridge" value="${global.jars}/bridge.jar"/>
 	<property name="global.jars.server" value="${global.jars}/server.jar"/>
 	<property name="global.products.Laminar" value="${global.products}/Laminar.jar"/>
 	<property name="global.products.LaminarClientLib" value="${global.products}/Laminar-clientlib.jar"/>
@@ -74,6 +75,7 @@
 		
 		<jar destfile="${global.products.Laminar}">
 			<zipfileset src="${global.jars.common}"/>
+			<zipfileset src="${global.jars.bridge}"/>
 			<zipfileset src="${global.jars.server}"/>
 			<manifest>
 				<attribute name="Main-Class" value="com.jeffdisher.laminar.Laminar"/>

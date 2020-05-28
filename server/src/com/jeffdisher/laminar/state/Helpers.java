@@ -3,15 +3,12 @@ package com.jeffdisher.laminar.state;
 import java.util.UUID;
 
 import com.jeffdisher.laminar.types.ClusterConfig;
-import com.jeffdisher.laminar.types.event.EventRecord;
 import com.jeffdisher.laminar.types.message.ClientMessage;
 import com.jeffdisher.laminar.types.message.ClientMessagePayload_Delete;
 import com.jeffdisher.laminar.types.message.ClientMessagePayload_Put;
 import com.jeffdisher.laminar.types.message.ClientMessagePayload_Topic;
 import com.jeffdisher.laminar.types.message.ClientMessagePayload_UpdateConfig;
 import com.jeffdisher.laminar.types.mutation.MutationRecord;
-import com.jeffdisher.laminar.types.mutation.MutationRecordPayload_Delete;
-import com.jeffdisher.laminar.types.mutation.MutationRecordPayload_Put;
 import com.jeffdisher.laminar.utils.Assert;
 
 
@@ -79,47 +76,5 @@ public class Helpers {
 			break;
 		}
 		return converted;
-	}
-
-	/**
-	 * Converts the given mutation into an EventRecord with eventOffsetToAssign as its local event offset.  Note that
-	 * this method will return null if the MutationRecord does not convert into an EventRecord.
-	 * 
-	 * @param mutation The MutationRecord to convert.
-	 * @param eventOffsetToAssign The local event offset to assign to the new EventRecord.
-	 * @return The corresponding EventRecord or null, if this MutationRecord doesn't convert into an EventRecord.
-	 */
-	public static EventRecord convertMutationToEvent(MutationRecord mutation, long eventOffsetToAssign) {
-		EventRecord eventToReturn;
-		switch (mutation.type) {
-		case INVALID:
-			throw Assert.unimplemented("Invalid message type");
-		case CREATE_TOPIC: {
-			eventToReturn = EventRecord.createTopic(mutation.termNumber, mutation.globalOffset, eventOffsetToAssign, mutation.clientId, mutation.clientNonce);
-		}
-			break;
-		case DESTROY_TOPIC: {
-			eventToReturn = EventRecord.destroyTopic(mutation.termNumber, mutation.globalOffset, eventOffsetToAssign, mutation.clientId, mutation.clientNonce);
-		}
-			break;
-		case PUT: {
-			MutationRecordPayload_Put payload = (MutationRecordPayload_Put)mutation.payload;
-			eventToReturn = EventRecord.put(mutation.termNumber, mutation.globalOffset, eventOffsetToAssign, mutation.clientId, mutation.clientNonce, payload.key, payload.value);
-		}
-			break;
-		case DELETE: {
-			MutationRecordPayload_Delete payload = (MutationRecordPayload_Delete)mutation.payload;
-			eventToReturn = EventRecord.delete(mutation.termNumber, mutation.globalOffset, eventOffsetToAssign, mutation.clientId, mutation.clientNonce, payload.key);
-		}
-			break;
-		case UPDATE_CONFIG: {
-			// There is no event for UPDATE_CONFIG.
-			eventToReturn = null;
-		}
-			break;
-		default:
-			throw Assert.unimplemented("Case missing in mutation processing");
-		}
-		return eventToReturn;
 	}
 }
