@@ -26,15 +26,6 @@ import com.jeffdisher.laminar.types.mutation.MutationRecordPayload_Put;
  */
 public class TestNodeState {
 	/**
-	 * Tests that attempting to start up a node before registering all the components in as assertion failure.
-	 */
-	@Test(expected=AssertionError.class)
-	public void testMissingPieces() throws Throwable {
-		NodeState state = new NodeState(_createConfig());
-		state.runUntilShutdown();
-	}
-
-	/**
 	 * Tests that we can immediately stop the NodeState after starting it.
 	 */
 	@Test
@@ -250,6 +241,10 @@ public class TestNodeState {
 		F<Long> startElection = test.clusterManager.get_mainEnterCandidateState();
 		runner.runVoid((snapshot) -> nodeState.mainReceivedRequestForVotes(upstreamEntry1, 2L, 0L, 0L));
 		Assert.assertEquals(2L, startElection.get().longValue());
+		
+		// Stop.
+		runner.runVoid((snapshot) -> test.nodeState.mainHandleStopCommand());
+		test.join();
 	}
 
 	/**
@@ -488,6 +483,10 @@ public class TestNodeState {
 		nextToLoad = runner.run((snapshot) -> nodeState.mainAppendMutationFromUpstream(upstreamEntry, tempRecord.termNumber, configChangeRecord.termNumber, tempRecord));
 		becomeFollower.get();
 		Assert.assertEquals(tempRecord.globalOffset + 1, nextToLoad);
+		
+		// Stop.
+		runner.runVoid((snapshot) -> test.nodeState.mainHandleStopCommand());
+		test.join();
 	}
 
 
