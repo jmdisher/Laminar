@@ -26,14 +26,16 @@ import com.jeffdisher.laminar.utils.Assert;
  * serialization/deserialization logic.
  */
 public class MutationRecord {
-	public static MutationRecord createTopic(long termNumber, long globalOffset, TopicName topic, UUID clientId, long clientNonce) {
+	public static MutationRecord createTopic(long termNumber, long globalOffset, TopicName topic, UUID clientId, long clientNonce, byte[] code, byte[] arguments) {
 		// The offsets must be positive.
 		Assert.assertTrue(termNumber > 0L);
 		Assert.assertTrue(globalOffset > 0L);
 		Assert.assertTrue(null != topic);
 		Assert.assertTrue(null != clientId);
 		Assert.assertTrue(clientNonce >= 0L);
-		return new MutationRecord(MutationRecordType.CREATE_TOPIC, termNumber, globalOffset, topic, clientId, clientNonce, MutationRecordPayload_Empty.create());
+		Assert.assertTrue(null != code);
+		Assert.assertTrue(null != arguments);
+		return new MutationRecord(MutationRecordType.CREATE_TOPIC, termNumber, globalOffset, topic, clientId, clientNonce, MutationRecordPayload_Create.create(code, arguments));
 	}
 
 	public static MutationRecord destroyTopic(long termNumber, long globalOffset, TopicName topic, UUID clientId, long clientNonce) {
@@ -119,7 +121,7 @@ public class MutationRecord {
 		case INVALID:
 			throw Assert.unimplemented("Handle invalid deserialization");
 		case CREATE_TOPIC:
-			payload = MutationRecordPayload_Empty.deserialize(buffer);
+			payload = MutationRecordPayload_Create.deserialize(buffer);
 			break;
 		case DESTROY_TOPIC:
 			payload = MutationRecordPayload_Empty.deserialize(buffer);

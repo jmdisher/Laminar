@@ -24,7 +24,7 @@ public class TestMutationExecutor {
 		UUID clientId = UUID.randomUUID();
 		MutationExecutor executor = new MutationExecutor();
 		
-		MutationExecutor.ExecutionResult result = executor.execute(MutationRecord.createTopic(termNumber, 2L, topic, clientId, 1L));
+		MutationExecutor.ExecutionResult result = executor.execute(MutationRecord.createTopic(termNumber, 2L, topic, clientId, 1L, new byte[0], new byte[0]));
 		Assert.assertEquals(CommitInfo.Effect.VALID, result.effect);
 		Assert.assertEquals(2L, result.events.get(0).globalOffset);
 		
@@ -46,7 +46,7 @@ public class TestMutationExecutor {
 		UUID clientId = UUID.randomUUID();
 		MutationExecutor executor = new MutationExecutor();
 		
-		MutationExecutor.ExecutionResult result = executor.execute(MutationRecord.createTopic(termNumber, 2L, topic, clientId, 1L));
+		MutationExecutor.ExecutionResult result = executor.execute(MutationRecord.createTopic(termNumber, 2L, topic, clientId, 1L, new byte[0], new byte[0]));
 		Assert.assertEquals(CommitInfo.Effect.VALID, result.effect);
 		Assert.assertEquals(2L, result.events.get(0).globalOffset);
 		

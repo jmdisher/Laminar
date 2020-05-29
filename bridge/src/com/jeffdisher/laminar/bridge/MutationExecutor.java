@@ -12,6 +12,7 @@ import com.jeffdisher.laminar.types.CommitInfo;
 import com.jeffdisher.laminar.types.TopicName;
 import com.jeffdisher.laminar.types.event.EventRecord;
 import com.jeffdisher.laminar.types.mutation.MutationRecord;
+import com.jeffdisher.laminar.types.mutation.MutationRecordPayload_Create;
 import com.jeffdisher.laminar.types.mutation.MutationRecordPayload_Delete;
 import com.jeffdisher.laminar.types.mutation.MutationRecordPayload_Put;
 import com.jeffdisher.laminar.utils.Assert;
@@ -54,7 +55,8 @@ public class MutationExecutor {
 			} else {
 				// 1-indexed.
 				_activeTopics.add(mutation.topic);
-				EventRecord eventToReturn = EventRecord.createTopic(mutation.termNumber, mutation.globalOffset, offsetToPropose, mutation.clientId, mutation.clientNonce);
+				MutationRecordPayload_Create payload = (MutationRecordPayload_Create)mutation.payload;
+				EventRecord eventToReturn = EventRecord.createTopic(mutation.termNumber, mutation.globalOffset, offsetToPropose, mutation.clientId, mutation.clientNonce, payload.code, payload.arguments);
 				result = new ExecutionResult(CommitInfo.Effect.VALID, Collections.singletonList(eventToReturn));
 			}
 		}

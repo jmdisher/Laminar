@@ -93,8 +93,8 @@ public class ClientMessage {
 	 * 
 	 * @return A new ClientMessage instance.
 	 */
-	public static ClientMessage createTopic(long nonce, TopicName topic) {
-		return new ClientMessage(ClientMessageType.CREATE_TOPIC, nonce, ClientMessagePayload_Topic.create(topic));
+	public static ClientMessage createTopic(long nonce, TopicName topic, byte[] code, byte[] arguments) {
+		return new ClientMessage(ClientMessageType.CREATE_TOPIC, nonce, ClientMessagePayload_Create.create(topic, code, arguments));
 	}
 
 	/**
@@ -215,7 +215,7 @@ public class ClientMessage {
 			payload = ClientMessagePayload_Empty.deserialize(buffer);
 			break;
 		case CREATE_TOPIC:
-			payload = ClientMessagePayload_Topic.deserialize(buffer);
+			payload = ClientMessagePayload_Create.deserialize(buffer);
 			break;
 		case DESTROY_TOPIC:
 			payload = ClientMessagePayload_Topic.deserialize(buffer);

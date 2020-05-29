@@ -52,7 +52,7 @@ public class TestNodeState {
 		
 		// Register the topic and say it was committed.
 		F<CommittedMutationRecord> preMutation = test.diskManager.get_commitMutation();
-		long mutationNumber = runner.run((snapshot) -> test.nodeState.mainHandleValidClientMessage(UUID.randomUUID(), ClientMessage.createTopic(1L, topic)));
+		long mutationNumber = runner.run((snapshot) -> test.nodeState.mainHandleValidClientMessage(UUID.randomUUID(), ClientMessage.createTopic(1L, topic, new byte[0], new byte[0])));
 		Assert.assertEquals(1L, mutationNumber);
 		runner.runVoid((snapshot) -> test.nodeState.mainMutationWasCommitted(preMutation.get()));
 		

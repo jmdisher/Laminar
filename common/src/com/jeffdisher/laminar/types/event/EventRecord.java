@@ -14,14 +14,16 @@ import com.jeffdisher.laminar.utils.Assert;
  * serialization/deserialization logic.
  */
 public class EventRecord {
-	public static EventRecord createTopic(long termNumber, long globalOffset, long localOffset, UUID clientId, long clientNonce) {
+	public static EventRecord createTopic(long termNumber, long globalOffset, long localOffset, UUID clientId, long clientNonce, byte[] code, byte[] arguments) {
 		// The offsets must be positive.
 		Assert.assertTrue(termNumber > 0L);
 		Assert.assertTrue(globalOffset > 0L);
 		Assert.assertTrue(localOffset > 0L);
 		Assert.assertTrue(null != clientId);
 		Assert.assertTrue(clientNonce >= 0L);
-		return new EventRecord(EventRecordType.CREATE_TOPIC, termNumber, globalOffset, localOffset, clientId, clientNonce, EventRecordPayload_Empty.create());
+		Assert.assertTrue(null != code);
+		Assert.assertTrue(null != arguments);
+		return new EventRecord(EventRecordType.CREATE_TOPIC, termNumber, globalOffset, localOffset, clientId, clientNonce, EventRecordPayload_Create.create(code, arguments));
 	}
 
 	public static EventRecord destroyTopic(long termNumber, long globalOffset, long localOffset, UUID clientId, long clientNonce) {
@@ -93,7 +95,7 @@ public class EventRecord {
 		case INVALID:
 			throw Assert.unimplemented("Handle invalid deserialization");
 		case CREATE_TOPIC:
-			payload = EventRecordPayload_Empty.deserialize(wrapper);
+			payload = EventRecordPayload_Create.deserialize(wrapper);
 			break;
 		case DESTROY_TOPIC:
 			payload = EventRecordPayload_Empty.deserialize(wrapper);
