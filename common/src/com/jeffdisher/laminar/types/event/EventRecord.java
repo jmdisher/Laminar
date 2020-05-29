@@ -15,8 +15,6 @@ import com.jeffdisher.laminar.utils.Assert;
  */
 public class EventRecord {
 	public static EventRecord createTopic(long termNumber, long globalOffset, long localOffset, UUID clientId, long clientNonce) {
-		// The localOffset can never be larger than the globalOffset (since it is per-topic while the global is for the input mutation stream).
-		Assert.assertTrue(globalOffset >= localOffset);
 		// The offsets must be positive.
 		Assert.assertTrue(termNumber > 0L);
 		Assert.assertTrue(globalOffset > 0L);
@@ -27,8 +25,6 @@ public class EventRecord {
 	}
 
 	public static EventRecord destroyTopic(long termNumber, long globalOffset, long localOffset, UUID clientId, long clientNonce) {
-		// The localOffset can never be larger than the globalOffset (since it is per-topic while the global is for the input mutation stream).
-		Assert.assertTrue(globalOffset >= localOffset);
 		// The offsets must be positive.
 		Assert.assertTrue(termNumber > 0L);
 		Assert.assertTrue(globalOffset > 0L);
@@ -39,8 +35,6 @@ public class EventRecord {
 	}
 
 	public static EventRecord put(long termNumber, long globalOffset, long localOffset, UUID clientId, long clientNonce, byte[] key, byte[] value) {
-		// The localOffset can never be larger than the globalOffset (since it is per-topic while the global is for the input mutation stream).
-		Assert.assertTrue(globalOffset >= localOffset);
 		// The offsets must be positive.
 		Assert.assertTrue(termNumber > 0L);
 		Assert.assertTrue(globalOffset > 0L);
@@ -53,8 +47,6 @@ public class EventRecord {
 	}
 
 	public static EventRecord delete(long termNumber, long globalOffset, long localOffset, UUID clientId, long clientNonce, byte[] key) {
-		// The localOffset can never be larger than the globalOffset (since it is per-topic while the global is for the input mutation stream).
-		Assert.assertTrue(globalOffset >= localOffset);
 		// The offsets must be positive.
 		Assert.assertTrue(termNumber > 0L);
 		Assert.assertTrue(globalOffset > 0L);

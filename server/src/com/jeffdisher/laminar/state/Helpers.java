@@ -63,6 +63,13 @@ public class Helpers {
 			converted = MutationRecord.put(termNumber, mutationOffsetToAssign, payload.topic, clientId, message.nonce, key, value);
 		}
 			break;
+		case STUTTER: {
+			ClientMessagePayload_Put payload = (ClientMessagePayload_Put)message.payload;
+			byte[] key = payload.key;
+			byte[] value = payload.value;
+			converted = MutationRecord.stutter(termNumber, mutationOffsetToAssign, payload.topic, clientId, message.nonce, key, value);
+		}
+			break;
 		case UPDATE_CONFIG: {
 			// Eventually, this will kick-off the joint consensus where we change to having 2 active configs until this commits on all nodes and the local disk.
 			// For now, however, we just send the received ack and enqueue this for commit (note that it DOES NOT generate an event - only a mutation).

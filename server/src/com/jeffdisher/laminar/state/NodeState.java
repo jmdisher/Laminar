@@ -3,6 +3,7 @@ package com.jeffdisher.laminar.state;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -491,6 +492,10 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 			Assert.assertTrue(null == overwrite);
 		}
 			break;
+		case STUTTER: {
+			// No state change on RECEIVE of this message type.
+		}
+			break;
 		default:
 			throw Assert.unimplemented("Case missing in mutation processing");
 		}
@@ -540,9 +545,9 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		return _selfState.lastMutationOffsetReceived;
 	}
 
-	private void _commit(MutationRecord mutation, CommitInfo.Effect effect, TopicName topic, EventRecord event) {
+	private void _commit(MutationRecord mutation, CommitInfo.Effect effect, TopicName topic, List<EventRecord> events) {
 		// (note that the event is null for certain meta-messages like UPDATE_CONFIG).
-		if (null != event) {
+		for (EventRecord event : events) {
 			_diskManager.commitEvent(topic, event);
 		}
 		CommittedMutationRecord committedMutationRecord = CommittedMutationRecord.create(mutation, effect);
@@ -753,6 +758,6 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 	private void _executeAndCommit(MutationRecord mutation) {
 		TopicName topic = mutation.topic;
 		MutationExecutor.ExecutionResult result = _mutationExecutor.execute(mutation);
-		_commit(mutation, result.effect, topic, result.event);
+		_commit(mutation, result.effect, topic, result.events);
 	}
 }

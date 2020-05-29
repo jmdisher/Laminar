@@ -56,6 +56,11 @@ public enum ClientMessageType {
 	 */
 	POISON,
 	/**
+	 * This message is just to test mapping a mutation to multiple events.  It is converted into a STUTTER mutation but
+	 * that converts to 2 PUT events.
+	 */
+	STUTTER,
+	/**
 	 * This message contains a new ClusterConfig object which the client wants to apply to the cluster.
 	 * Note that UPDATE_CONFIG may take a long time to commit and will block the commit of messages which follow until
 	 * the new cluster is synced and has committed the config change (requires a period of "joint consensus" in which

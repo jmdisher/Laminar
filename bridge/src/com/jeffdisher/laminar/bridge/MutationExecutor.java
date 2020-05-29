@@ -1,7 +1,10 @@
 package com.jeffdisher.laminar.bridge;
 
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedList;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -38,14 +41,14 @@ public class MutationExecutor {
 	public ExecutionResult execute(MutationRecord mutation) {
 		CommitInfo.Effect effect = _executeMutationForCommit(mutation);
 		// We only create an event if the effect was valid.
-		EventRecord event = (CommitInfo.Effect.VALID == effect)
-				? _createEventAndIncrementOffset(mutation.topic, mutation)
-				: null;
-		return new ExecutionResult(effect, event);
+		List<EventRecord> events = (CommitInfo.Effect.VALID == effect)
+				? _createEventsAndIncrementOffset(mutation.topic, mutation)
+				: Collections.emptyList();
+		return new ExecutionResult(effect, events);
 	}
 
 
-	private EventRecord _createEventAndIncrementOffset(TopicName topic, MutationRecord mutation) {
+	private List<EventRecord> _createEventsAndIncrementOffset(TopicName topic, MutationRecord mutation) {
 		boolean isSynthetic = topic.string.isEmpty();
 		// By the time we get to this point, writes to invalid topics would be converted into a non-event.
 		// Destroy, however, is a special-case since it renders the topic invalid but we still want to use it for the destroy, itself.
@@ -55,13 +58,11 @@ public class MutationExecutor {
 		long offsetToPropose = isSynthetic
 				? 0L
 				: _nextEventOffsetByTopic.get(topic);
-		EventRecord event = convertMutationToEvent(mutation, offsetToPropose);
+		List<EventRecord> events = convertMutationToEvents(mutation, offsetToPropose);
 		// Note that mutations to synthetic topics cannot be converted to events.
-		Assert.assertTrue(isSynthetic == (null == event));
-		if (null != event) {
-			_nextEventOffsetByTopic.put(topic, offsetToPropose + 1L);
-		}
-		return event;
+		Assert.assertTrue(isSynthetic == events.isEmpty());
+		_nextEventOffsetByTopic.put(topic, offsetToPropose + (long)events.size());
+		return events;
 	}
 
 	private CommitInfo.Effect _executeMutationForCommit(MutationRecord mutation) {
@@ -119,6 +120,16 @@ public class MutationExecutor {
 			effect = CommitInfo.Effect.VALID;
 		}
 			break;
+		case STUTTER: {
+			// This is VALID if the topic exists but ERROR, if not.
+			if (_activeTopics.contains(mutation.topic)) {
+				// For now, we always say valid.
+				effect = CommitInfo.Effect.VALID;
+			} else {
+				effect = CommitInfo.Effect.ERROR;
+			}
+		}
+			break;
 		default:
 			throw Assert.unimplemented("Case missing in mutation processing");
 		}
@@ -128,53 +139,67 @@ public class MutationExecutor {
 
 	public static class ExecutionResult {
 		public final CommitInfo.Effect effect;
-		public final EventRecord event;
+		public final List<EventRecord> events;
 		
-		public ExecutionResult(CommitInfo.Effect effect, EventRecord event) {
+		public ExecutionResult(CommitInfo.Effect effect, List<EventRecord> events) {
 			this.effect = effect;
-			this.event = event;
+			this.events = events;
 		}
 	}
 
 	/**
-	 * Converts the given mutation into an EventRecord with eventOffsetToAssign as its local event offset.  Note that
-	 * this method will return null if the MutationRecord does not convert into an EventRecord.
+	 * Converts the given mutation into a list of EventRecord instances with initialEventOffsetToAssign as the first
+	 * local event offset (the following events incrementing from here).  Note that this method will return an empty
+	 * list if the MutationRecord does not convert into an EventRecord.
 	 * 
 	 * @param mutation The MutationRecord to convert.
-	 * @param eventOffsetToAssign The local event offset to assign to the new EventRecord.
-	 * @return The corresponding EventRecord or null, if this MutationRecord doesn't convert into an EventRecord.
+	 * @param initialEventOffsetToAssign The local event offset to assign to the new first EventRecord in the list.
+	 * @return The corresponding List of EventRecord instances, could be empty if this MutationRecord doesn't convert
+	 * into an EventRecord.
 	 */
-	public static EventRecord convertMutationToEvent(MutationRecord mutation, long eventOffsetToAssign) {
-		EventRecord eventToReturn;
+	public static List<EventRecord> convertMutationToEvents(MutationRecord mutation, long initialEventOffsetToAssign) {
+		List<EventRecord> eventsToReturn = new LinkedList<>();
 		switch (mutation.type) {
 		case INVALID:
 			throw Assert.unimplemented("Invalid message type");
 		case CREATE_TOPIC: {
-			eventToReturn = EventRecord.createTopic(mutation.termNumber, mutation.globalOffset, eventOffsetToAssign, mutation.clientId, mutation.clientNonce);
+			EventRecord eventToReturn = EventRecord.createTopic(mutation.termNumber, mutation.globalOffset, initialEventOffsetToAssign, mutation.clientId, mutation.clientNonce);
+			eventsToReturn.add(eventToReturn);
 		}
 			break;
 		case DESTROY_TOPIC: {
-			eventToReturn = EventRecord.destroyTopic(mutation.termNumber, mutation.globalOffset, eventOffsetToAssign, mutation.clientId, mutation.clientNonce);
+			EventRecord eventToReturn = EventRecord.destroyTopic(mutation.termNumber, mutation.globalOffset, initialEventOffsetToAssign, mutation.clientId, mutation.clientNonce);
+			eventsToReturn.add(eventToReturn);
 		}
 			break;
 		case PUT: {
 			MutationRecordPayload_Put payload = (MutationRecordPayload_Put)mutation.payload;
-			eventToReturn = EventRecord.put(mutation.termNumber, mutation.globalOffset, eventOffsetToAssign, mutation.clientId, mutation.clientNonce, payload.key, payload.value);
+			EventRecord eventToReturn = EventRecord.put(mutation.termNumber, mutation.globalOffset, initialEventOffsetToAssign, mutation.clientId, mutation.clientNonce, payload.key, payload.value);
+			eventsToReturn.add(eventToReturn);
 		}
 			break;
 		case DELETE: {
 			MutationRecordPayload_Delete payload = (MutationRecordPayload_Delete)mutation.payload;
-			eventToReturn = EventRecord.delete(mutation.termNumber, mutation.globalOffset, eventOffsetToAssign, mutation.clientId, mutation.clientNonce, payload.key);
+			EventRecord eventToReturn = EventRecord.delete(mutation.termNumber, mutation.globalOffset, initialEventOffsetToAssign, mutation.clientId, mutation.clientNonce, payload.key);
+			eventsToReturn.add(eventToReturn);
 		}
 			break;
 		case UPDATE_CONFIG: {
 			// There is no event for UPDATE_CONFIG.
-			eventToReturn = null;
+		}
+			break;
+		case STUTTER: {
+			// Stutter is a special-case as it produces 2 of the same PUT events.
+			MutationRecordPayload_Put payload = (MutationRecordPayload_Put)mutation.payload;
+			EventRecord eventToReturn1 = EventRecord.put(mutation.termNumber, mutation.globalOffset, initialEventOffsetToAssign, mutation.clientId, mutation.clientNonce, payload.key, payload.value);
+			eventsToReturn.add(eventToReturn1);
+			EventRecord eventToReturn2 = EventRecord.put(mutation.termNumber, mutation.globalOffset, initialEventOffsetToAssign + 1, mutation.clientId, mutation.clientNonce, payload.key, payload.value);
+			eventsToReturn.add(eventToReturn2);
 		}
 			break;
 		default:
 			throw Assert.unimplemented("Case missing in mutation processing");
 		}
-		return eventToReturn;
+		return eventsToReturn;
 	}
 }

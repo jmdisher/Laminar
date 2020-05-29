@@ -81,6 +81,18 @@ public class MutationRecord {
 		return new MutationRecord(MutationRecordType.UPDATE_CONFIG, termNumber, globalOffset, topic, clientId, clientNonce, MutationRecordPayload_Config.create(config));
 	}
 
+	public static MutationRecord stutter(long termNumber, long globalOffset, TopicName topic, UUID clientId, long clientNonce, byte[] key, byte[] value) {
+		// The offsets must be positive.
+		Assert.assertTrue(termNumber > 0L);
+		Assert.assertTrue(globalOffset > 0L);
+		Assert.assertTrue(null != topic);
+		Assert.assertTrue(null != clientId);
+		Assert.assertTrue(clientNonce >= 0L);
+		Assert.assertTrue(null != key);
+		Assert.assertTrue(null != value);
+		return new MutationRecord(MutationRecordType.STUTTER, termNumber, globalOffset, topic, clientId, clientNonce, MutationRecordPayload_Put.create(key, value));
+	}
+
 	public static MutationRecord deserialize(byte[] serialized) {
 		ByteBuffer wrapper = ByteBuffer.wrap(serialized);
 		return _deserializeFrom(wrapper);
@@ -120,6 +132,9 @@ public class MutationRecord {
 			break;
 		case UPDATE_CONFIG:
 			payload = MutationRecordPayload_Config.deserialize(buffer);
+			break;
+		case STUTTER:
+			payload = MutationRecordPayload_Put.deserialize(buffer);
 			break;
 		default:
 			throw Assert.unreachable("Unmatched deserialization type");

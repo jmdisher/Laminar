@@ -149,6 +149,23 @@ public class ClientMessage {
 	}
 
 	/**
+	 * Creates a stutter message.  This message is purely for testing and will either be removed or further restricted,
+	 * later on.
+	 * A stutter message is converted into a stutter mutation but any server which executes and commits it will create
+	 * 2 PUT events from it.  It exists to test that multiple events can be generated from a single mutation.
+	 * 
+	 * @param nonce Per-client nonce.
+	 * @param topic The topic to which this message must be posted.
+	 * @param key A message key.
+	 * @param value A message value.
+	 * @return A new ClientMessage instance.
+	 */
+	public static ClientMessage stutter(long nonce, TopicName topic, byte[] key, byte[] value) {
+		// Note that stutter uses the PUT payload and is converted to a STUTTER mutation, on the lead server, but 2 PUT events, when committed.
+		return new ClientMessage(ClientMessageType.STUTTER, nonce, ClientMessagePayload_Put.create(topic, key, value));
+	}
+
+	/**
 	 * Creates a message to update the cluster config.  This message is different from most others in that it is never
 	 * written to a local topic and is only ever a global mutation.  This means that listeners will never see it through
 	 * their normal polling paths, only through special event synthesis.
@@ -210,6 +227,9 @@ public class ClientMessage {
 			payload = ClientMessagePayload_Delete.deserialize(buffer);
 			break;
 		case POISON:
+			payload = ClientMessagePayload_Put.deserialize(buffer);
+			break;
+		case STUTTER:
 			payload = ClientMessagePayload_Put.deserialize(buffer);
 			break;
 		case UPDATE_CONFIG:

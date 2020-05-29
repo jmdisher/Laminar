@@ -565,6 +565,49 @@ public class TestClientsAndListeners {
 		Assert.assertEquals(0, server1.stop());
 	}
 
+	/**
+	 * Tests that a STUTTER message will generate 2 PUT events which a listener can observe.
+	 */
+	@Test
+	public void testStutterAndListener() throws Throwable {
+		TopicName topic = TopicName.fromString("test");
+		byte[] message = "Hello World!".getBytes();
+		// Here, we start up, connect a client, send one message, wait for it to commit, observe listener behaviour, then shut everything down.
+		
+		ServerWrapper wrapper = ServerWrapper.startedServerWrapper("testStutterAndListener", 2003, 2002, new File("/tmp/laminar"));
+		InetSocketAddress address = new InetSocketAddress(InetAddress.getLocalHost(), 2002);
+		
+		try (ClientConnection client = ClientConnection.open(address)) {
+			Assert.assertEquals(CommitInfo.Effect.VALID, client.sendCreateTopic(topic).waitForCommitted().effect);
+			ClientResult result = client.sendStutter(topic, new byte[0], message);
+			result.waitForReceived();
+			CommitInfo info = result.waitForCommitted();
+			Assert.assertEquals(CommitInfo.Effect.VALID, info.effect);
+			long commitOffset = info.mutationOffset;
+			Assert.assertEquals(2L, commitOffset);
+			Assert.assertEquals(CommitInfo.Effect.VALID, client.sendDestroyTopic(topic).waitForCommitted().effect);
+		}
+		
+		// Start a listener and verify we see the create and both events from the stutter and the destroy.
+		try (ListenerConnection listener = ListenerConnection.open(address, topic, 0L)) {
+			EventRecord createEvent = listener.pollForNextEvent();
+			Assert.assertEquals(1L, createEvent.globalOffset);
+			Assert.assertEquals(1L, createEvent.localOffset);
+			EventRecord stutter1 = listener.pollForNextEvent();
+			Assert.assertEquals(2L, stutter1.globalOffset);
+			Assert.assertEquals(2L, stutter1.localOffset);
+			EventRecord stutter2 = listener.pollForNextEvent();
+			Assert.assertEquals(2L, stutter2.globalOffset);
+			Assert.assertEquals(3L, stutter2.localOffset);
+			EventRecord destroyEvent = listener.pollForNextEvent();
+			Assert.assertEquals(3L, destroyEvent.globalOffset);
+			Assert.assertEquals(4L, destroyEvent.localOffset);
+		}
+		
+		// Shut down.
+		Assert.assertEquals(0, wrapper.stop());
+	}
+
 
 	private void _sendMessage(SocketChannel socket, ClientMessage message) throws IOException {
 		byte[] serialized = message.serialize();

@@ -29,4 +29,8 @@ public enum MutationRecordType {
 	 * The payload of this message is the serialized new config.
 	 */
 	UPDATE_CONFIG,
+	/**
+	 * The payload for this is the same as PUT.  The unique thing about this is that executing it creates 2 PUT events.
+	 */
+	STUTTER,
 }
