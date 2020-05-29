@@ -12,19 +12,19 @@ public enum EventRecordType {
 	/**
 	 * Creates the named topic, generating an INVALID effect if it already exists.
 	 */
-	CREATE_TOPIC,
+	TOPIC_CREATE,
 	/**
 	 * Destroys the named topic, generating an INVALID effect if it doesn't exist.
 	 */
-	DESTROY_TOPIC,
+	TOPIC_DESTROY,
 	/**
 	 * Encodes a key and value as raw byte[].
 	 */
-	PUT,
+	KEY_PUT,
 	/**
 	 * Encodes a key as raw byte[].
 	 */
-	DELETE,
+	KEY_DELETE,
 	/**
 	 * A synthetic EventRecord type which is never persisted or directly produced by a MutationRecord (although it is
 	 * indirectly created, in some cases) and only used over-the-wire when communicating with listeners.

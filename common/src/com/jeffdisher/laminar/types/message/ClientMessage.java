@@ -94,7 +94,7 @@ public class ClientMessage {
 	 * @return A new ClientMessage instance.
 	 */
 	public static ClientMessage createTopic(long nonce, TopicName topic, byte[] code, byte[] arguments) {
-		return new ClientMessage(ClientMessageType.CREATE_TOPIC, nonce, ClientMessagePayload_Create.create(topic, code, arguments));
+		return new ClientMessage(ClientMessageType.TOPIC_CREATE, nonce, ClientMessagePayload_TopicCreate.create(topic, code, arguments));
 	}
 
 	/**
@@ -103,7 +103,7 @@ public class ClientMessage {
 	 * @return A new ClientMessage instance.
 	 */
 	public static ClientMessage destroyTopic(long nonce, TopicName topic) {
-		return new ClientMessage(ClientMessageType.DESTROY_TOPIC, nonce, ClientMessagePayload_Topic.create(topic));
+		return new ClientMessage(ClientMessageType.TOPIC_DESTROY, nonce, ClientMessagePayload_TopicDestroy.create(topic));
 	}
 
 	/**
@@ -116,7 +116,7 @@ public class ClientMessage {
 	 * @return A new ClientMessage instance.
 	 */
 	public static ClientMessage put(long nonce, TopicName topic, byte[] key, byte[] value) {
-		return new ClientMessage(ClientMessageType.PUT, nonce, ClientMessagePayload_Put.create(topic, key, value));
+		return new ClientMessage(ClientMessageType.KEY_PUT, nonce, ClientMessagePayload_KeyPut.create(topic, key, value));
 	}
 
 	/**
@@ -128,7 +128,7 @@ public class ClientMessage {
 	 * @return A new ClientMessage instance.
 	 */
 	public static ClientMessage delete(long nonce, TopicName topic, byte[] key) {
-		return new ClientMessage(ClientMessageType.DELETE, nonce, ClientMessagePayload_Delete.create(topic, key));
+		return new ClientMessage(ClientMessageType.KEY_DELETE, nonce, ClientMessagePayload_KeyDelete.create(topic, key));
 	}
 
 	/**
@@ -145,7 +145,7 @@ public class ClientMessage {
 	 */
 	public static ClientMessage poison(long nonce, TopicName topic, byte[] key, byte[] value) {
 		// Note that poison uses the PUT payload and is converted to a PUT message, on the lead server.
-		return new ClientMessage(ClientMessageType.POISON, nonce, ClientMessagePayload_Put.create(topic, key, value));
+		return new ClientMessage(ClientMessageType.POISON, nonce, ClientMessagePayload_KeyPut.create(topic, key, value));
 	}
 
 	/**
@@ -162,7 +162,7 @@ public class ClientMessage {
 	 */
 	public static ClientMessage stutter(long nonce, TopicName topic, byte[] key, byte[] value) {
 		// Note that stutter uses the PUT payload and is converted to a STUTTER mutation, on the lead server, but 2 PUT events, when committed.
-		return new ClientMessage(ClientMessageType.STUTTER, nonce, ClientMessagePayload_Put.create(topic, key, value));
+		return new ClientMessage(ClientMessageType.STUTTER, nonce, ClientMessagePayload_KeyPut.create(topic, key, value));
 	}
 
 	/**
@@ -178,7 +178,7 @@ public class ClientMessage {
 	 * @return A new ClientMessage instance.
 	 */
 	public static ClientMessage updateConfig(long nonce, ClusterConfig config) {
-		return new ClientMessage(ClientMessageType.UPDATE_CONFIG, nonce, ClientMessagePayload_UpdateConfig.create(config));
+		return new ClientMessage(ClientMessageType.CONFIG_CHANGE, nonce, ClientMessagePayload_ConfigChange.create(config));
 	}
 
 	/**
@@ -214,26 +214,26 @@ public class ClientMessage {
 		case GET_SELF_CONFIG:
 			payload = ClientMessagePayload_Empty.deserialize(buffer);
 			break;
-		case CREATE_TOPIC:
-			payload = ClientMessagePayload_Create.deserialize(buffer);
+		case TOPIC_CREATE:
+			payload = ClientMessagePayload_TopicCreate.deserialize(buffer);
 			break;
-		case DESTROY_TOPIC:
-			payload = ClientMessagePayload_Topic.deserialize(buffer);
+		case TOPIC_DESTROY:
+			payload = ClientMessagePayload_TopicDestroy.deserialize(buffer);
 			break;
-		case PUT:
-			payload = ClientMessagePayload_Put.deserialize(buffer);
+		case KEY_PUT:
+			payload = ClientMessagePayload_KeyPut.deserialize(buffer);
 			break;
-		case DELETE:
-			payload = ClientMessagePayload_Delete.deserialize(buffer);
+		case KEY_DELETE:
+			payload = ClientMessagePayload_KeyDelete.deserialize(buffer);
 			break;
 		case POISON:
-			payload = ClientMessagePayload_Put.deserialize(buffer);
+			payload = ClientMessagePayload_KeyPut.deserialize(buffer);
 			break;
 		case STUTTER:
-			payload = ClientMessagePayload_Put.deserialize(buffer);
+			payload = ClientMessagePayload_KeyPut.deserialize(buffer);
 			break;
-		case UPDATE_CONFIG:
-			payload = ClientMessagePayload_UpdateConfig.deserialize(buffer);
+		case CONFIG_CHANGE:
+			payload = ClientMessagePayload_ConfigChange.deserialize(buffer);
 			break;
 		default:
 			throw Assert.unreachable("Unmatched deserialization type");

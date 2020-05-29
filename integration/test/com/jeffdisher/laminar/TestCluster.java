@@ -20,7 +20,7 @@ import com.jeffdisher.laminar.types.TopicName;
 import com.jeffdisher.laminar.types.event.EventRecord;
 import com.jeffdisher.laminar.types.event.EventRecordType;
 import com.jeffdisher.laminar.types.message.ClientMessage;
-import com.jeffdisher.laminar.types.payload.Payload_Put;
+import com.jeffdisher.laminar.types.payload.Payload_KeyPut;
 import com.jeffdisher.laminar.utils.TestingHelpers;
 
 
@@ -608,9 +608,9 @@ public class TestCluster {
 			for (int i = 0; i < 40; ++i) {
 				// Skip the topic creation.
 				int index = i + 1;
-				Assert.assertEquals((byte)i, ((Payload_Put)records1[index].payload).value[0]);
-				Assert.assertEquals((byte)i, ((Payload_Put)records4[index].payload).value[0]);
-				Assert.assertEquals((byte)i, ((Payload_Put)records5[index].payload).value[0]);
+				Assert.assertEquals((byte)i, ((Payload_KeyPut)records1[index].payload).value[0]);
+				Assert.assertEquals((byte)i, ((Payload_KeyPut)records4[index].payload).value[0]);
+				Assert.assertEquals((byte)i, ((Payload_KeyPut)records5[index].payload).value[0]);
 			}
 		} finally {
 			// Shut down.
@@ -689,11 +689,11 @@ public class TestCluster {
 			for (int i = 0; i < 40; ++i) {
 				int index = i + 1;
 				
-				Assert.assertEquals((byte)i, ((Payload_Put)records1[index].payload).value[0]);
-				Assert.assertEquals((byte)i, ((Payload_Put)records2[index].payload).value[0]);
-				Assert.assertEquals((byte)i, ((Payload_Put)records3[index].payload).value[0]);
-				Assert.assertEquals((byte)i, ((Payload_Put)records4[index].payload).value[0]);
-				Assert.assertEquals((byte)i, ((Payload_Put)records5[index].payload).value[0]);
+				Assert.assertEquals((byte)i, ((Payload_KeyPut)records1[index].payload).value[0]);
+				Assert.assertEquals((byte)i, ((Payload_KeyPut)records2[index].payload).value[0]);
+				Assert.assertEquals((byte)i, ((Payload_KeyPut)records3[index].payload).value[0]);
+				Assert.assertEquals((byte)i, ((Payload_KeyPut)records4[index].payload).value[0]);
+				Assert.assertEquals((byte)i, ((Payload_KeyPut)records5[index].payload).value[0]);
 			}
 		} finally {
 			// Shut down.
@@ -804,9 +804,9 @@ public class TestCluster {
 			
 			// Now, attach a listener the follower and make sure we see the create and the 2 puts.
 			try (ListenerConnection leaderImplicit = ListenerConnection.open(followerClientAddress, topic, 0L)) {
-				Assert.assertEquals(EventRecordType.CREATE_TOPIC, leaderImplicit.pollForNextEvent().type);
-				Assert.assertEquals(EventRecordType.PUT, leaderImplicit.pollForNextEvent().type);
-				Assert.assertEquals(EventRecordType.PUT, leaderImplicit.pollForNextEvent().type);
+				Assert.assertEquals(EventRecordType.TOPIC_CREATE, leaderImplicit.pollForNextEvent().type);
+				Assert.assertEquals(EventRecordType.KEY_PUT, leaderImplicit.pollForNextEvent().type);
+				Assert.assertEquals(EventRecordType.KEY_PUT, leaderImplicit.pollForNextEvent().type);
 			}
 		} finally {
 			// Shut down.

@@ -37,19 +37,19 @@ public enum ClientMessageType {
 	/**
 	 * Creates the named topic, generating an INVALID effect if it already exists.
 	 */
-	CREATE_TOPIC,
+	TOPIC_CREATE,
 	/**
 	 * Destroys the named topic, generating an INVALID effect if it doesn't exist.
 	 */
-	DESTROY_TOPIC,
+	TOPIC_DESTROY,
 	/**
 	 * Encodes a key and value as raw byte[].
 	 */
-	PUT,
+	KEY_PUT,
 	/**
 	 * Encodes a key as raw byte[].
 	 */
-	DELETE,
+	KEY_DELETE,
 	/**
 	 * This message type is for stress-testing reconnect.  When a server receives it, it will disconnect all clients
 	 * and listeners.
@@ -62,9 +62,9 @@ public enum ClientMessageType {
 	STUTTER,
 	/**
 	 * This message contains a new ClusterConfig object which the client wants to apply to the cluster.
-	 * Note that UPDATE_CONFIG may take a long time to commit and will block the commit of messages which follow until
+	 * Note that CONFIG_CHANGE may take a long time to commit and will block the commit of messages which follow until
 	 * the new cluster is synced and has committed the config change (requires a period of "joint consensus" in which
 	 * the cluster is slower than when running the old or new config).
 	 */
-	UPDATE_CONFIG,
+	CONFIG_CHANGE,
 }

@@ -9,20 +9,20 @@ import com.jeffdisher.laminar.types.ClusterConfig;
  * Contains:
  * -config (ClusterConfig)
  */
-public class Payload_Config implements IPayload {
-	public static Payload_Config create(ClusterConfig config) {
-		return new Payload_Config(config);
+public class Payload_ConfigChange implements IPayload {
+	public static Payload_ConfigChange create(ClusterConfig config) {
+		return new Payload_ConfigChange(config);
 	}
 
-	public static Payload_Config deserialize(ByteBuffer serialized) {
+	public static Payload_ConfigChange deserialize(ByteBuffer serialized) {
 		ClusterConfig config = ClusterConfig.deserializeFrom(serialized);
-		return new Payload_Config(config);
+		return new Payload_ConfigChange(config);
 	}
 
 
 	public final ClusterConfig config;
 	
-	private Payload_Config(ClusterConfig config) {
+	private Payload_ConfigChange(ClusterConfig config) {
 		this.config = config;
 	}
 

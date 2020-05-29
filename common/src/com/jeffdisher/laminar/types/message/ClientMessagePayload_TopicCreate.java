@@ -7,18 +7,18 @@ import com.jeffdisher.laminar.utils.MiscHelpers;
 
 
 /**
- * A payload for CREATE messages which pass TopicName and byte[] instances for code and arguments.
+ * A payload for TOPIC_CREATE messages which pass TopicName and byte[] instances for code and arguments.
  */
-public class ClientMessagePayload_Create implements IClientMessagePayload {
-	public static ClientMessagePayload_Create create(TopicName topic, byte[] code, byte[] arguments) {
-		return new ClientMessagePayload_Create(topic, code, arguments);
+public class ClientMessagePayload_TopicCreate implements IClientMessagePayload {
+	public static ClientMessagePayload_TopicCreate create(TopicName topic, byte[] code, byte[] arguments) {
+		return new ClientMessagePayload_TopicCreate(topic, code, arguments);
 	}
 
-	public static ClientMessagePayload_Create deserialize(ByteBuffer serialized) {
+	public static ClientMessagePayload_TopicCreate deserialize(ByteBuffer serialized) {
 		TopicName topic = TopicName.deserializeFrom(serialized);
 		byte[] code = MiscHelpers.readSizedBytes(serialized);
 		byte[] arguments = MiscHelpers.readSizedBytes(serialized);
-		return new ClientMessagePayload_Create(topic, code, arguments);
+		return new ClientMessagePayload_TopicCreate(topic, code, arguments);
 	}
 
 
@@ -26,7 +26,7 @@ public class ClientMessagePayload_Create implements IClientMessagePayload {
 	public final byte[] code;
 	public final byte[] arguments;
 
-	private ClientMessagePayload_Create(TopicName topic, byte[] code, byte[] arguments) {
+	private ClientMessagePayload_TopicCreate(TopicName topic, byte[] code, byte[] arguments) {
 		this.topic = topic;
 		this.code = code;
 		this.arguments = arguments;

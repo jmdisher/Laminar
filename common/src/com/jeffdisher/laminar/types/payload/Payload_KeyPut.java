@@ -10,22 +10,22 @@ import com.jeffdisher.laminar.utils.MiscHelpers;
  * -key (byte[])
  * -value (byte[])
  */
-public class Payload_Put implements IPayload {
-	public static Payload_Put create(byte[] key, byte[] value) {
-		return new Payload_Put(key, value);
+public class Payload_KeyPut implements IPayload {
+	public static Payload_KeyPut create(byte[] key, byte[] value) {
+		return new Payload_KeyPut(key, value);
 	}
 
-	public static Payload_Put deserialize(ByteBuffer serialized) {
+	public static Payload_KeyPut deserialize(ByteBuffer serialized) {
 		byte[] key = MiscHelpers.readSizedBytes(serialized);
 		byte[] value = MiscHelpers.readSizedBytes(serialized);
-		return new Payload_Put(key, value);
+		return new Payload_KeyPut(key, value);
 	}
 
 
 	public final byte[] key;
 	public final byte[] value;
 	
-	private Payload_Put(byte[] key, byte[] value) {
+	private Payload_KeyPut(byte[] key, byte[] value) {
 		this.key = key;
 		this.value = value;
 	}

@@ -21,9 +21,9 @@ import com.jeffdisher.laminar.types.ConfigEntry;
 import com.jeffdisher.laminar.types.TopicName;
 import com.jeffdisher.laminar.types.event.EventRecord;
 import com.jeffdisher.laminar.types.message.ClientMessage;
-import com.jeffdisher.laminar.types.message.ClientMessagePayload_Put;
+import com.jeffdisher.laminar.types.message.ClientMessagePayload_KeyPut;
 import com.jeffdisher.laminar.types.mutation.MutationRecord;
-import com.jeffdisher.laminar.types.payload.Payload_Put;
+import com.jeffdisher.laminar.types.payload.Payload_KeyPut;
 import com.jeffdisher.laminar.types.response.ClientResponse;
 import com.jeffdisher.laminar.types.response.ClientResponsePayload_ClusterConfig;
 import com.jeffdisher.laminar.types.response.ClientResponsePayload_ConfigEntry;
@@ -87,8 +87,8 @@ public class TestClientManager {
 		Assert.assertNull(noNode);
 		Assert.assertEquals(message.type, output.type);
 		Assert.assertEquals(message.nonce, output.nonce);
-		Assert.assertArrayEquals(((ClientMessagePayload_Put)message.payload).key, ((ClientMessagePayload_Put)output.payload).key);
-		Assert.assertArrayEquals(((ClientMessagePayload_Put)message.payload).value, ((ClientMessagePayload_Put)output.payload).value);
+		Assert.assertArrayEquals(((ClientMessagePayload_KeyPut)message.payload).key, ((ClientMessagePayload_KeyPut)output.payload).key);
+		Assert.assertArrayEquals(((ClientMessagePayload_KeyPut)message.payload).value, ((ClientMessagePayload_KeyPut)output.payload).value);
 		
 		manager.stopAndWaitForTermination();
 		socket.close();
@@ -204,8 +204,8 @@ public class TestClientManager {
 			Assert.assertEquals(record.globalOffset, deserialized.globalOffset);
 			Assert.assertEquals(record.localOffset, deserialized.localOffset);
 			Assert.assertEquals(record.clientId, deserialized.clientId);
-			Assert.assertArrayEquals(((Payload_Put)record.payload).key, ((Payload_Put)deserialized.payload).key);
-			Assert.assertArrayEquals(((Payload_Put)record.payload).value, ((Payload_Put)deserialized.payload).value);
+			Assert.assertArrayEquals(((Payload_KeyPut)record.payload).key, ((Payload_KeyPut)deserialized.payload).key);
+			Assert.assertArrayEquals(((Payload_KeyPut)record.payload).value, ((Payload_KeyPut)deserialized.payload).value);
 		}
 		NetworkManager.NodeToken noNode = callbacks.runRunnableAndGetNewClientNode(manager);
 		Assert.assertNull(noNode);

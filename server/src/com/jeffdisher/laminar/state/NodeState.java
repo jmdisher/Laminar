@@ -28,7 +28,7 @@ import com.jeffdisher.laminar.types.message.ClientMessage;
 import com.jeffdisher.laminar.types.message.ClientMessageType;
 import com.jeffdisher.laminar.types.mutation.MutationRecord;
 import com.jeffdisher.laminar.types.mutation.MutationRecordType;
-import com.jeffdisher.laminar.types.payload.Payload_Config;
+import com.jeffdisher.laminar.types.payload.Payload_ConfigChange;
 import com.jeffdisher.laminar.utils.Assert;
 import com.jeffdisher.laminar.utils.UninterruptibleQueue;
 
@@ -450,24 +450,24 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		switch (mutation.type) {
 		case INVALID:
 			throw Assert.unimplemented("Invalid message type");
-		case CREATE_TOPIC: {
+		case TOPIC_CREATE: {
 			// No state change on RECEIVE of this message type.
 		}
 			break;
-		case DESTROY_TOPIC: {
+		case TOPIC_DESTROY: {
 			// No state change on RECEIVE of this message type.
 		}
 			break;
-		case PUT: {
+		case KEY_PUT: {
 			// No state change on RECEIVE of this message type.
 		}
 			break;
-		case DELETE: {
+		case KEY_DELETE: {
 			// No state change on RECEIVE of this message type.
 		}
 			break;
-		case UPDATE_CONFIG: {
-			ClusterConfig newConfig = ((Payload_Config)mutation.payload).config;
+		case CONFIG_CHANGE: {
+			ClusterConfig newConfig = ((Payload_ConfigChange)mutation.payload).config;
 			
 			// Notes about handling a new config:
 			// -we now enter (or compound) joint consensus, until this config commits on a majority of servers
@@ -671,7 +671,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		while (null != removed) {
 			_selfState.lastMutationOffsetReceived -= 1;
 			// Only CONFIG_UPDATE results in a change to our own state so revert that change if this is what we removed.
-			if (MutationRecordType.UPDATE_CONFIG == removed.type) {
+			if (MutationRecordType.CONFIG_CHANGE == removed.type) {
 				SyncProgress reverted = _configsPendingCommit.remove(removed.globalOffset);
 				Assert.assertTrue(null != reverted);
 				// We just rebuild the downstream union now that this has been removed and it will disconnect anything stale.

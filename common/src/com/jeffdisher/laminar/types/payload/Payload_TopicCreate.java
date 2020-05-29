@@ -10,22 +10,22 @@ import com.jeffdisher.laminar.utils.MiscHelpers;
  * -code (byte[])
  * -arguments (byte[])
  */
-public class Payload_Create implements IPayload {
-	public static Payload_Create create(byte[] code, byte[] arguments) {
-		return new Payload_Create(code, arguments);
+public class Payload_TopicCreate implements IPayload {
+	public static Payload_TopicCreate create(byte[] code, byte[] arguments) {
+		return new Payload_TopicCreate(code, arguments);
 	}
 
-	public static Payload_Create deserialize(ByteBuffer serialized) {
+	public static Payload_TopicCreate deserialize(ByteBuffer serialized) {
 		byte[] code = MiscHelpers.readSizedBytes(serialized);
 		byte[] arguments = MiscHelpers.readSizedBytes(serialized);
-		return new Payload_Create(code, arguments);
+		return new Payload_TopicCreate(code, arguments);
 	}
 
 
 	public final byte[] code;
 	public final byte[] arguments;
 
-	private Payload_Create(byte[] code, byte[] arguments) {
+	private Payload_TopicCreate(byte[] code, byte[] arguments) {
 		this.code = code;
 		this.arguments = arguments;
 	}

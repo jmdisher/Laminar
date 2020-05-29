@@ -6,7 +6,7 @@ import java.util.UUID;
 import org.junit.Assert;
 import org.junit.Test;
 
-import com.jeffdisher.laminar.types.payload.Payload_Put;
+import com.jeffdisher.laminar.types.payload.Payload_KeyPut;
 
 
 /**
@@ -31,9 +31,9 @@ public class TestEventRecord {
 		Assert.assertEquals(record.localOffset, deserialized.localOffset);
 		Assert.assertEquals(record.clientId, deserialized.clientId);
 		Assert.assertEquals(record.clientNonce, deserialized.clientNonce);
-		Assert.assertArrayEquals(((Payload_Put)record.payload).key, ((Payload_Put)deserialized.payload).key);
-		Assert.assertArrayEquals(((Payload_Put)record.payload).value, ((Payload_Put)deserialized.payload).value);
-		Assert.assertArrayEquals(key, ((Payload_Put)deserialized.payload).key);
-		Assert.assertArrayEquals(value, ((Payload_Put)deserialized.payload).value);
+		Assert.assertArrayEquals(((Payload_KeyPut)record.payload).key, ((Payload_KeyPut)deserialized.payload).key);
+		Assert.assertArrayEquals(((Payload_KeyPut)record.payload).value, ((Payload_KeyPut)deserialized.payload).value);
+		Assert.assertArrayEquals(key, ((Payload_KeyPut)deserialized.payload).key);
+		Assert.assertArrayEquals(value, ((Payload_KeyPut)deserialized.payload).value);
 	}
 }

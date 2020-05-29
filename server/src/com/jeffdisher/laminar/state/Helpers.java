@@ -4,11 +4,11 @@ import java.util.UUID;
 
 import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.types.message.ClientMessage;
-import com.jeffdisher.laminar.types.message.ClientMessagePayload_Create;
-import com.jeffdisher.laminar.types.message.ClientMessagePayload_Delete;
-import com.jeffdisher.laminar.types.message.ClientMessagePayload_Put;
-import com.jeffdisher.laminar.types.message.ClientMessagePayload_Topic;
-import com.jeffdisher.laminar.types.message.ClientMessagePayload_UpdateConfig;
+import com.jeffdisher.laminar.types.message.ClientMessagePayload_TopicCreate;
+import com.jeffdisher.laminar.types.message.ClientMessagePayload_KeyDelete;
+import com.jeffdisher.laminar.types.message.ClientMessagePayload_KeyPut;
+import com.jeffdisher.laminar.types.message.ClientMessagePayload_TopicDestroy;
+import com.jeffdisher.laminar.types.message.ClientMessagePayload_ConfigChange;
 import com.jeffdisher.laminar.types.mutation.MutationRecord;
 import com.jeffdisher.laminar.utils.Assert;
 
@@ -34,48 +34,48 @@ public class Helpers {
 		case INVALID:
 			Assert.unimplemented("Invalid message type");
 			break;
-		case CREATE_TOPIC: {
-			ClientMessagePayload_Create payload = (ClientMessagePayload_Create)message.payload;
+		case TOPIC_CREATE: {
+			ClientMessagePayload_TopicCreate payload = (ClientMessagePayload_TopicCreate)message.payload;
 			converted = MutationRecord.createTopic(termNumber, mutationOffsetToAssign, payload.topic, clientId, message.nonce, payload.code, payload.arguments);
 		}
 			break;
-		case DESTROY_TOPIC: {
-			ClientMessagePayload_Topic payload = (ClientMessagePayload_Topic)message.payload;
+		case TOPIC_DESTROY: {
+			ClientMessagePayload_TopicDestroy payload = (ClientMessagePayload_TopicDestroy)message.payload;
 			converted = MutationRecord.destroyTopic(termNumber, mutationOffsetToAssign, payload.topic, clientId, message.nonce);
 		}
 			break;
-		case PUT: {
-			ClientMessagePayload_Put payload = (ClientMessagePayload_Put)message.payload;
+		case KEY_PUT: {
+			ClientMessagePayload_KeyPut payload = (ClientMessagePayload_KeyPut)message.payload;
 			byte[] key = payload.key;
 			byte[] value = payload.value;
 			converted = MutationRecord.put(termNumber, mutationOffsetToAssign, payload.topic, clientId, message.nonce, key, value);
 		}
 			break;
-		case DELETE: {
-			ClientMessagePayload_Delete payload = (ClientMessagePayload_Delete)message.payload;
+		case KEY_DELETE: {
+			ClientMessagePayload_KeyDelete payload = (ClientMessagePayload_KeyDelete)message.payload;
 			byte[] key = payload.key;
 			converted = MutationRecord.delete(termNumber, mutationOffsetToAssign, payload.topic, clientId, message.nonce, key);
 		}
 			break;
 		case POISON: {
-			ClientMessagePayload_Put payload = (ClientMessagePayload_Put)message.payload;
+			ClientMessagePayload_KeyPut payload = (ClientMessagePayload_KeyPut)message.payload;
 			byte[] key = payload.key;
 			byte[] value = payload.value;
 			converted = MutationRecord.put(termNumber, mutationOffsetToAssign, payload.topic, clientId, message.nonce, key, value);
 		}
 			break;
 		case STUTTER: {
-			ClientMessagePayload_Put payload = (ClientMessagePayload_Put)message.payload;
+			ClientMessagePayload_KeyPut payload = (ClientMessagePayload_KeyPut)message.payload;
 			byte[] key = payload.key;
 			byte[] value = payload.value;
 			converted = MutationRecord.stutter(termNumber, mutationOffsetToAssign, payload.topic, clientId, message.nonce, key, value);
 		}
 			break;
-		case UPDATE_CONFIG: {
+		case CONFIG_CHANGE: {
 			// Eventually, this will kick-off the joint consensus where we change to having 2 active configs until this commits on all nodes and the local disk.
 			// For now, however, we just send the received ack and enqueue this for commit (note that it DOES NOT generate an event - only a mutation).
 			// The more complex operation happens after the commit completes since that is when we will change our state and broadcast the new config to all clients and listeners.
-			ClusterConfig newConfig = ((ClientMessagePayload_UpdateConfig)message.payload).config;
+			ClusterConfig newConfig = ((ClientMessagePayload_ConfigChange)message.payload).config;
 			converted = MutationRecord.updateConfig(termNumber, mutationOffsetToAssign, clientId, message.nonce, newConfig);
 		}
 			break;

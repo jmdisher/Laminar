@@ -9,22 +9,22 @@ import com.jeffdisher.laminar.utils.MiscHelpers;
 /**
  * The DELETE message encodes a key as byte[].
  */
-public class ClientMessagePayload_Delete implements IClientMessagePayload {
-	public static ClientMessagePayload_Delete create(TopicName topic, byte[] key) {
-		return new ClientMessagePayload_Delete(topic, key);
+public class ClientMessagePayload_KeyDelete implements IClientMessagePayload {
+	public static ClientMessagePayload_KeyDelete create(TopicName topic, byte[] key) {
+		return new ClientMessagePayload_KeyDelete(topic, key);
 	}
 
-	public static ClientMessagePayload_Delete deserialize(ByteBuffer serialized) {
+	public static ClientMessagePayload_KeyDelete deserialize(ByteBuffer serialized) {
 		TopicName topic = TopicName.deserializeFrom(serialized);
 		byte[] key = MiscHelpers.readSizedBytes(serialized);
-		return new ClientMessagePayload_Delete(topic, key);
+		return new ClientMessagePayload_KeyDelete(topic, key);
 	}
 
 
 	public final TopicName topic;
 	public final byte[] key;
 	
-	private ClientMessagePayload_Delete(TopicName topic, byte[] key) {
+	private ClientMessagePayload_KeyDelete(TopicName topic, byte[] key) {
 		this.topic = topic;
 		this.key = key;
 	}

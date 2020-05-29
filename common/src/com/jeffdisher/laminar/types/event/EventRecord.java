@@ -5,11 +5,11 @@ import java.util.UUID;
 
 import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.types.payload.IPayload;
-import com.jeffdisher.laminar.types.payload.Payload_Config;
-import com.jeffdisher.laminar.types.payload.Payload_Create;
-import com.jeffdisher.laminar.types.payload.Payload_Delete;
+import com.jeffdisher.laminar.types.payload.Payload_ConfigChange;
+import com.jeffdisher.laminar.types.payload.Payload_TopicCreate;
+import com.jeffdisher.laminar.types.payload.Payload_KeyDelete;
 import com.jeffdisher.laminar.types.payload.Payload_Empty;
-import com.jeffdisher.laminar.types.payload.Payload_Put;
+import com.jeffdisher.laminar.types.payload.Payload_KeyPut;
 import com.jeffdisher.laminar.utils.Assert;
 
 
@@ -29,7 +29,7 @@ public class EventRecord {
 		Assert.assertTrue(clientNonce >= 0L);
 		Assert.assertTrue(null != code);
 		Assert.assertTrue(null != arguments);
-		return new EventRecord(EventRecordType.CREATE_TOPIC, termNumber, globalOffset, localOffset, clientId, clientNonce, Payload_Create.create(code, arguments));
+		return new EventRecord(EventRecordType.TOPIC_CREATE, termNumber, globalOffset, localOffset, clientId, clientNonce, Payload_TopicCreate.create(code, arguments));
 	}
 
 	public static EventRecord destroyTopic(long termNumber, long globalOffset, long localOffset, UUID clientId, long clientNonce) {
@@ -39,7 +39,7 @@ public class EventRecord {
 		Assert.assertTrue(localOffset > 0L);
 		Assert.assertTrue(null != clientId);
 		Assert.assertTrue(clientNonce >= 0L);
-		return new EventRecord(EventRecordType.DESTROY_TOPIC, termNumber, globalOffset, localOffset, clientId, clientNonce, Payload_Empty.create());
+		return new EventRecord(EventRecordType.TOPIC_DESTROY, termNumber, globalOffset, localOffset, clientId, clientNonce, Payload_Empty.create());
 	}
 
 	public static EventRecord put(long termNumber, long globalOffset, long localOffset, UUID clientId, long clientNonce, byte[] key, byte[] value) {
@@ -51,7 +51,7 @@ public class EventRecord {
 		Assert.assertTrue(clientNonce >= 0L);
 		Assert.assertTrue(null != key);
 		Assert.assertTrue(null != value);
-		return new EventRecord(EventRecordType.PUT, termNumber, globalOffset, localOffset, clientId, clientNonce, Payload_Put.create(key, value));
+		return new EventRecord(EventRecordType.KEY_PUT, termNumber, globalOffset, localOffset, clientId, clientNonce, Payload_KeyPut.create(key, value));
 	}
 
 	public static EventRecord delete(long termNumber, long globalOffset, long localOffset, UUID clientId, long clientNonce, byte[] key) {
@@ -62,7 +62,7 @@ public class EventRecord {
 		Assert.assertTrue(null != clientId);
 		Assert.assertTrue(clientNonce >= 0L);
 		Assert.assertTrue(null != key);
-		return new EventRecord(EventRecordType.DELETE, termNumber, globalOffset, localOffset, clientId, clientNonce, Payload_Delete.create(key));
+		return new EventRecord(EventRecordType.KEY_DELETE, termNumber, globalOffset, localOffset, clientId, clientNonce, Payload_KeyDelete.create(key));
 	}
 
 	/**
@@ -74,7 +74,7 @@ public class EventRecord {
 	 * @return A new EventRecord instance for this special-case.
 	 */
 	public static EventRecord synthesizeRecordForConfig(ClusterConfig config) {
-		return new EventRecord(EventRecordType.CONFIG_CHANGE, -1L, -1L, -1L, new UUID(0L, 0L), -1L, Payload_Config.create(config));
+		return new EventRecord(EventRecordType.CONFIG_CHANGE, -1L, -1L, -1L, new UUID(0L, 0L), -1L, Payload_ConfigChange.create(config));
 	}
 
 	/**
@@ -100,20 +100,20 @@ public class EventRecord {
 		switch (type) {
 		case INVALID:
 			throw Assert.unimplemented("Handle invalid deserialization");
-		case CREATE_TOPIC:
-			payload = Payload_Create.deserialize(wrapper);
+		case TOPIC_CREATE:
+			payload = Payload_TopicCreate.deserialize(wrapper);
 			break;
-		case DESTROY_TOPIC:
+		case TOPIC_DESTROY:
 			payload = Payload_Empty.deserialize(wrapper);
 			break;
-		case PUT:
-			payload = Payload_Put.deserialize(wrapper);
+		case KEY_PUT:
+			payload = Payload_KeyPut.deserialize(wrapper);
 			break;
-		case DELETE:
-			payload = Payload_Delete.deserialize(wrapper);
+		case KEY_DELETE:
+			payload = Payload_KeyDelete.deserialize(wrapper);
 			break;
 		case CONFIG_CHANGE:
-			payload = Payload_Config.deserialize(wrapper);
+			payload = Payload_ConfigChange.deserialize(wrapper);
 			break;
 		default:
 			throw Assert.unreachable("Unmatched deserialization type");

@@ -11,7 +11,7 @@ import com.jeffdisher.laminar.types.TopicName;
 import com.jeffdisher.laminar.types.event.EventRecord;
 import com.jeffdisher.laminar.types.event.EventRecordType;
 import com.jeffdisher.laminar.types.message.ClientMessage;
-import com.jeffdisher.laminar.types.payload.Payload_Config;
+import com.jeffdisher.laminar.types.payload.Payload_ConfigChange;
 import com.jeffdisher.laminar.utils.Assert;
 
 
@@ -122,7 +122,7 @@ public class ListenerConnection implements Closeable, INetworkManagerBackgroundC
 					// We want to intercept any CONFIG_CHANGE events to update our connection state, instead of returning this to the user (since it is a control message, not data).
 					if (EventRecordType.CONFIG_CHANGE == record.type) {
 						// We just set this as our config in case we need it for reconnect.
-						_currentClusterConfig = ((Payload_Config)record.payload).config;
+						_currentClusterConfig = ((Payload_ConfigChange)record.payload).config;
 						tryAgain = true;
 					} else {
 						_previousLocalOffset = record.localOffset;

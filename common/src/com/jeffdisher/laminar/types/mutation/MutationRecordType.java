@@ -12,23 +12,23 @@ public enum MutationRecordType {
 	/**
 	 * Creates the named topic, generating an INVALID effect if it already exists.
 	 */
-	CREATE_TOPIC,
+	TOPIC_CREATE,
 	/**
 	 * Destroys the named topic, generating an INVALID effect if it doesn't exist.
 	 */
-	DESTROY_TOPIC,
+	TOPIC_DESTROY,
 	/**
 	 * Encodes a key and value as raw byte[].
 	 */
-	PUT,
+	KEY_PUT,
 	/**
 	 * Encodes a key as raw byte[].
 	 */
-	DELETE,
+	KEY_DELETE,
 	/**
 	 * The payload of this message is the serialized new config.
 	 */
-	UPDATE_CONFIG,
+	CONFIG_CHANGE,
 	/**
 	 * The payload for this is the same as PUT.  The unique thing about this is that executing it creates 2 PUT events.
 	 */

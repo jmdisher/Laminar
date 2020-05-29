@@ -9,20 +9,20 @@ import com.jeffdisher.laminar.utils.MiscHelpers;
  * Contains:
  * -key (byte[])
  */
-public class Payload_Delete implements IPayload {
-	public static Payload_Delete create(byte[] key) {
-		return new Payload_Delete(key);
+public class Payload_KeyDelete implements IPayload {
+	public static Payload_KeyDelete create(byte[] key) {
+		return new Payload_KeyDelete(key);
 	}
 
-	public static Payload_Delete deserialize(ByteBuffer serialized) {
+	public static Payload_KeyDelete deserialize(ByteBuffer serialized) {
 		byte[] key = MiscHelpers.readSizedBytes(serialized);
-		return new Payload_Delete(key);
+		return new Payload_KeyDelete(key);
 	}
 
 
 	public final byte[] key;
 	
-	private Payload_Delete(byte[] key) {
+	private Payload_KeyDelete(byte[] key) {
 		this.key = key;
 	}
 

@@ -25,8 +25,8 @@ import com.jeffdisher.laminar.types.TopicName;
 import com.jeffdisher.laminar.types.event.EventRecord;
 import com.jeffdisher.laminar.types.event.EventRecordType;
 import com.jeffdisher.laminar.types.message.ClientMessage;
-import com.jeffdisher.laminar.types.payload.Payload_Delete;
-import com.jeffdisher.laminar.types.payload.Payload_Put;
+import com.jeffdisher.laminar.types.payload.Payload_KeyDelete;
+import com.jeffdisher.laminar.types.payload.Payload_KeyPut;
 import com.jeffdisher.laminar.types.response.ClientResponse;
 import com.jeffdisher.laminar.types.response.ClientResponseType;
 import com.jeffdisher.laminar.utils.TestingHelpers;
@@ -313,8 +313,8 @@ public class TestClientsAndListeners {
 			// Add a bias to skip the topic creation.
 			int index = i + 1;
 			// Check the after, first, since that happened after the poison was done and the difference can point to different bugs.
-			Assert.assertEquals(i, ((Payload_Put)afterEvents[index].payload).value[0]);
-			Assert.assertEquals(i, ((Payload_Put)beforeEvents[index].payload).value[0]);
+			Assert.assertEquals(i, ((Payload_KeyPut)afterEvents[index].payload).value[0]);
+			Assert.assertEquals(i, ((Payload_KeyPut)beforeEvents[index].payload).value[0]);
 		}
 		// Also verify that the listeners got the config.
 		Assert.assertNotNull(beforeListener.getCurrentConfig());
@@ -508,8 +508,8 @@ public class TestClientsAndListeners {
 			
 			if (i >= 2) {
 				// (these contain the raw TEMP payloads, too).
-				Assert.assertEquals((2 * i), Byte.toUnsignedInt(((Payload_Put)event1.payload).value[0]));
-				Assert.assertEquals((2 * i) + 1, Byte.toUnsignedInt(((Payload_Put)event2.payload).value[0]));
+				Assert.assertEquals((2 * i), Byte.toUnsignedInt(((Payload_KeyPut)event1.payload).value[0]));
+				Assert.assertEquals((2 * i) + 1, Byte.toUnsignedInt(((Payload_KeyPut)event2.payload).value[0]));
 			}
 		}
 		listener1.close();
@@ -552,13 +552,13 @@ public class TestClientsAndListeners {
 			Assert.assertEquals(CommitInfo.Effect.VALID, put4.waitForCommitted().effect);
 		}
 		ListenerConnection listener = ListenerConnection.open(serverAddress, topic, 0L);
-		_checkRecord(listener.pollForNextEvent(), 1L, EventRecordType.CREATE_TOPIC, null, null);
-		_checkRecord(listener.pollForNextEvent(), 2L, EventRecordType.DELETE, key1, null);
-		_checkRecord(listener.pollForNextEvent(), 3L, EventRecordType.PUT, key2, "One".getBytes(StandardCharsets.UTF_8));
-		_checkRecord(listener.pollForNextEvent(), 4L, EventRecordType.PUT, key2, "Two".getBytes(StandardCharsets.UTF_8));
-		_checkRecord(listener.pollForNextEvent(), 5L, EventRecordType.PUT, key1, "Back".getBytes(StandardCharsets.UTF_8));
-		_checkRecord(listener.pollForNextEvent(), 6L, EventRecordType.DELETE, key2, null);
-		_checkRecord(listener.pollForNextEvent(), 7L, EventRecordType.PUT, key2, "Three".getBytes(StandardCharsets.UTF_8));
+		_checkRecord(listener.pollForNextEvent(), 1L, EventRecordType.TOPIC_CREATE, null, null);
+		_checkRecord(listener.pollForNextEvent(), 2L, EventRecordType.KEY_DELETE, key1, null);
+		_checkRecord(listener.pollForNextEvent(), 3L, EventRecordType.KEY_PUT, key2, "One".getBytes(StandardCharsets.UTF_8));
+		_checkRecord(listener.pollForNextEvent(), 4L, EventRecordType.KEY_PUT, key2, "Two".getBytes(StandardCharsets.UTF_8));
+		_checkRecord(listener.pollForNextEvent(), 5L, EventRecordType.KEY_PUT, key1, "Back".getBytes(StandardCharsets.UTF_8));
+		_checkRecord(listener.pollForNextEvent(), 6L, EventRecordType.KEY_DELETE, key2, null);
+		_checkRecord(listener.pollForNextEvent(), 7L, EventRecordType.KEY_PUT, key2, "Three".getBytes(StandardCharsets.UTF_8));
 		listener.close();
 		
 		// Shut down.
@@ -641,12 +641,12 @@ public class TestClientsAndListeners {
 	private void _checkRecord(EventRecord event, long offset, EventRecordType type, byte[] key, byte[] value) {
 		Assert.assertEquals(offset, event.globalOffset);
 		Assert.assertEquals(type, event.type);
-		if (EventRecordType.PUT == type) {
-			Payload_Put payload = (Payload_Put)event.payload;
+		if (EventRecordType.KEY_PUT == type) {
+			Payload_KeyPut payload = (Payload_KeyPut)event.payload;
 			Assert.assertArrayEquals(key, payload.key);
 			Assert.assertArrayEquals(value, payload.value);
-		} else if (EventRecordType.DELETE == type) {
-			Payload_Delete payload = (Payload_Delete)event.payload;
+		} else if (EventRecordType.KEY_DELETE == type) {
+			Payload_KeyDelete payload = (Payload_KeyDelete)event.payload;
 			Assert.assertArrayEquals(key, payload.key);
 		}
 	}
@@ -676,7 +676,7 @@ public class TestClientsAndListeners {
 				} else {
 					// We only expect the one.
 					Assert.assertEquals(2L, record.localOffset);
-					Assert.assertArrayEquals(_message, ((Payload_Put)record.payload).value);
+					Assert.assertArrayEquals(_message, ((Payload_KeyPut)record.payload).value);
 				}
 				_latch.countDown();
 				// ListenerConnection is safe against redundant closes (even though the underlying NetworkManager is not).

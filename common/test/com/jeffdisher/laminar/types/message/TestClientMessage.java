@@ -7,7 +7,7 @@ import org.junit.Test;
 
 import com.jeffdisher.laminar.types.TopicName;
 import com.jeffdisher.laminar.types.message.ClientMessagePayload_Handshake;
-import com.jeffdisher.laminar.types.message.ClientMessagePayload_Put;
+import com.jeffdisher.laminar.types.message.ClientMessagePayload_KeyPut;
 
 
 /**
@@ -52,7 +52,7 @@ public class TestClientMessage {
 		ClientMessage output = ClientMessage.deserialize(serialized);
 		Assert.assertEquals(input.type, output.type);
 		Assert.assertEquals(input.nonce, output.nonce);
-		Assert.assertArrayEquals(((ClientMessagePayload_Put)input.payload).key, ((ClientMessagePayload_Put)output.payload).key);
-		Assert.assertArrayEquals(((ClientMessagePayload_Put)input.payload).value, ((ClientMessagePayload_Put)output.payload).value);
+		Assert.assertArrayEquals(((ClientMessagePayload_KeyPut)input.payload).key, ((ClientMessagePayload_KeyPut)output.payload).key);
+		Assert.assertArrayEquals(((ClientMessagePayload_KeyPut)input.payload).value, ((ClientMessagePayload_KeyPut)output.payload).value);
 	}
 }

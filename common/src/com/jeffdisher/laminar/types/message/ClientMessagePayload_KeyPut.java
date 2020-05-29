@@ -9,16 +9,16 @@ import com.jeffdisher.laminar.utils.MiscHelpers;
 /**
  * The PUT message encodes a key-value pair of byte[].
  */
-public class ClientMessagePayload_Put implements IClientMessagePayload {
-	public static ClientMessagePayload_Put create(TopicName topic, byte[] key, byte[] value) {
-		return new ClientMessagePayload_Put(topic, key, value);
+public class ClientMessagePayload_KeyPut implements IClientMessagePayload {
+	public static ClientMessagePayload_KeyPut create(TopicName topic, byte[] key, byte[] value) {
+		return new ClientMessagePayload_KeyPut(topic, key, value);
 	}
 
-	public static ClientMessagePayload_Put deserialize(ByteBuffer serialized) {
+	public static ClientMessagePayload_KeyPut deserialize(ByteBuffer serialized) {
 		TopicName topic = TopicName.deserializeFrom(serialized);
 		byte[] key = MiscHelpers.readSizedBytes(serialized);
 		byte[] value = MiscHelpers.readSizedBytes(serialized);
-		return new ClientMessagePayload_Put(topic, key, value);
+		return new ClientMessagePayload_KeyPut(topic, key, value);
 	}
 
 
@@ -26,7 +26,7 @@ public class ClientMessagePayload_Put implements IClientMessagePayload {
 	public final byte[] key;
 	public final byte[] value;
 	
-	private ClientMessagePayload_Put(TopicName topic, byte[] key, byte[] value) {
+	private ClientMessagePayload_KeyPut(TopicName topic, byte[] key, byte[] value) {
 		this.topic = topic;
 		this.key = key;
 		this.value = value;
