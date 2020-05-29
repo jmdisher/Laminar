@@ -224,15 +224,21 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 				// "new" nodes never send write-ready.
 				boolean isUpstream = _upstreamPeers.isEstablishedUpstream(node);
 				boolean isDownstream = _downstreamPeers.containsNode(node);
-				// They can't be write-ready as new and they must be one of these.
-				Assert.assertTrue(isUpstream != isDownstream);
 				
-				if (isDownstream) {
-					ReadOnlyDownstreamPeerState peer = _downstreamPeers.setNodeWritable(node);
-					_tryFetchOrSend(peer, arg0.currentTermNumber);
+				if (isUpstream || isDownstream) {
+					// Clearly not in both collections.
+					Assert.assertTrue(isUpstream != isDownstream);
+					
+					if (isDownstream) {
+						ReadOnlyDownstreamPeerState peer = _downstreamPeers.setNodeWritable(node);
+						_tryFetchOrSend(peer, arg0.currentTermNumber);
+					} else {
+						_upstreamPeers.setNodeWritable(node);
+						_trySendUpstream(node);
+					}
 				} else {
-					_upstreamPeers.setNodeWritable(node);
-					_trySendUpstream(node);
+					// This happens in cases where we explicitly disconnected this peer but they may still have readable messages pending.
+					System.out.println("NOTE: Processed write ready from disconnected peer");
 				}
 			}});
 	}
