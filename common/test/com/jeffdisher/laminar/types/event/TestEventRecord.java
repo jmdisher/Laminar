@@ -6,6 +6,8 @@ import java.util.UUID;
 import org.junit.Assert;
 import org.junit.Test;
 
+import com.jeffdisher.laminar.types.payload.Payload_Put;
+
 
 /**
  * Tests around serialization and deserialization of EventRecord objects.
@@ -29,9 +31,9 @@ public class TestEventRecord {
 		Assert.assertEquals(record.localOffset, deserialized.localOffset);
 		Assert.assertEquals(record.clientId, deserialized.clientId);
 		Assert.assertEquals(record.clientNonce, deserialized.clientNonce);
-		Assert.assertArrayEquals(((EventRecordPayload_Put)record.payload).key, ((EventRecordPayload_Put)deserialized.payload).key);
-		Assert.assertArrayEquals(((EventRecordPayload_Put)record.payload).value, ((EventRecordPayload_Put)deserialized.payload).value);
-		Assert.assertArrayEquals(key, ((EventRecordPayload_Put)deserialized.payload).key);
-		Assert.assertArrayEquals(value, ((EventRecordPayload_Put)deserialized.payload).value);
+		Assert.assertArrayEquals(((Payload_Put)record.payload).key, ((Payload_Put)deserialized.payload).key);
+		Assert.assertArrayEquals(((Payload_Put)record.payload).value, ((Payload_Put)deserialized.payload).value);
+		Assert.assertArrayEquals(key, ((Payload_Put)deserialized.payload).key);
+		Assert.assertArrayEquals(value, ((Payload_Put)deserialized.payload).value);
 	}
 }

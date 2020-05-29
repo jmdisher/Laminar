@@ -11,6 +11,8 @@ import org.junit.Test;
 import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.types.ConfigEntry;
 import com.jeffdisher.laminar.types.TopicName;
+import com.jeffdisher.laminar.types.payload.Payload_Config;
+import com.jeffdisher.laminar.types.payload.Payload_Put;
 
 
 /**
@@ -34,8 +36,8 @@ public class TestMutationRecord {
 		Assert.assertEquals(record.globalOffset, deserialized.globalOffset);
 		Assert.assertEquals(record.clientId, deserialized.clientId);
 		Assert.assertEquals(record.clientNonce, deserialized.clientNonce);
-		Assert.assertArrayEquals(((MutationRecordPayload_Put)record.payload).key, ((MutationRecordPayload_Put)deserialized.payload).key);
-		Assert.assertArrayEquals(((MutationRecordPayload_Put)record.payload).value, ((MutationRecordPayload_Put)deserialized.payload).value);
+		Assert.assertArrayEquals(((Payload_Put)record.payload).key, ((Payload_Put)deserialized.payload).key);
+		Assert.assertArrayEquals(((Payload_Put)record.payload).value, ((Payload_Put)deserialized.payload).value);
 	}
 
 	@Test
@@ -57,8 +59,8 @@ public class TestMutationRecord {
 		Assert.assertEquals(record.globalOffset, deserialized.globalOffset);
 		Assert.assertEquals(record.clientId, deserialized.clientId);
 		Assert.assertEquals(record.clientNonce, deserialized.clientNonce);
-		Assert.assertArrayEquals(((MutationRecordPayload_Put)record.payload).key, ((MutationRecordPayload_Put)deserialized.payload).key);
-		Assert.assertArrayEquals(((MutationRecordPayload_Put)record.payload).value, ((MutationRecordPayload_Put)deserialized.payload).value);
+		Assert.assertArrayEquals(((Payload_Put)record.payload).key, ((Payload_Put)deserialized.payload).key);
+		Assert.assertArrayEquals(((Payload_Put)record.payload).value, ((Payload_Put)deserialized.payload).value);
 	}
 
 	@Test
@@ -81,6 +83,6 @@ public class TestMutationRecord {
 		Assert.assertEquals(record.globalOffset, deserialized.globalOffset);
 		Assert.assertEquals(record.clientId, deserialized.clientId);
 		Assert.assertEquals(record.clientNonce, deserialized.clientNonce);
-		Assert.assertEquals(((MutationRecordPayload_Config)record.payload).config.entries.length, ((MutationRecordPayload_Config)deserialized.payload).config.entries.length);
+		Assert.assertEquals(((Payload_Config)record.payload).config.entries.length, ((Payload_Config)deserialized.payload).config.entries.length);
 	}
 }

@@ -27,8 +27,8 @@ import com.jeffdisher.laminar.types.event.EventRecord;
 import com.jeffdisher.laminar.types.message.ClientMessage;
 import com.jeffdisher.laminar.types.message.ClientMessageType;
 import com.jeffdisher.laminar.types.mutation.MutationRecord;
-import com.jeffdisher.laminar.types.mutation.MutationRecordPayload_Config;
 import com.jeffdisher.laminar.types.mutation.MutationRecordType;
+import com.jeffdisher.laminar.types.payload.Payload_Config;
 import com.jeffdisher.laminar.utils.Assert;
 import com.jeffdisher.laminar.utils.UninterruptibleQueue;
 
@@ -467,7 +467,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		}
 			break;
 		case UPDATE_CONFIG: {
-			ClusterConfig newConfig = ((MutationRecordPayload_Config)mutation.payload).config;
+			ClusterConfig newConfig = ((Payload_Config)mutation.payload).config;
 			
 			// Notes about handling a new config:
 			// -we now enter (or compound) joint consensus, until this config commits on a majority of servers

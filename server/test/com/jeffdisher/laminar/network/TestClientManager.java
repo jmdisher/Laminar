@@ -20,10 +20,10 @@ import com.jeffdisher.laminar.types.CommitInfo;
 import com.jeffdisher.laminar.types.ConfigEntry;
 import com.jeffdisher.laminar.types.TopicName;
 import com.jeffdisher.laminar.types.event.EventRecord;
-import com.jeffdisher.laminar.types.event.EventRecordPayload_Put;
 import com.jeffdisher.laminar.types.message.ClientMessage;
 import com.jeffdisher.laminar.types.message.ClientMessagePayload_Put;
 import com.jeffdisher.laminar.types.mutation.MutationRecord;
+import com.jeffdisher.laminar.types.payload.Payload_Put;
 import com.jeffdisher.laminar.types.response.ClientResponse;
 import com.jeffdisher.laminar.types.response.ClientResponsePayload_ClusterConfig;
 import com.jeffdisher.laminar.types.response.ClientResponsePayload_ConfigEntry;
@@ -204,8 +204,8 @@ public class TestClientManager {
 			Assert.assertEquals(record.globalOffset, deserialized.globalOffset);
 			Assert.assertEquals(record.localOffset, deserialized.localOffset);
 			Assert.assertEquals(record.clientId, deserialized.clientId);
-			Assert.assertArrayEquals(((EventRecordPayload_Put)record.payload).key, ((EventRecordPayload_Put)deserialized.payload).key);
-			Assert.assertArrayEquals(((EventRecordPayload_Put)record.payload).value, ((EventRecordPayload_Put)deserialized.payload).value);
+			Assert.assertArrayEquals(((Payload_Put)record.payload).key, ((Payload_Put)deserialized.payload).key);
+			Assert.assertArrayEquals(((Payload_Put)record.payload).value, ((Payload_Put)deserialized.payload).value);
 		}
 		NetworkManager.NodeToken noNode = callbacks.runRunnableAndGetNewClientNode(manager);
 		Assert.assertNull(noNode);

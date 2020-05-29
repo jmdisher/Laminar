@@ -11,8 +11,8 @@ import com.jeffdisher.laminar.client.ListenerConnection;
 import com.jeffdisher.laminar.types.CommitInfo;
 import com.jeffdisher.laminar.types.TopicName;
 import com.jeffdisher.laminar.types.event.EventRecord;
-import com.jeffdisher.laminar.types.event.EventRecordPayload_Put;
 import com.jeffdisher.laminar.types.event.EventRecordType;
+import com.jeffdisher.laminar.types.payload.Payload_Put;
 import com.jeffdisher.laminar.utils.Assert;
 
 
@@ -54,8 +54,8 @@ public class ChatServerExample {
 				while (null != record) {
 					// If this is a put, write it to STDOUT.
 					if (EventRecordType.PUT == record.type) {
-						String name = new String(((EventRecordPayload_Put) record.payload).key, StandardCharsets.UTF_8);
-						String text = new String(((EventRecordPayload_Put) record.payload).value, StandardCharsets.UTF_8);
+						String name = new String(((Payload_Put) record.payload).key, StandardCharsets.UTF_8);
+						String text = new String(((Payload_Put) record.payload).value, StandardCharsets.UTF_8);
 						System.out.println(name + ": " + text);
 					}
 					record = listener.pollForNextEvent();

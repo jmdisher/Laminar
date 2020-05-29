@@ -12,9 +12,9 @@ import com.jeffdisher.laminar.types.CommitInfo;
 import com.jeffdisher.laminar.types.TopicName;
 import com.jeffdisher.laminar.types.event.EventRecord;
 import com.jeffdisher.laminar.types.mutation.MutationRecord;
-import com.jeffdisher.laminar.types.mutation.MutationRecordPayload_Create;
-import com.jeffdisher.laminar.types.mutation.MutationRecordPayload_Delete;
-import com.jeffdisher.laminar.types.mutation.MutationRecordPayload_Put;
+import com.jeffdisher.laminar.types.payload.Payload_Create;
+import com.jeffdisher.laminar.types.payload.Payload_Delete;
+import com.jeffdisher.laminar.types.payload.Payload_Put;
 import com.jeffdisher.laminar.utils.Assert;
 
 
@@ -55,7 +55,7 @@ public class MutationExecutor {
 			} else {
 				// 1-indexed.
 				_activeTopics.add(mutation.topic);
-				MutationRecordPayload_Create payload = (MutationRecordPayload_Create)mutation.payload;
+				Payload_Create payload = (Payload_Create)mutation.payload;
 				EventRecord eventToReturn = EventRecord.createTopic(mutation.termNumber, mutation.globalOffset, offsetToPropose, mutation.clientId, mutation.clientNonce, payload.code, payload.arguments);
 				result = new ExecutionResult(CommitInfo.Effect.VALID, Collections.singletonList(eventToReturn));
 			}
@@ -75,7 +75,7 @@ public class MutationExecutor {
 		case PUT: {
 			// This is VALID if the topic exists but ERROR, if not.
 			if (_activeTopics.contains(mutation.topic)) {
-				MutationRecordPayload_Put payload = (MutationRecordPayload_Put)mutation.payload;
+				Payload_Put payload = (Payload_Put)mutation.payload;
 				EventRecord eventToReturn = EventRecord.put(mutation.termNumber, mutation.globalOffset, offsetToPropose, mutation.clientId, mutation.clientNonce, payload.key, payload.value);
 				result = new ExecutionResult(CommitInfo.Effect.VALID, Collections.singletonList(eventToReturn));
 			} else {
@@ -86,7 +86,7 @@ public class MutationExecutor {
 		case DELETE: {
 			// This is VALID if the topic exists but ERROR, if not.
 			if (_activeTopics.contains(mutation.topic)) {
-				MutationRecordPayload_Delete payload = (MutationRecordPayload_Delete)mutation.payload;
+				Payload_Delete payload = (Payload_Delete)mutation.payload;
 				EventRecord eventToReturn = EventRecord.delete(mutation.termNumber, mutation.globalOffset, offsetToPropose, mutation.clientId, mutation.clientNonce, payload.key);
 				result = new ExecutionResult(CommitInfo.Effect.VALID, Collections.singletonList(eventToReturn));
 			} else {
@@ -104,7 +104,7 @@ public class MutationExecutor {
 			// This is VALID if the topic exists but ERROR, if not.
 			if (_activeTopics.contains(mutation.topic)) {
 				// Stutter is a special-case as it produces 2 of the same PUT events.
-				MutationRecordPayload_Put payload = (MutationRecordPayload_Put)mutation.payload;
+				Payload_Put payload = (Payload_Put)mutation.payload;
 				List<EventRecord> events = new LinkedList<>();
 				EventRecord eventToReturn1 = EventRecord.put(mutation.termNumber, mutation.globalOffset, offsetToPropose, mutation.clientId, mutation.clientNonce, payload.key, payload.value);
 				events.add(eventToReturn1);

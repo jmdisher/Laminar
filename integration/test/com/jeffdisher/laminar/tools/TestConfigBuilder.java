@@ -15,8 +15,8 @@ import com.jeffdisher.laminar.client.ListenerConnection;
 import com.jeffdisher.laminar.types.CommitInfo;
 import com.jeffdisher.laminar.types.TopicName;
 import com.jeffdisher.laminar.types.event.EventRecord;
-import com.jeffdisher.laminar.types.event.EventRecordPayload_Put;
 import com.jeffdisher.laminar.types.event.EventRecordType;
+import com.jeffdisher.laminar.types.payload.Payload_Put;
 
 
 /**
@@ -60,13 +60,13 @@ public class TestConfigBuilder {
 		
 		EventRecord leaderRecord = leaderListener.pollForNextEvent();
 		Assert.assertEquals(EventRecordType.PUT, leaderRecord.type);
-		Assert.assertArrayEquals(messageKey, ((EventRecordPayload_Put) leaderRecord.payload).key);
-		Assert.assertArrayEquals(messageValue, ((EventRecordPayload_Put) leaderRecord.payload).value);
+		Assert.assertArrayEquals(messageKey, ((Payload_Put) leaderRecord.payload).key);
+		Assert.assertArrayEquals(messageValue, ((Payload_Put) leaderRecord.payload).value);
 		
 		EventRecord followerRecord = followerListener.pollForNextEvent();
 		Assert.assertEquals(EventRecordType.PUT, followerRecord.type);
-		Assert.assertArrayEquals(messageKey, ((EventRecordPayload_Put) followerRecord.payload).key);
-		Assert.assertArrayEquals(messageValue, ((EventRecordPayload_Put) followerRecord.payload).value);
+		Assert.assertArrayEquals(messageKey, ((Payload_Put) followerRecord.payload).key);
+		Assert.assertArrayEquals(messageValue, ((Payload_Put) followerRecord.payload).value);
 		
 		leaderListener.close();
 		followerListener.close();
@@ -118,13 +118,13 @@ public class TestConfigBuilder {
 		
 		EventRecord leaderRecord = leaderListener.pollForNextEvent();
 		Assert.assertEquals(EventRecordType.PUT, leaderRecord.type);
-		Assert.assertArrayEquals(messageKey, ((EventRecordPayload_Put) leaderRecord.payload).key);
-		Assert.assertArrayEquals(messageValue, ((EventRecordPayload_Put) leaderRecord.payload).value);
+		Assert.assertArrayEquals(messageKey, ((Payload_Put) leaderRecord.payload).key);
+		Assert.assertArrayEquals(messageValue, ((Payload_Put) leaderRecord.payload).value);
 		
 		EventRecord followerRecord = followerListener.pollForNextEvent();
 		Assert.assertEquals(EventRecordType.PUT, followerRecord.type);
-		Assert.assertArrayEquals(messageKey, ((EventRecordPayload_Put) followerRecord.payload).key);
-		Assert.assertArrayEquals(messageValue, ((EventRecordPayload_Put) followerRecord.payload).value);
+		Assert.assertArrayEquals(messageKey, ((Payload_Put) followerRecord.payload).key);
+		Assert.assertArrayEquals(messageValue, ((Payload_Put) followerRecord.payload).value);
 		
 		leaderListener.close();
 		followerListener.close();

@@ -1,4 +1,4 @@
-package com.jeffdisher.laminar.types.mutation;
+package com.jeffdisher.laminar.types.payload;
 
 import java.nio.ByteBuffer;
 
@@ -6,24 +6,26 @@ import com.jeffdisher.laminar.utils.MiscHelpers;
 
 
 /**
- * Used for CREATE mutations which have code and arguments stored as byte[].
+ * Contains:
+ * -code (byte[])
+ * -arguments (byte[])
  */
-public class MutationRecordPayload_Create implements IMutationRecordPayload {
-	public static MutationRecordPayload_Create create(byte[] code, byte[] arguments) {
-		return new MutationRecordPayload_Create(code, arguments);
+public class Payload_Create implements IPayload {
+	public static Payload_Create create(byte[] code, byte[] arguments) {
+		return new Payload_Create(code, arguments);
 	}
 
-	public static MutationRecordPayload_Create deserialize(ByteBuffer serialized) {
+	public static Payload_Create deserialize(ByteBuffer serialized) {
 		byte[] code = MiscHelpers.readSizedBytes(serialized);
 		byte[] arguments = MiscHelpers.readSizedBytes(serialized);
-		return new MutationRecordPayload_Create(code, arguments);
+		return new Payload_Create(code, arguments);
 	}
 
 
 	public final byte[] code;
 	public final byte[] arguments;
 
-	private MutationRecordPayload_Create(byte[] code, byte[] arguments) {
+	private Payload_Create(byte[] code, byte[] arguments) {
 		this.code = code;
 		this.arguments = arguments;
 	}

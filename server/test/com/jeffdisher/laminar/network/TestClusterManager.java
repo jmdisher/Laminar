@@ -21,7 +21,7 @@ import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.types.ConfigEntry;
 import com.jeffdisher.laminar.types.TopicName;
 import com.jeffdisher.laminar.types.mutation.MutationRecord;
-import com.jeffdisher.laminar.types.mutation.MutationRecordPayload_Put;
+import com.jeffdisher.laminar.types.payload.Payload_Put;
 import com.jeffdisher.laminar.utils.TestingHelpers;
 
 
@@ -212,16 +212,16 @@ public class TestClusterManager {
 		MutationRecord record1_fix = MutationRecord.put(2L, record1.globalOffset, topic, record1.clientId, record1.clientNonce, new byte[0], new byte[] {1,2,3, 4, 5, 6});
 		TestingCommands.readPeerStateAndSendMutation(upstreamManager, upstreamCallbacks, record1_fix);
 		incoming = TestingCommands.readIncomingMutation(downstreamManager, downstreamCallbacks, upstreamEntry);
-		Assert.assertArrayEquals(((MutationRecordPayload_Put)record1_fix.payload).key, ((MutationRecordPayload_Put)incoming.payload).key);
-		Assert.assertArrayEquals(((MutationRecordPayload_Put)record1_fix.payload).value, ((MutationRecordPayload_Put)incoming.payload).value);
+		Assert.assertArrayEquals(((Payload_Put)record1_fix.payload).key, ((Payload_Put)incoming.payload).key);
+		Assert.assertArrayEquals(((Payload_Put)record1_fix.payload).value, ((Payload_Put)incoming.payload).value);
 		
 		// Upstream receives the ack and tries to send the next mutation so give them the last one we sent, new term.
 		receivedAckNumber = TestingCommands.receiveAckAndSend(upstreamManager, upstreamCallbacks, record1_fix.termNumber, record2);
 		Assert.assertEquals(record1_fix.globalOffset, receivedAckNumber);
 		
 		incoming = TestingCommands.readIncomingMutation(downstreamManager, downstreamCallbacks, upstreamEntry);
-		Assert.assertArrayEquals(((MutationRecordPayload_Put)record2.payload).key, ((MutationRecordPayload_Put)incoming.payload).key);
-		Assert.assertArrayEquals(((MutationRecordPayload_Put)record2.payload).value, ((MutationRecordPayload_Put)incoming.payload).value);
+		Assert.assertArrayEquals(((Payload_Put)record2.payload).key, ((Payload_Put)incoming.payload).key);
+		Assert.assertArrayEquals(((Payload_Put)record2.payload).value, ((Payload_Put)incoming.payload).value);
 		receivedAckNumber = TestingCommands.receiveAckFromDownstream(upstreamManager, upstreamCallbacks, downstreamEntry);
 		Assert.assertEquals(record2.globalOffset, receivedAckNumber);
 		

@@ -5,6 +5,12 @@ import java.util.UUID;
 
 import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.types.TopicName;
+import com.jeffdisher.laminar.types.payload.IPayload;
+import com.jeffdisher.laminar.types.payload.Payload_Config;
+import com.jeffdisher.laminar.types.payload.Payload_Create;
+import com.jeffdisher.laminar.types.payload.Payload_Delete;
+import com.jeffdisher.laminar.types.payload.Payload_Empty;
+import com.jeffdisher.laminar.types.payload.Payload_Put;
 import com.jeffdisher.laminar.utils.Assert;
 
 
@@ -35,7 +41,7 @@ public class MutationRecord {
 		Assert.assertTrue(clientNonce >= 0L);
 		Assert.assertTrue(null != code);
 		Assert.assertTrue(null != arguments);
-		return new MutationRecord(MutationRecordType.CREATE_TOPIC, termNumber, globalOffset, topic, clientId, clientNonce, MutationRecordPayload_Create.create(code, arguments));
+		return new MutationRecord(MutationRecordType.CREATE_TOPIC, termNumber, globalOffset, topic, clientId, clientNonce, Payload_Create.create(code, arguments));
 	}
 
 	public static MutationRecord destroyTopic(long termNumber, long globalOffset, TopicName topic, UUID clientId, long clientNonce) {
@@ -45,7 +51,7 @@ public class MutationRecord {
 		Assert.assertTrue(null != topic);
 		Assert.assertTrue(null != clientId);
 		Assert.assertTrue(clientNonce >= 0L);
-		return new MutationRecord(MutationRecordType.DESTROY_TOPIC, termNumber, globalOffset, topic, clientId, clientNonce, MutationRecordPayload_Empty.create());
+		return new MutationRecord(MutationRecordType.DESTROY_TOPIC, termNumber, globalOffset, topic, clientId, clientNonce, Payload_Empty.create());
 	}
 
 	public static MutationRecord put(long termNumber, long globalOffset, TopicName topic, UUID clientId, long clientNonce, byte[] key, byte[] value) {
@@ -57,7 +63,7 @@ public class MutationRecord {
 		Assert.assertTrue(clientNonce >= 0L);
 		Assert.assertTrue(null != key);
 		Assert.assertTrue(null != value);
-		return new MutationRecord(MutationRecordType.PUT, termNumber, globalOffset, topic, clientId, clientNonce, MutationRecordPayload_Put.create(key, value));
+		return new MutationRecord(MutationRecordType.PUT, termNumber, globalOffset, topic, clientId, clientNonce, Payload_Put.create(key, value));
 	}
 
 	public static MutationRecord delete(long termNumber, long globalOffset, TopicName topic, UUID clientId, long clientNonce, byte[] key) {
@@ -68,7 +74,7 @@ public class MutationRecord {
 		Assert.assertTrue(null != clientId);
 		Assert.assertTrue(clientNonce >= 0L);
 		Assert.assertTrue(null != key);
-		return new MutationRecord(MutationRecordType.DELETE, termNumber, globalOffset, topic, clientId, clientNonce, MutationRecordPayload_Delete.create(key));
+		return new MutationRecord(MutationRecordType.DELETE, termNumber, globalOffset, topic, clientId, clientNonce, Payload_Delete.create(key));
 	}
 
 	public static MutationRecord updateConfig(long termNumber, long globalOffset, UUID clientId, long clientNonce, ClusterConfig config) {
@@ -80,7 +86,7 @@ public class MutationRecord {
 		Assert.assertTrue(null != config);
 		// UPDATE_CONFIG is not posted to a topic.
 		TopicName topic = TopicName.syntheticTopic();
-		return new MutationRecord(MutationRecordType.UPDATE_CONFIG, termNumber, globalOffset, topic, clientId, clientNonce, MutationRecordPayload_Config.create(config));
+		return new MutationRecord(MutationRecordType.UPDATE_CONFIG, termNumber, globalOffset, topic, clientId, clientNonce, Payload_Config.create(config));
 	}
 
 	public static MutationRecord stutter(long termNumber, long globalOffset, TopicName topic, UUID clientId, long clientNonce, byte[] key, byte[] value) {
@@ -92,7 +98,7 @@ public class MutationRecord {
 		Assert.assertTrue(clientNonce >= 0L);
 		Assert.assertTrue(null != key);
 		Assert.assertTrue(null != value);
-		return new MutationRecord(MutationRecordType.STUTTER, termNumber, globalOffset, topic, clientId, clientNonce, MutationRecordPayload_Put.create(key, value));
+		return new MutationRecord(MutationRecordType.STUTTER, termNumber, globalOffset, topic, clientId, clientNonce, Payload_Put.create(key, value));
 	}
 
 	public static MutationRecord deserialize(byte[] serialized) {
@@ -116,27 +122,27 @@ public class MutationRecord {
 		TopicName topic = TopicName.deserializeFrom(buffer);
 		UUID clientId = new UUID(buffer.getLong(), buffer.getLong());
 		long clientNonce = buffer.getLong();
-		IMutationRecordPayload payload;
+		IPayload payload;
 		switch (type) {
 		case INVALID:
 			throw Assert.unimplemented("Handle invalid deserialization");
 		case CREATE_TOPIC:
-			payload = MutationRecordPayload_Create.deserialize(buffer);
+			payload = Payload_Create.deserialize(buffer);
 			break;
 		case DESTROY_TOPIC:
-			payload = MutationRecordPayload_Empty.deserialize(buffer);
+			payload = Payload_Empty.deserialize(buffer);
 			break;
 		case PUT:
-			payload = MutationRecordPayload_Put.deserialize(buffer);
+			payload = Payload_Put.deserialize(buffer);
 			break;
 		case DELETE:
-			payload = MutationRecordPayload_Delete.deserialize(buffer);
+			payload = Payload_Delete.deserialize(buffer);
 			break;
 		case UPDATE_CONFIG:
-			payload = MutationRecordPayload_Config.deserialize(buffer);
+			payload = Payload_Config.deserialize(buffer);
 			break;
 		case STUTTER:
-			payload = MutationRecordPayload_Put.deserialize(buffer);
+			payload = Payload_Put.deserialize(buffer);
 			break;
 		default:
 			throw Assert.unreachable("Unmatched deserialization type");
@@ -151,9 +157,9 @@ public class MutationRecord {
 	public final TopicName topic;
 	public final UUID clientId;
 	public final long clientNonce;
-	public final IMutationRecordPayload payload;
+	public final IPayload payload;
 	
-	private MutationRecord(MutationRecordType type, long termNumber, long globalOffset, TopicName topic, UUID clientId, long clientNonce, IMutationRecordPayload payload) {
+	private MutationRecord(MutationRecordType type, long termNumber, long globalOffset, TopicName topic, UUID clientId, long clientNonce, IPayload payload) {
 		this.type = type;
 		this.termNumber = termNumber;
 		this.globalOffset = globalOffset;

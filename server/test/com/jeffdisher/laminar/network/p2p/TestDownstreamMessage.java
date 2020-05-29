@@ -14,7 +14,7 @@ import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.types.ConfigEntry;
 import com.jeffdisher.laminar.types.TopicName;
 import com.jeffdisher.laminar.types.mutation.MutationRecord;
-import com.jeffdisher.laminar.types.mutation.MutationRecordPayload_Put;
+import com.jeffdisher.laminar.types.payload.Payload_Put;
 
 
 public class TestDownstreamMessage {
@@ -50,8 +50,8 @@ public class TestDownstreamMessage {
 		DownstreamPayload_AppendMutations payload = (DownstreamPayload_AppendMutations)test.payload;
 		Assert.assertEquals(1L, payload.termNumber);
 		Assert.assertEquals(lastCommittedMutationOffset, payload.lastCommittedMutationOffset);
-		Assert.assertArrayEquals(((MutationRecordPayload_Put)mutation.payload).key, ((MutationRecordPayload_Put)payload.records[0].payload).key);
-		Assert.assertArrayEquals(((MutationRecordPayload_Put)mutation.payload).value, ((MutationRecordPayload_Put)payload.records[0].payload).value);
+		Assert.assertArrayEquals(((Payload_Put)mutation.payload).key, ((Payload_Put)payload.records[0].payload).key);
+		Assert.assertArrayEquals(((Payload_Put)mutation.payload).value, ((Payload_Put)payload.records[0].payload).value);
 	}
 
 	@Test

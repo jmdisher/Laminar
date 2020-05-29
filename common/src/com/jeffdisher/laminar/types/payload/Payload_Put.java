@@ -1,4 +1,4 @@
-package com.jeffdisher.laminar.types.mutation;
+package com.jeffdisher.laminar.types.payload;
 
 import java.nio.ByteBuffer;
 
@@ -6,24 +6,26 @@ import com.jeffdisher.laminar.utils.MiscHelpers;
 
 
 /**
- * The PUT message encodes a key-value pair of byte[].
+ * Contains:
+ * -key (byte[])
+ * -value (byte[])
  */
-public class MutationRecordPayload_Put implements IMutationRecordPayload {
-	public static MutationRecordPayload_Put create(byte[] key, byte[] value) {
-		return new MutationRecordPayload_Put(key, value);
+public class Payload_Put implements IPayload {
+	public static Payload_Put create(byte[] key, byte[] value) {
+		return new Payload_Put(key, value);
 	}
 
-	public static MutationRecordPayload_Put deserialize(ByteBuffer serialized) {
+	public static Payload_Put deserialize(ByteBuffer serialized) {
 		byte[] key = MiscHelpers.readSizedBytes(serialized);
 		byte[] value = MiscHelpers.readSizedBytes(serialized);
-		return new MutationRecordPayload_Put(key, value);
+		return new Payload_Put(key, value);
 	}
 
 
 	public final byte[] key;
 	public final byte[] value;
 	
-	private MutationRecordPayload_Put(byte[] key, byte[] value) {
+	private Payload_Put(byte[] key, byte[] value) {
 		this.key = key;
 		this.value = value;
 	}
