@@ -49,6 +49,12 @@ public class NetworkManager {
 	private static final int BUFFER_SIZE_BYTES = 64 * 1024;
 	// We reserve 2 bytes in the message payload for the big-endian u16 size so the maximum payload is 65534 bytes.
 	public static final int MESSAGE_PAYLOAD_MAXIMUM_BYTES = 64 * 1024 - 2;
+	/**
+	 * Set this to true in order to introduce a 10ms stall on every select call.  While not a perfect emulation of a
+	 * slow network, it does introduce a delay on the NetworkManager level which exposes bugs hidden by fast localhost
+	 * testing.
+	 */
+	private static final boolean DEBUG_EMULATE_SLOW_NETWORK = false;
 
 	/**
 	 * Creates a NetworkManager which is set to receive incoming connections on serverSocket and can also be used to
@@ -374,6 +380,15 @@ public class NetworkManager {
 
 	private void _backgroundThreadMain() {
 		while (_keepRunning) {
+			if (DEBUG_EMULATE_SLOW_NETWORK) {
+				// Add a 10ms stall before the select operation in order to emulate a slow-to-respond network.
+				try {
+					Thread.sleep(10L);
+				} catch (InterruptedException e) {
+					// This thread isn't exposed so it shouldn't receive interrupts.
+					throw Assert.unexpected(e);
+				}
+			}
 			int selectedKeyCount = 0;
 			try {
 				selectedKeyCount = _selector.select();

@@ -563,6 +563,8 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		HashMap<UUID, DownstreamPeerSyncState> copy = new HashMap<>(_unionOfDownstreamNodes);
 		_unionOfDownstreamNodes.clear();
 		System.out.println("Config(rebuild): Config has " + _currentConfig.config.entries.length + " entries, " + _configsPendingCommit.size() + " pending configs");
+		// "self" is always in the union of nodes, even if not part of this config.
+		_unionOfDownstreamNodes.put(_self.nodeUuid, _selfState);
 		for (ConfigEntry entry : _currentConfig.config.entries) {
 			_unionOfDownstreamNodes.put(entry.nodeUuid, copy.get(entry.nodeUuid));
 		}
