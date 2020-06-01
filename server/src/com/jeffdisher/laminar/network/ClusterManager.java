@@ -86,12 +86,14 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 	@Override
 	public void mainOpenDownstreamConnection(ConfigEntry entry) {
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
+		System.out.println("Downstream(open): " + entry.nodeUuid);
 		_mainCreateNewConnectionToPeer(entry);
 	}
 
 	@Override
 	public void mainCloseDownstreamConnection(ConfigEntry entry) {
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
+		System.out.println("Downstream(close): " + entry.nodeUuid);
 		NetworkManager.NodeToken token = _downstreamPeers.removeDownstreamPeer(entry.nodeUuid);
 		_networkManager.closeConnection(token);
 	}

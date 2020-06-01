@@ -435,6 +435,7 @@ public class ClientManager implements IClientManager, INetworkManagerBackgroundC
 			// what to re-send).
 			ClientMessagePayload_Reconnect reconnect = (ClientMessagePayload_Reconnect)incoming.payload;
 			if (null == _clusterLeader) {
+				System.out.println("RECONNECT: " + reconnect.clientId + " (their commit " + reconnect.lastCommitGlobalOffset + ", our received " + lastReceivedMutationOffset + ")");
 				if (reconnect.lastCommitGlobalOffset > lastReceivedMutationOffset) {
 					// They are from the future so this probably means we just started and haven't yet found the leader.  Just disconnect them.
 					boolean didRemove = _newClients.remove(client);
