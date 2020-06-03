@@ -8,8 +8,10 @@ import org.junit.Assert;
 import org.junit.Test;
 
 import com.jeffdisher.laminar.ServerWrapper;
+import com.jeffdisher.laminar.avm.ContractPackager;
 import com.jeffdisher.laminar.client.ClientConnection;
 import com.jeffdisher.laminar.client.ClientResult;
+import com.jeffdisher.laminar.contracts.DoNothing;
 import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.types.CommitInfo;
 import com.jeffdisher.laminar.types.ConfigEntry;
@@ -42,6 +44,10 @@ public class PerfWritePerformance {
 	 * Number of messages each client in a test run should send.
 	 */
 	private static final int[] MESSAGES_PER_CLIENT = new int[] { 100, 1000, 10000 };
+	/**
+	 * Set to true to test a programmable topic, false to test a vanilla one.
+	 */
+	private static boolean TEST_PROGRAMMABLE = true;
 
 	@Test
 	public void perfRun() throws Throwable {
@@ -101,7 +107,14 @@ public class PerfWritePerformance {
 		try (ClientConnection configClient = ClientConnection.open(address)) {
 			configClient.waitForConnectionOrFailure();
 			Assert.assertEquals(CommitInfo.Effect.VALID, configClient.sendUpdateConfig(ClusterConfig.configFromEntries(configs)).waitForCommitted().effect);
-			Assert.assertEquals(CommitInfo.Effect.VALID, configClient.sendCreateTopic(topic).waitForCommitted().effect);
+			
+			if (TEST_PROGRAMMABLE) {
+				byte[] code = ContractPackager.createJarForClass(DoNothing.class);
+				byte[] arguments = new byte[0];
+				Assert.assertEquals(CommitInfo.Effect.VALID, configClient.sendCreateProgrammableTopic(topic, code, arguments).waitForCommitted().effect);
+			} else {
+				Assert.assertEquals(CommitInfo.Effect.VALID, configClient.sendCreateTopic(topic).waitForCommitted().effect);
+			}
 		}
 		
 		// Open all real client connections.
