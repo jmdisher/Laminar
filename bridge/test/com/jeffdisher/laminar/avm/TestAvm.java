@@ -7,8 +7,10 @@ import org.junit.Assert;
 import org.junit.Test;
 
 import com.jeffdisher.laminar.contracts.DoNothing;
+import com.jeffdisher.laminar.contracts.SimpleDeployment;
 import com.jeffdisher.laminar.types.TopicName;
 import com.jeffdisher.laminar.types.event.EventRecord;
+import com.jeffdisher.laminar.types.payload.Payload_KeyPut;
 
 
 public class TestAvm {
@@ -55,6 +57,76 @@ public class TestAvm {
 		// A DELETE should result in 1 event for that key.
 		records = bridge.runDelete(context, termNumber, globalOffset, initialLocalOffset, clientId, clientNonce, topic, key);
 		Assert.assertEquals(0, records.size());
+		globalOffset += 1;
+		clientNonce += 1;
+		initialLocalOffset += records.size();
+		
+		bridge.shutdown();
+	}
+
+	@Test
+	public void testSimpleDeployment() throws Throwable {
+		byte[] key = new byte[32];
+		key[31] = 1;
+		byte[] code = ContractPackager.createJarForClass(SimpleDeployment.class);
+		byte[] arguments = key;
+		
+		long termNumber = 1L;
+		long globalOffset = 1L;
+		long initialLocalOffset = 1L;
+		UUID clientId = UUID.randomUUID();
+		long clientNonce = 1L;
+		
+		TopicName topic = TopicName.fromString("test");
+		AvmBridge bridge = new AvmBridge();
+		
+		TopicContext context = new TopicContext();
+		List<EventRecord> records = bridge.runCreate(context, termNumber, globalOffset, initialLocalOffset, clientId, clientNonce, topic, code, arguments);
+		Assert.assertEquals(1, records.size());
+		Assert.assertEquals(0, ((Payload_KeyPut)records.get(0).payload).value[0]);
+		Assert.assertNotNull(context.transformedCode);
+		Assert.assertNotNull(context.objectGraph);
+		
+		bridge.shutdown();
+	}
+
+	@Test
+	public void testDeploymentPutAndDelete() throws Throwable {
+		byte[] key = new byte[32];
+		key[31] = 2;
+		byte[] code = ContractPackager.createJarForClass(SimpleDeployment.class);
+		byte[] arguments = key;
+		
+		long termNumber = 1L;
+		long globalOffset = 1L;
+		long initialLocalOffset = 1L;
+		UUID clientId = UUID.randomUUID();
+		long clientNonce = 1L;
+		
+		TopicName topic = TopicName.fromString("test");
+		byte[] value = new byte[] {1,2,3};
+		AvmBridge bridge = new AvmBridge();
+		
+		TopicContext context = new TopicContext();
+		List<EventRecord> records = bridge.runCreate(context, termNumber, globalOffset, initialLocalOffset, clientId, clientNonce, topic, code, arguments);
+		Assert.assertEquals(1, records.size());
+		Assert.assertEquals(0, ((Payload_KeyPut)records.get(0).payload).value[0]);
+		Assert.assertNotNull(context.transformedCode);
+		Assert.assertNotNull(context.objectGraph);
+		globalOffset += 1;
+		clientNonce += 1;
+		initialLocalOffset += records.size();
+		
+		records = bridge.runPut(context, termNumber, globalOffset, initialLocalOffset, clientId, clientNonce, topic, key, value);
+		Assert.assertEquals(1, records.size());
+		Assert.assertEquals(1, ((Payload_KeyPut)records.get(0).payload).value[0]);
+		globalOffset += 1;
+		clientNonce += 1;
+		initialLocalOffset += records.size();
+		
+		records = bridge.runDelete(context, termNumber, globalOffset, initialLocalOffset, clientId, clientNonce, topic, key);
+		Assert.assertEquals(1, records.size());
+		Assert.assertEquals(2, ((Payload_KeyPut)records.get(0).payload).value[0]);
 		globalOffset += 1;
 		clientNonce += 1;
 		initialLocalOffset += records.size();
