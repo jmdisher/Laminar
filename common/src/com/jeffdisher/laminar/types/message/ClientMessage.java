@@ -98,6 +98,15 @@ public class ClientMessage {
 	}
 
 	/**
+	 * Creates a message to create a new topic on the cluster.
+	 * 
+	 * @return A new ClientMessage instance.
+	 */
+	public static ClientMessage createProgrammableTopic(long nonce, TopicName topic, byte[] code, byte[] arguments) {
+		return new ClientMessage(ClientMessageType.TOPIC_CREATE, nonce, ClientMessagePayload_TopicCreate.create(topic, code, arguments));
+	}
+
+	/**
 	 * Creates a message to destroy an existing topic on the cluster.
 	 * 
 	 * @return A new ClientMessage instance.

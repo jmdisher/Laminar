@@ -9,5 +9,16 @@
 	</classpathentry>
 	<classpathentry kind="con" path="org.eclipse.jdt.junit.JUNIT_CONTAINER/4"/>
 	<classpathentry combineaccessrules="false" kind="src" path="/Laminar-common"/>
+	<classpathentry kind="lib" path="/home/jmdisher/Documents/repos/Laminar/bridge/lib/aion-types-22a3be9.jar"/>
+	<classpathentry kind="lib" path="/home/jmdisher/Documents/repos/Laminar/bridge/lib/asm-6.2.1.jar"/>
+	<classpathentry kind="lib" path="/home/jmdisher/Documents/repos/Laminar/bridge/lib/asm-analysis-6.2.1.jar"/>
+	<classpathentry kind="lib" path="/home/jmdisher/Documents/repos/Laminar/bridge/lib/asm-commons-6.2.1.jar"/>
+	<classpathentry kind="lib" path="/home/jmdisher/Documents/repos/Laminar/bridge/lib/asm-tree-6.2.1.jar"/>
+	<classpathentry kind="lib" path="/home/jmdisher/Documents/repos/Laminar/bridge/lib/asm-util-6.2.1.jar"/>
+	<classpathentry kind="lib" path="/home/jmdisher/Documents/repos/Laminar/bridge/lib/org-aion-avm-api.jar"/>
+	<classpathentry kind="lib" path="/home/jmdisher/Documents/repos/Laminar/bridge/lib/org-aion-avm-core.jar"/>
+	<classpathentry kind="lib" path="/home/jmdisher/Documents/repos/Laminar/bridge/lib/org-aion-avm-rt.jar"/>
+	<classpathentry kind="lib" path="/home/jmdisher/Documents/repos/Laminar/bridge/lib/org-aion-avm-userlib.jar"/>
+	<classpathentry kind="lib" path="/home/jmdisher/Documents/repos/Laminar/bridge/lib/org-aion-avm-utilities.jar"/>
 	<classpathentry kind="output" path="bin"/>
 </classpath>

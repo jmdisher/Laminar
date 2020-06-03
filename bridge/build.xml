@@ -6,6 +6,7 @@
 	<property name="global.jars.common" value="${global.jars}/common.jar"/>
 	<property name="global.jars.bridge" value="${global.jars}/bridge.jar"/>
 
+	<property name="local.lib" value="${basedir}/lib"/>
 	<property name="local.src" value="${basedir}/src"/>
 	<property name="local.test" value="${basedir}/test"/>
 	<property name="local.build" value="${basedir}/build"/>
@@ -56,10 +57,29 @@
 		>
 			<classpath>
 				<pathelement location="${global.jars.common}"/>
+				<!-- AVM dependencies are required for building the bridge -->
+				<pathelement location="${local.lib}/aion-types-22a3be9.jar" />
+				<pathelement location="${local.lib}/org-aion-avm-api.jar" />
+				<pathelement location="${local.lib}/org-aion-avm-core.jar" />
+				<pathelement location="${local.lib}/org-aion-avm-rt.jar" />
+				<pathelement location="${local.lib}/org-aion-avm-userlib.jar" />
+				<pathelement location="${local.lib}/org-aion-avm-utilities.jar" />
 			</classpath>
 		</javac>
 		<jar destfile="${global.jars.bridge}">
 			<fileset dir="${local.build.src}"/>
+			<!-- Just for simplicity in enabling/disabling the AVM integration, we package it and all its dependencies as part of the bridge intermediary build artifact -->
+			<zipfileset src="${local.lib}/aion-types-22a3be9.jar" />
+			<zipfileset src="${local.lib}/asm-6.2.1.jar" />
+			<zipfileset src="${local.lib}/asm-analysis-6.2.1.jar" />
+			<zipfileset src="${local.lib}/asm-commons-6.2.1.jar" />
+			<zipfileset src="${local.lib}/asm-tree-6.2.1.jar" />
+			<zipfileset src="${local.lib}/asm-util-6.2.1.jar" />
+			<zipfileset src="${local.lib}/org-aion-avm-api.jar" />
+			<zipfileset src="${local.lib}/org-aion-avm-core.jar" />
+			<zipfileset src="${local.lib}/org-aion-avm-rt.jar" />
+			<zipfileset src="${local.lib}/org-aion-avm-userlib.jar" />
+			<zipfileset src="${local.lib}/org-aion-avm-utilities.jar" />
 		</jar>
 	</target>
 
