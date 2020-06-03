@@ -8,6 +8,7 @@ import org.junit.Test;
 
 import com.jeffdisher.laminar.contracts.DoNothing;
 import com.jeffdisher.laminar.contracts.EmulateStutter;
+import com.jeffdisher.laminar.contracts.EvenMutationOffsetOnly;
 import com.jeffdisher.laminar.contracts.SimpleDeployment;
 import com.jeffdisher.laminar.types.TopicName;
 import com.jeffdisher.laminar.types.event.EventRecord;
@@ -180,6 +181,61 @@ public class TestAvm {
 		globalOffset += 1;
 		clientNonce += 1;
 		initialLocalOffset += records.size();
+		
+		bridge.shutdown();
+	}
+
+	@Test
+	public void testFailures() throws Throwable {
+		byte[] code = ContractPackager.createJarForClass(EvenMutationOffsetOnly.class);
+		
+		long termNumber = 1L;
+		long globalOffset = 1L;
+		long initialLocalOffset = 1L;
+		UUID clientId = UUID.randomUUID();
+		long clientNonce = 1L;
+		
+		TopicName topic = TopicName.fromString("test");
+		AvmBridge bridge = new AvmBridge();
+		
+		TopicContext context = new TopicContext();
+		List<EventRecord> records = bridge.runCreate(context, termNumber, globalOffset, initialLocalOffset, clientId, clientNonce, topic, code, new byte[0]);
+		Assert.assertEquals(0, records.size());
+		Assert.assertNotNull(context.transformedCode);
+		Assert.assertNotNull(context.objectGraph);
+		globalOffset += 1;
+		clientNonce += 1;
+		initialLocalOffset += records.size();
+		
+		// Mutation offset is 2 -> pass
+		byte[] key = new byte[32];
+		byte[] value = new byte[] {1,2,3};
+		records = bridge.runPut(context, termNumber, globalOffset, initialLocalOffset, clientId, clientNonce, topic, key, value);
+		Assert.assertEquals(1, records.size());
+		Assert.assertArrayEquals(value, ((Payload_KeyPut)records.get(0).payload).value);
+		globalOffset += 1;
+		clientNonce += 1;
+		initialLocalOffset += records.size();
+		
+		// Mutation offset is 3 -> fail
+		records = bridge.runPut(context, termNumber, globalOffset, initialLocalOffset, clientId, clientNonce, topic, key, value);
+		Assert.assertEquals(null, records);
+		globalOffset += 1;
+		clientNonce += 1;
+		
+		// Mutation offset is 4 -> pass
+		records = bridge.runDelete(context, termNumber, globalOffset, initialLocalOffset, clientId, clientNonce, topic, key);
+		Assert.assertEquals(1, records.size());
+		Assert.assertArrayEquals(key, ((Payload_KeyDelete)records.get(0).payload).key);
+		globalOffset += 1;
+		clientNonce += 1;
+		initialLocalOffset += records.size();
+		
+		// Mutation offset is 5 -> fail
+		records = bridge.runDelete(context, termNumber, globalOffset, initialLocalOffset, clientId, clientNonce, topic, key);
+		Assert.assertEquals(null, records);
+		globalOffset += 1;
+		clientNonce += 1;
 		
 		bridge.shutdown();
 	}
