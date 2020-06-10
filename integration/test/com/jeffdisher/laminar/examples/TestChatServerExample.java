@@ -6,7 +6,9 @@ import java.net.InetSocketAddress;
 import java.util.concurrent.CountDownLatch;
 
 import org.junit.Assert;
+import org.junit.Rule;
 import org.junit.Test;
+import org.junit.rules.TemporaryFolder;
 
 import com.jeffdisher.laminar.ProcessWrapper;
 import com.jeffdisher.laminar.ServerWrapper;
@@ -19,6 +21,9 @@ import com.jeffdisher.laminar.ServerWrapper;
  * -CHAT_CLIENT_JAR - points to the JAR of the ChatServerExample
  */
 public class TestChatServerExample {
+	@Rule
+	public TemporaryFolder _folder = new TemporaryFolder();
+
 	/**
 	 * Starts 1 node and attaches 2 clients to it, verifying that the first sees the topic created and that both see
 	 * each other speaking.
@@ -26,7 +31,7 @@ public class TestChatServerExample {
 	@Test
 	public void test2Clients() throws Throwable {
 		String roomName = "chatroom";
-		ServerWrapper leader = ServerWrapper.startedServerWrapper("test2Clients-LEADER", 2001, 3001, new File("/tmp/laminar1"));
+		ServerWrapper leader = ServerWrapper.startedServerWrapper("test2Clients-LEADER", 2001, 3001, _folder.newFolder());
 		InetSocketAddress leaderAddress = new InetSocketAddress(InetAddress.getLocalHost(), 3001);
 		
 		ProcessWrapper user1 = _startChatClient("user1", leaderAddress.getAddress().getHostAddress(), Integer.toString(leaderAddress.getPort()), roomName, "user1");

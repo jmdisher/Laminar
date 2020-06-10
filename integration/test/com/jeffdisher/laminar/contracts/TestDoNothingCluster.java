@@ -5,7 +5,9 @@ import java.net.InetAddress;
 import java.net.InetSocketAddress;
 
 import org.junit.Assert;
+import org.junit.Rule;
 import org.junit.Test;
+import org.junit.rules.TemporaryFolder;
 
 import com.jeffdisher.laminar.ProcessWrapper;
 import com.jeffdisher.laminar.ServerWrapper;
@@ -23,10 +25,13 @@ import com.jeffdisher.laminar.types.payload.Payload_TopicCreate;
  * Tests the DoNothing contract in a clustered context.
  */
 public class TestDoNothingCluster {
+	@Rule
+	public TemporaryFolder _folder = new TemporaryFolder();
+
 	@Test
 	public void testDeployment() throws Throwable {
-		ServerWrapper leader = ServerWrapper.startedServerWrapper("testDeployment-LEADER", 2001, 3001, new File("/tmp/laminar1"));
-		ServerWrapper follower = ServerWrapper.startedServerWrapper("testDeployment-FOLLOWER", 2002, 3002, new File("/tmp/laminar2"));
+		ServerWrapper leader = ServerWrapper.startedServerWrapper("testDeployment-LEADER", 2001, 3001, _folder.newFolder());
+		ServerWrapper follower = ServerWrapper.startedServerWrapper("testDeployment-FOLLOWER", 2002, 3002, _folder.newFolder());
 		InetSocketAddress leaderAddress = new InetSocketAddress(InetAddress.getLocalHost(), 3001);
 		InetSocketAddress followerAddress = new InetSocketAddress(InetAddress.getLocalHost(), 3002);
 		

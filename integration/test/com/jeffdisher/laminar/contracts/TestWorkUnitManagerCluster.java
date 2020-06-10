@@ -9,7 +9,9 @@ import java.util.concurrent.BrokenBarrierException;
 import java.util.concurrent.CyclicBarrier;
 
 import org.junit.Assert;
+import org.junit.Rule;
 import org.junit.Test;
+import org.junit.rules.TemporaryFolder;
 
 import com.jeffdisher.laminar.ProcessWrapper;
 import com.jeffdisher.laminar.ServerWrapper;
@@ -35,10 +37,13 @@ public class TestWorkUnitManagerCluster {
 	private static final int TOTAL_WORK = 400;
 	private static final long MILLIS_PER_UNIT = 2L;
 
+	@Rule
+	public TemporaryFolder _folder = new TemporaryFolder();
+
 	@Test
 	public void testParallelWork() throws Throwable {
-		ServerWrapper leader = ServerWrapper.startedServerWrapper("testParallelWork-LEADER", 2001, 3001, new File("/tmp/laminar1"));
-		ServerWrapper follower = ServerWrapper.startedServerWrapper("testParallelWork-FOLLOWER", 2002, 3002, new File("/tmp/laminar2"));
+		ServerWrapper leader = ServerWrapper.startedServerWrapper("testParallelWork-LEADER", 2001, 3001, _folder.newFolder());
+		ServerWrapper follower = ServerWrapper.startedServerWrapper("testParallelWork-FOLLOWER", 2002, 3002, _folder.newFolder());
 		InetSocketAddress leaderAddress = new InetSocketAddress(InetAddress.getLocalHost(), 3001);
 		InetSocketAddress followerAddress = new InetSocketAddress(InetAddress.getLocalHost(), 3002);
 		

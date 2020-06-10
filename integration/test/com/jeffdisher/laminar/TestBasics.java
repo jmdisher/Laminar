@@ -1,11 +1,12 @@
 package com.jeffdisher.laminar;
 
 import java.io.ByteArrayOutputStream;
-import java.io.File;
 import java.util.UUID;
 
 import org.junit.Assert;
+import org.junit.Rule;
 import org.junit.Test;
+import org.junit.rules.TemporaryFolder;
 
 
 /**
@@ -13,6 +14,9 @@ import org.junit.Test;
  * These are quick and basically are just for testing things like command-line processing and proper start-up/shut-down.
  */
 public class TestBasics {
+	@Rule
+	public TemporaryFolder _folder = new TemporaryFolder();
+
 	@Test
 	public void testMissingArgs() throws Throwable {
 		ByteArrayOutputStream err = new ByteArrayOutputStream(1024);
@@ -28,7 +32,7 @@ public class TestBasics {
 	@Test
 	public void testNormalRun() throws Throwable {
 		// We just want this to start everything and then shut down.
-		ServerWrapper wrapper = ServerWrapper.startedServerWrapper("testNormalRun", 2001, 2000, new File("/tmp/laminar"));
+		ServerWrapper wrapper = ServerWrapper.startedServerWrapper("testNormalRun", 2001, 2000, _folder.newFolder());
 		int exit = wrapper.stop();
 		Assert.assertEquals(0, exit);
 	}
@@ -36,7 +40,7 @@ public class TestBasics {
 	@Test
 	public void testIpv4() throws Throwable {
 		// We just want this to start everything and then shut down with a specific IPv4 address.
-		ServerWrapper wrapper = ServerWrapper.startedServerWrapperWithUuidAndIp("testIpv4", UUID.randomUUID(), "127.0.0.1", 2001, 2000, new File("/tmp/laminar"));
+		ServerWrapper wrapper = ServerWrapper.startedServerWrapperWithUuidAndIp("testIpv4", UUID.randomUUID(), "127.0.0.1", 2001, 2000, _folder.newFolder());
 		int exit = wrapper.stop();
 		Assert.assertEquals(0, exit);
 	}
@@ -44,7 +48,7 @@ public class TestBasics {
 	@Test
 	public void testIpv6() throws Throwable {
 		// We just want this to start everything and then shut down with a specific IPv4 address.
-		ServerWrapper wrapper = ServerWrapper.startedServerWrapperWithUuidAndIp("testIpv6", UUID.randomUUID(), "::1", 2001, 2000, new File("/tmp/laminar"));
+		ServerWrapper wrapper = ServerWrapper.startedServerWrapperWithUuidAndIp("testIpv6", UUID.randomUUID(), "::1", 2001, 2000, _folder.newFolder());
 		int exit = wrapper.stop();
 		Assert.assertEquals(0, exit);
 	}

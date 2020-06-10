@@ -4,7 +4,9 @@ import java.util.UUID;
 import java.util.function.Consumer;
 
 import org.junit.Assert;
+import org.junit.Rule;
 import org.junit.Test;
+import org.junit.rules.TemporaryFolder;
 
 import com.jeffdisher.laminar.state.StateSnapshot;
 import com.jeffdisher.laminar.types.CommitInfo;
@@ -14,10 +16,13 @@ import com.jeffdisher.laminar.types.mutation.MutationRecord;
 
 
 public class TestDiskManager {
+	@Rule
+	public TemporaryFolder _folder = new TemporaryFolder();
+
 	@Test
 	public void testStartStop() throws Throwable {
 		LatchedCallbacks callbacks = new LatchedCallbacks();
-		DiskManager manager = new DiskManager(null, callbacks);
+		DiskManager manager = new DiskManager(_folder.newFolder(), callbacks);
 		manager.startAndWaitForReady();
 		manager.stopAndWaitForTermination();
 	}
@@ -31,7 +36,7 @@ public class TestDiskManager {
 		EventRecord event1 = EventRecord.put(1L, 1L, 1L, UUID.randomUUID(), 1L, new byte[0], new byte[] {1});
 		EventRecord event2 = EventRecord.put(1L, 2L, 2L, UUID.randomUUID(), 2L, new byte[0], new byte[] {1});
 		LatchedCallbacks callbacks = new LatchedCallbacks();
-		DiskManager manager = new DiskManager(null, callbacks);
+		DiskManager manager = new DiskManager(_folder.newFolder(), callbacks);
 		manager.startAndWaitForReady();
 		
 		manager.commitEvent(topic, event1);
@@ -57,7 +62,7 @@ public class TestDiskManager {
 		EventRecord event2 = EventRecord.put(1L, 2L, 2L, UUID.randomUUID(), 2L, new byte[0], new byte[] {1});
 		
 		LatchedCallbacks callbacks = new LatchedCallbacks();
-		DiskManager manager = new DiskManager(null, callbacks);
+		DiskManager manager = new DiskManager(_folder.newFolder(), callbacks);
 		manager.startAndWaitForReady();
 		
 		manager.commitMutation(CommittedMutationRecord.create(mutation1, CommitInfo.Effect.VALID));

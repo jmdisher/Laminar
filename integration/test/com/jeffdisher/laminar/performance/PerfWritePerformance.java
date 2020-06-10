@@ -1,11 +1,12 @@
 package com.jeffdisher.laminar.performance;
 
-import java.io.File;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 
 import org.junit.Assert;
+import org.junit.ClassRule;
 import org.junit.Test;
+import org.junit.rules.TemporaryFolder;
 
 import com.jeffdisher.laminar.ServerWrapper;
 import com.jeffdisher.laminar.avm.ContractPackager;
@@ -48,6 +49,9 @@ public class PerfWritePerformance {
 	 * Set to true to test a programmable topic, false to test a vanilla one.
 	 */
 	private static boolean TEST_PROGRAMMABLE = true;
+
+	@ClassRule
+	public static TemporaryFolder _folder = new TemporaryFolder();
 
 	@Test
 	public void perfRun() throws Throwable {
@@ -93,7 +97,7 @@ public class PerfWritePerformance {
 		for (int i = 0; i < servers.length; ++i) {
 			int clusterPort = 2000 + i;
 			int clientPort = 3000 + i;
-			servers[i] = ServerWrapper.startedServerWrapper("perf_nodes" + nodeCount + "_clients" + clientCount +"_load" + messagesPerClient + "-" + i, clusterPort, clientPort, new File("/tmp/laminar" + i));
+			servers[i] = ServerWrapper.startedServerWrapper("perf_nodes" + nodeCount + "_clients" + clientCount +"_load" + messagesPerClient + "-" + i, clusterPort, clientPort, _folder.newFolder());
 			InetSocketAddress address = new InetSocketAddress(InetAddress.getLocalHost(), clientPort);
 			try (ClientConnection configClient = ClientConnection.open(address)) {
 				configClient.waitForConnectionOrFailure();

@@ -1,6 +1,5 @@
 package com.jeffdisher.laminar;
 
-import java.io.File;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetAddress;
@@ -13,7 +12,9 @@ import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 
 import org.junit.Assert;
+import org.junit.Rule;
 import org.junit.Test;
+import org.junit.rules.TemporaryFolder;
 
 import com.jeffdisher.laminar.client.ClientConnection;
 import com.jeffdisher.laminar.client.ClientResult;
@@ -38,11 +39,14 @@ import com.jeffdisher.laminar.utils.TestingHelpers;
  * node is involved (since most of their behaviour is related to this case).
  */
 public class TestClientsAndListeners {
+	@Rule
+	public TemporaryFolder _folder = new TemporaryFolder();
+
 	@Test
 	public void testSimpleClient() throws Throwable {
 		TopicName topic = TopicName.fromString("test");
 		// Here, we start up, connect a client, send one message, wait for it to commit, then shut everything down.
-		ServerWrapper wrapper = ServerWrapper.startedServerWrapper("testSimpleClient", 2003, 2002, new File("/tmp/laminar"));
+		ServerWrapper wrapper = ServerWrapper.startedServerWrapper("testSimpleClient", 2003, 2002, _folder.newFolder());
 		
 		try (ClientConnection client = ClientConnection.open(new InetSocketAddress(InetAddress.getLocalHost(), 2002))) {
 			Assert.assertEquals(CommitInfo.Effect.VALID, client.sendCreateTopic(topic).waitForCommitted().effect);
@@ -62,7 +66,7 @@ public class TestClientsAndListeners {
 		byte[] message = "Hello World!".getBytes();
 		// Here, we start up, connect a client, send one message, wait for it to commit, observe listener behaviour, then shut everything down.
 		
-		ServerWrapper wrapper = ServerWrapper.startedServerWrapper("testSimpleClientAndListeners", 2003, 2002, new File("/tmp/laminar"));
+		ServerWrapper wrapper = ServerWrapper.startedServerWrapper("testSimpleClientAndListeners", 2003, 2002, _folder.newFolder());
 		InetSocketAddress address = new InetSocketAddress(InetAddress.getLocalHost(), 2002);
 		
 		// Start a listener before the client begins.
@@ -101,7 +105,7 @@ public class TestClientsAndListeners {
 		byte[] message = "Hello World!".getBytes();
 		// Here, we start up, connect a client, send one message, wait for it to commit, observe listener behaviour, then shut everything down.
 		
-		ServerWrapper wrapper = ServerWrapper.startedServerWrapper("testClientForceDisconnect", 2003, 2002, new File("/tmp/laminar"));
+		ServerWrapper wrapper = ServerWrapper.startedServerWrapper("testClientForceDisconnect", 2003, 2002, _folder.newFolder());
 		InetSocketAddress address = new InetSocketAddress(InetAddress.getLocalHost(), 2002);
 		
 		try (ClientConnection client = ClientConnection.open(address)) {
@@ -166,7 +170,7 @@ public class TestClientsAndListeners {
 	public void testSimpleClientWaitForConnection() throws Throwable {
 		TopicName topic = TopicName.fromString("test");
 		// Here, we start up, connect a client, send one message, wait for it to commit, then shut everything down.
-		ServerWrapper wrapper = ServerWrapper.startedServerWrapper("testSimpleClientWaitForConnection", 2003, 2002, new File("/tmp/laminar"));
+		ServerWrapper wrapper = ServerWrapper.startedServerWrapper("testSimpleClientWaitForConnection", 2003, 2002, _folder.newFolder());
 		
 		// It should always be harmless to wait for connection over and over so just do that here.
 		try (ClientConnection client = ClientConnection.open(new InetSocketAddress(InetAddress.getLocalHost(), 2002))) {
@@ -188,7 +192,7 @@ public class TestClientsAndListeners {
 	@Test
 	public void testGlobalMutationCommitOffset() throws Throwable {
 		// Start up a fake client to verify that the RECEIVED and COMMITTED responses have the expected commit offsets.
-		ServerWrapper wrapper = ServerWrapper.startedServerWrapper("testGlobalMutationCommitOffset", 2003, 2002, new File("/tmp/laminar"));
+		ServerWrapper wrapper = ServerWrapper.startedServerWrapper("testGlobalMutationCommitOffset", 2003, 2002, _folder.newFolder());
 		
 		// Fake a connection from a client:  send the handshake and a few messages, then disconnect.
 		InetSocketAddress address = new InetSocketAddress(InetAddress.getLocalHost(), 2002);
@@ -216,7 +220,7 @@ public class TestClientsAndListeners {
 	@Test
 	public void testSimulatedClientReconnect() throws Throwable {
 		// Here, we start up, connect a client, send one message, wait for it to commit, then shut everything down.
-		ServerWrapper wrapper = ServerWrapper.startedServerWrapper("testSimulatedClientReconnect", 2003, 2002, new File("/tmp/laminar"));
+		ServerWrapper wrapper = ServerWrapper.startedServerWrapper("testSimulatedClientReconnect", 2003, 2002, _folder.newFolder());
 		
 		// Fake a connection from a client:  send the handshake and a few messages, then disconnect.
 		InetSocketAddress address = new InetSocketAddress(InetAddress.getLocalHost(), 2002);
@@ -271,7 +275,7 @@ public class TestClientsAndListeners {
 	public void testSimplePoisonCase() throws Throwable {
 		TopicName topic = TopicName.fromString("test");
 		// Here, we start up, connect a client, send one message, wait for it to commit, observe listener behaviour, then shut everything down.
-		ServerWrapper wrapper = ServerWrapper.startedServerWrapper("testSimplePoisonCase", 2003, 2002, new File("/tmp/laminar"));
+		ServerWrapper wrapper = ServerWrapper.startedServerWrapper("testSimplePoisonCase", 2003, 2002, _folder.newFolder());
 		InetSocketAddress address = new InetSocketAddress(InetAddress.getLocalHost(), 2002);
 		
 		// Start a listener before the client begins.
@@ -327,8 +331,8 @@ public class TestClientsAndListeners {
 	@Test
 	public void testConfigProcessing() throws Throwable {
 		// Here, we start up, connect a client, send one message, wait for it to commit, observe listener behaviour, then shut everything down.
-		ServerWrapper leader = ServerWrapper.startedServerWrapper("testConfigProcessing-leader", 2003, 2002, new File("/tmp/laminar"));
-		ServerWrapper follower = ServerWrapper.startedServerWrapper("testConfigProcessing-follower", 2005, 2004, new File("/tmp/laminar2"));
+		ServerWrapper leader = ServerWrapper.startedServerWrapper("testConfigProcessing-leader", 2003, 2002, _folder.newFolder());
+		ServerWrapper follower = ServerWrapper.startedServerWrapper("testConfigProcessing-follower", 2005, 2004, _folder.newFolder());
 		InetSocketAddress address = new InetSocketAddress(InetAddress.getLocalHost(), 2002);
 		
 		ConfigEntry followerEntry = null;
@@ -366,7 +370,7 @@ public class TestClientsAndListeners {
 	@Test
 	public void testGetSelfConfig() throws Throwable {
 		// Start up a fake client to verify that the RECEIVED and COMMITTED responses have the expected commit offsets.
-		ServerWrapper wrapper = ServerWrapper.startedServerWrapper("testGetSelfConfig", 2003, 2002, new File("/tmp/laminar"));
+		ServerWrapper wrapper = ServerWrapper.startedServerWrapper("testGetSelfConfig", 2003, 2002, _folder.newFolder());
 		
 		// Fake a connection from a client:  send the handshake and a few messages, then disconnect.
 		InetSocketAddress address = new InetSocketAddress(InetAddress.getLocalHost(), 2002);
@@ -404,9 +408,9 @@ public class TestClientsAndListeners {
 				new ConfigEntry(server2Uuid, new InetSocketAddress(InetAddress.getLocalHost(), 3002), server2Address),
 				new ConfigEntry(server3Uuid, new InetSocketAddress(InetAddress.getLocalHost(), 3003), server3Address),
 		});
-		ServerWrapper server1 = ServerWrapper.startedServerWrapperWithUuid("testReconnectAndFailOver-1", server1Uuid, 3001, 2001, new File("/tmp/laminar1"));
-		ServerWrapper server2 = ServerWrapper.startedServerWrapperWithUuid("testReconnectAndFailOver-2", server2Uuid, 3002, 2002, new File("/tmp/laminar2"));
-		ServerWrapper server3 = ServerWrapper.startedServerWrapperWithUuid("testReconnectAndFailOver-3", server3Uuid, 3003, 2003, new File("/tmp/laminar3"));
+		ServerWrapper server1 = ServerWrapper.startedServerWrapperWithUuid("testReconnectAndFailOver-1", server1Uuid, 3001, 2001, _folder.newFolder());
+		ServerWrapper server2 = ServerWrapper.startedServerWrapperWithUuid("testReconnectAndFailOver-2", server2Uuid, 3002, 2002, _folder.newFolder());
+		ServerWrapper server3 = ServerWrapper.startedServerWrapperWithUuid("testReconnectAndFailOver-3", server3Uuid, 3003, 2003, _folder.newFolder());
 		
 		CaptureListener timingListener = new CaptureListener(server2Address, topic, 1);
 		timingListener.start();
@@ -462,7 +466,7 @@ public class TestClientsAndListeners {
 	public void testTopicMultiplexing() throws Throwable {
 		TopicName topic1 = TopicName.fromString("one");
 		TopicName topic2 = TopicName.fromString("two");
-		ServerWrapper server1 = ServerWrapper.startedServerWrapper("testTopicMultiplexing", 3001, 2001, new File("/tmp/laminar1"));
+		ServerWrapper server1 = ServerWrapper.startedServerWrapper("testTopicMultiplexing", 3001, 2001, _folder.newFolder());
 		InetSocketAddress serverAddress = new InetSocketAddress(InetAddress.getLocalHost(), 2001);
 		
 		try (ClientConnection client = ClientConnection.open(serverAddress)) {
@@ -526,7 +530,7 @@ public class TestClientsAndListeners {
 	@Test
 	public void testPutAndDelete() throws Throwable {
 		TopicName topic = TopicName.fromString("topic");
-		ServerWrapper server1 = ServerWrapper.startedServerWrapper("testPutAndDelete", 3001, 2001, new File("/tmp/laminar1"));
+		ServerWrapper server1 = ServerWrapper.startedServerWrapper("testPutAndDelete", 3001, 2001, _folder.newFolder());
 		InetSocketAddress serverAddress = new InetSocketAddress(InetAddress.getLocalHost(), 2001);
 		
 		byte[] key1 = new byte[0];
@@ -574,7 +578,7 @@ public class TestClientsAndListeners {
 		byte[] message = "Hello World!".getBytes();
 		// Here, we start up, connect a client, send one message, wait for it to commit, observe listener behaviour, then shut everything down.
 		
-		ServerWrapper wrapper = ServerWrapper.startedServerWrapper("testStutterAndListener", 2003, 2002, new File("/tmp/laminar"));
+		ServerWrapper wrapper = ServerWrapper.startedServerWrapper("testStutterAndListener", 2003, 2002, _folder.newFolder());
 		InetSocketAddress address = new InetSocketAddress(InetAddress.getLocalHost(), 2002);
 		
 		try (ClientConnection client = ClientConnection.open(address)) {

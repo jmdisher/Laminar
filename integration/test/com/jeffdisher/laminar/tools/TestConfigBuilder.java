@@ -5,7 +5,9 @@ import java.net.InetAddress;
 import java.net.InetSocketAddress;
 
 import org.junit.Assert;
+import org.junit.Rule;
 import org.junit.Test;
+import org.junit.rules.TemporaryFolder;
 
 import com.jeffdisher.laminar.ProcessWrapper;
 import com.jeffdisher.laminar.ServerWrapper;
@@ -26,6 +28,9 @@ import com.jeffdisher.laminar.types.payload.Payload_KeyPut;
  * -CONFIG_BUILDER_JAR - points to the JAR of the ConfigBuilder tool
  */
 public class TestConfigBuilder {
+	@Rule
+	public TemporaryFolder _folder = new TemporaryFolder();
+
 	/**
 	 * Starts 2 nodes, asks ConfigBuilder to build a config and post it to one of them.
 	 * Then creates a normal client to post a normal message to the cluster and verifies that listeners attached to each
@@ -34,8 +39,8 @@ public class TestConfigBuilder {
 	@Test
 	public void test2NodeCluster() throws Throwable {
 		TopicName topic = TopicName.fromString("test");
-		ServerWrapper leader = ServerWrapper.startedServerWrapper("test2NodeCluster-LEADER", 2001, 3001, new File("/tmp/laminar1"));
-		ServerWrapper follower = ServerWrapper.startedServerWrapper("test2NodeCluster-FOLLOWER", 2002, 3002, new File("/tmp/laminar2"));
+		ServerWrapper leader = ServerWrapper.startedServerWrapper("test2NodeCluster-LEADER", 2001, 3001, _folder.newFolder());
+		ServerWrapper follower = ServerWrapper.startedServerWrapper("test2NodeCluster-FOLLOWER", 2002, 3002, _folder.newFolder());
 		InetSocketAddress leaderAddress = new InetSocketAddress(InetAddress.getLocalHost(), 3001);
 		InetSocketAddress followerAddress = new InetSocketAddress(InetAddress.getLocalHost(), 3002);
 		
@@ -86,15 +91,15 @@ public class TestConfigBuilder {
 	@Test
 	public void testClusterChange() throws Throwable {
 		TopicName topic = TopicName.fromString("test");
-		ServerWrapper leader = ServerWrapper.startedServerWrapper("testClusterChange-LEADER", 2001, 3001, new File("/tmp/laminar1"));
-		ServerWrapper follower1 = ServerWrapper.startedServerWrapper("testClusterChange-FOLLOWER1", 2002, 3002, new File("/tmp/laminar2"));
+		ServerWrapper leader = ServerWrapper.startedServerWrapper("testClusterChange-LEADER", 2001, 3001, _folder.newFolder());
+		ServerWrapper follower1 = ServerWrapper.startedServerWrapper("testClusterChange-FOLLOWER1", 2002, 3002, _folder.newFolder());
 		InetSocketAddress leaderAddress = new InetSocketAddress(InetAddress.getLocalHost(), 3001);
 		InetSocketAddress follower1Address = new InetSocketAddress(InetAddress.getLocalHost(), 3002);
 		
 		// Invoke the builder - it will return once the config change commits.
 		_runConfigBuilder(new String[] {leaderAddress.getAddress().getHostAddress(), Integer.toString(leaderAddress.getPort()), follower1Address.getAddress().getHostAddress(), Integer.toString(follower1Address.getPort())});
 		
-		ServerWrapper follower2 = ServerWrapper.startedServerWrapper("testClusterChange-FOLLOWER2", 2003, 3003, new File("/tmp/laminar3"));
+		ServerWrapper follower2 = ServerWrapper.startedServerWrapper("testClusterChange-FOLLOWER2", 2003, 3003, _folder.newFolder());
 		InetSocketAddress follower2Address = new InetSocketAddress(InetAddress.getLocalHost(), 3003);
 		// Invoke the builder - it will return once the config change commits.
 		_runConfigBuilder(new String[] {leaderAddress.getAddress().getHostAddress(), Integer.toString(leaderAddress.getPort()), follower2Address.getAddress().getHostAddress(), Integer.toString(follower2Address.getPort())});
