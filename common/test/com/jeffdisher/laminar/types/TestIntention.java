@@ -1,4 +1,4 @@
-package com.jeffdisher.laminar.types.mutation;
+package com.jeffdisher.laminar.types;
 
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
@@ -10,15 +10,16 @@ import org.junit.Test;
 
 import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.types.ConfigEntry;
+import com.jeffdisher.laminar.types.Intention;
 import com.jeffdisher.laminar.types.TopicName;
 import com.jeffdisher.laminar.types.payload.Payload_ConfigChange;
 import com.jeffdisher.laminar.types.payload.Payload_KeyPut;
 
 
 /**
- * Tests around serialization and deserialization of MutationRecord objects.
+ * Tests around serialization and deserialization of Intention objects.
  */
-public class TestMutationRecord {
+public class TestIntention {
 	@Test
 	public void testBasic() throws Throwable {
 		long termNumber = 1L;
@@ -28,12 +29,12 @@ public class TestMutationRecord {
 		long clientNonce = 1L;
 		byte[] key = "key".getBytes(StandardCharsets.UTF_8);
 		byte[] value = "value".getBytes(StandardCharsets.UTF_8);
-		MutationRecord record = MutationRecord.put(termNumber, globalOffset, topic, clientId, clientNonce, key, value);
+		Intention record = Intention.put(termNumber, globalOffset, topic, clientId, clientNonce, key, value);
 		byte[] serialized = record.serialize();
-		MutationRecord deserialized = MutationRecord.deserialize(serialized);
+		Intention deserialized = Intention.deserialize(serialized);
 		Assert.assertEquals(record.type, deserialized.type);
 		Assert.assertEquals(record.termNumber, deserialized.termNumber);
-		Assert.assertEquals(record.globalOffset, deserialized.globalOffset);
+		Assert.assertEquals(record.intentionOffset, deserialized.intentionOffset);
 		Assert.assertEquals(record.clientId, deserialized.clientId);
 		Assert.assertEquals(record.clientNonce, deserialized.clientNonce);
 		Assert.assertArrayEquals(((Payload_KeyPut)record.payload).key, ((Payload_KeyPut)deserialized.payload).key);
@@ -49,14 +50,14 @@ public class TestMutationRecord {
 		long clientNonce = 1L;
 		byte[] key = "key".getBytes(StandardCharsets.UTF_8);
 		byte[] value = "value".getBytes(StandardCharsets.UTF_8);
-		MutationRecord record = MutationRecord.put(termNumber, globalOffset, topic, clientId, clientNonce, key, value);
+		Intention record = Intention.put(termNumber, globalOffset, topic, clientId, clientNonce, key, value);
 		ByteBuffer buffer = ByteBuffer.allocate(record.serializedSize());
 		record.serializeInto(buffer);
 		buffer.flip();
-		MutationRecord deserialized = MutationRecord.deserializeFrom(buffer);
+		Intention deserialized = Intention.deserializeFrom(buffer);
 		Assert.assertEquals(record.type, deserialized.type);
 		Assert.assertEquals(record.termNumber, deserialized.termNumber);
-		Assert.assertEquals(record.globalOffset, deserialized.globalOffset);
+		Assert.assertEquals(record.intentionOffset, deserialized.intentionOffset);
 		Assert.assertEquals(record.clientId, deserialized.clientId);
 		Assert.assertEquals(record.clientNonce, deserialized.clientNonce);
 		Assert.assertArrayEquals(((Payload_KeyPut)record.payload).key, ((Payload_KeyPut)deserialized.payload).key);
@@ -73,14 +74,14 @@ public class TestMutationRecord {
 		long globalOffset = 1L;
 		UUID clientId = UUID.randomUUID();
 		long clientNonce = 1L;
-		MutationRecord record = MutationRecord.updateConfig(termNumber, globalOffset, clientId, clientNonce, config);
+		Intention record = Intention.updateConfig(termNumber, globalOffset, clientId, clientNonce, config);
 		ByteBuffer buffer = ByteBuffer.allocate(record.serializedSize());
 		record.serializeInto(buffer);
 		buffer.flip();
-		MutationRecord deserialized = MutationRecord.deserializeFrom(buffer);
+		Intention deserialized = Intention.deserializeFrom(buffer);
 		Assert.assertEquals(record.type, deserialized.type);
 		Assert.assertEquals(record.termNumber, deserialized.termNumber);
-		Assert.assertEquals(record.globalOffset, deserialized.globalOffset);
+		Assert.assertEquals(record.intentionOffset, deserialized.intentionOffset);
 		Assert.assertEquals(record.clientId, deserialized.clientId);
 		Assert.assertEquals(record.clientNonce, deserialized.clientNonce);
 		Assert.assertEquals(((Payload_ConfigChange)record.payload).config.entries.length, ((Payload_ConfigChange)deserialized.payload).config.entries.length);

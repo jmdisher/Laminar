@@ -3,20 +3,20 @@ package com.jeffdisher.laminar.network.p2p;
 import java.nio.ByteBuffer;
 
 
-public class UpstreamPayload_PeerState implements IUpstreamPayload {
-	public static UpstreamPayload_PeerState create(long lastReceivedIntentionOffset) {
-		return new UpstreamPayload_PeerState(lastReceivedIntentionOffset);
+public class UpstreamPayload_ReceivedIntentions implements IUpstreamPayload {
+	public static UpstreamPayload_ReceivedIntentions create(long lastReceivedIntentionOffset) {
+		return new UpstreamPayload_ReceivedIntentions(lastReceivedIntentionOffset);
 	}
 
-	public static UpstreamPayload_PeerState deserializeFrom(ByteBuffer buffer) {
+	public static UpstreamPayload_ReceivedIntentions deserializeFrom(ByteBuffer buffer) {
 		long lastReceivedIntentionOffset = buffer.getLong();
-		return new UpstreamPayload_PeerState(lastReceivedIntentionOffset);
+		return new UpstreamPayload_ReceivedIntentions(lastReceivedIntentionOffset);
 	}
 
 
 	public final long lastReceivedIntentionOffset;
 
-	private UpstreamPayload_PeerState(long lastReceivedIntentionOffset) {
+	private UpstreamPayload_ReceivedIntentions(long lastReceivedIntentionOffset) {
 		this.lastReceivedIntentionOffset = lastReceivedIntentionOffset;
 	}
 

@@ -21,7 +21,7 @@ public class TestClientResponse {
 		ClientResponse output = ClientResponse.deserialize(serialized);
 		Assert.assertEquals(input.type, output.type);
 		Assert.assertEquals(input.nonce, output.nonce);
-		Assert.assertEquals(input.lastCommitGlobalOffset, output.lastCommitGlobalOffset);
+		Assert.assertEquals(input.lastCommitIntentionOffset, output.lastCommitIntentionOffset);
 	}
 
 	@Test
@@ -34,7 +34,7 @@ public class TestClientResponse {
 		ClientResponse output = ClientResponse.deserialize(serialized);
 		Assert.assertEquals(input.type, output.type);
 		Assert.assertEquals(input.nonce, output.nonce);
-		Assert.assertEquals(input.lastCommitGlobalOffset, output.lastCommitGlobalOffset);
+		Assert.assertEquals(input.lastCommitIntentionOffset, output.lastCommitIntentionOffset);
 	}
 
 	@Test
@@ -48,8 +48,8 @@ public class TestClientResponse {
 		ClientResponse output = ClientResponse.deserialize(serialized);
 		Assert.assertEquals(input.type, output.type);
 		Assert.assertEquals(input.nonce, output.nonce);
-		Assert.assertEquals(input.lastCommitGlobalOffset, output.lastCommitGlobalOffset);
+		Assert.assertEquals(input.lastCommitIntentionOffset, output.lastCommitIntentionOffset);
 		Assert.assertEquals(CommitInfo.Effect.VALID, ((ClientResponsePayload_Commit)output.payload).info.effect);
-		Assert.assertEquals(thisCommitOffset, ((ClientResponsePayload_Commit)output.payload).info.mutationOffset);
+		Assert.assertEquals(thisCommitOffset, ((ClientResponsePayload_Commit)output.payload).info.intentionOffset);
 	}
 }

@@ -1,6 +1,6 @@
 package com.jeffdisher.laminar.network;
 
-import com.jeffdisher.laminar.disk.CommittedMutationRecord;
+import com.jeffdisher.laminar.disk.CommittedIntention;
 import com.jeffdisher.laminar.state.StateSnapshot;
 import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.types.ConfigEntry;
@@ -29,14 +29,14 @@ public interface IClientManager {
 	void mainEnterFollowerState(ConfigEntry clusterLeader, StateSnapshot snapshot);
 
 	/**
-	 * Called once a mutation has committed so that the client can send any required acks associated with it to clients.
+	 * Called once a intention has committed so that the client can send any required acks associated with it to clients.
 	 * 
 	 * @param committedRecord The record which has committed.
 	 */
-	void mainProcessingPendingMessageForRecord(CommittedMutationRecord committedRecord);
+	void mainProcessingPendingMessageForRecord(CommittedIntention committedRecord);
 
 	/**
-	 * Called when the active config has has changed.  Specifically, this means when a CHANGE_CONFIG mutation has
+	 * Called when the active config has has changed.  Specifically, this means when a CHANGE_CONFIG intention has
 	 * committed.  This is to allow broadcast to connected clients and listeners so they can adapt their reconnect
 	 * logic.
 	 * 
@@ -55,13 +55,13 @@ public interface IClientManager {
 	void mainSendRecordToListeners(TopicName topic, Consequence record);
 
 	/**
-	 * Replay the given MutationRecord to any clients which were waiting for it during a reconnect.  Called when a
-	 * committed MutationRecord has been fetched in case there were any clients waiting on it.
+	 * Replay the given Intention to any clients which were waiting for it during a reconnect.  Called when a
+	 * committed Intention has been fetched in case there were any clients waiting on it.
 	 * 
 	 * @param snapshot The snapshot of this node's current state.
 	 * @param record The committed record.
 	 */
-	void mainReplayCommittedMutationForReconnects(StateSnapshot snapshot, CommittedMutationRecord record);
+	void mainReplayCommittedIntentionForReconnects(StateSnapshot snapshot, CommittedIntention record);
 
 	/**
 	 * Called when the node has entered a LEADER state.  This means that the receiver should stop sending REDIRECTs and

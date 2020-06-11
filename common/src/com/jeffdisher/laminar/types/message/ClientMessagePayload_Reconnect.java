@@ -6,9 +6,9 @@ import java.util.UUID;
 
 /**
  * The RECONNECT message is sent instead of HANDSHAKE when a client which was previously connected reconnects.
- * It passes in its UUID and the last global mutation commit offset it was aware the cluster had completed.
- * In response to this message, the server finds any mutations from this client which committed after
- * lastCommitGlobalOffset and synthesizes a RECEIVED and COMMITTED message for each of those.  Once it has found all of
+ * It passes in its UUID and the last global intention commit offset it was aware the cluster had completed.
+ * In response to this message, the server finds any intentions from this client which committed after
+ * lastCommitIntentionOffset and synthesizes a RECEIVED and COMMITTED message for each of those.  Once it has found all of
  * these messages, it sends CLIENT_READY and the connection enters a normal state (same as after the CLIENT_READY sent
  * in response to a HANDSHAKE).
  */
@@ -26,11 +26,11 @@ public class ClientMessagePayload_Reconnect implements IClientMessagePayload {
 
 
 	public final UUID clientId;
-	public final long lastCommitGlobalOffset;
+	public final long lastCommitIntentionOffset;
 
-	private ClientMessagePayload_Reconnect(UUID clientId, long lastCommitGlobalOffset) {
+	private ClientMessagePayload_Reconnect(UUID clientId, long lastCommitIntentionOffset) {
 		this.clientId = clientId;
-		this.lastCommitGlobalOffset = lastCommitGlobalOffset;
+		this.lastCommitIntentionOffset = lastCommitIntentionOffset;
 	}
 
 	@Override
@@ -43,7 +43,7 @@ public class ClientMessagePayload_Reconnect implements IClientMessagePayload {
 		buffer
 			.putLong(this.clientId.getMostSignificantBits())
 			.putLong(this.clientId.getLeastSignificantBits())
-			.putLong(this.lastCommitGlobalOffset)
+			.putLong(this.lastCommitIntentionOffset)
 			;
 	}
 }

@@ -8,7 +8,7 @@ import org.junit.Test;
 
 import com.jeffdisher.laminar.contracts.DoNothing;
 import com.jeffdisher.laminar.contracts.EmulateStutter;
-import com.jeffdisher.laminar.contracts.EvenMutationOffsetOnly;
+import com.jeffdisher.laminar.contracts.EvenIntentionOffsetOnly;
 import com.jeffdisher.laminar.contracts.SimpleDeployment;
 import com.jeffdisher.laminar.types.Consequence;
 import com.jeffdisher.laminar.types.TopicName;
@@ -187,7 +187,7 @@ public class TestAvm {
 
 	@Test
 	public void testFailures() throws Throwable {
-		byte[] code = ContractPackager.createJarForClass(EvenMutationOffsetOnly.class);
+		byte[] code = ContractPackager.createJarForClass(EvenIntentionOffsetOnly.class);
 		
 		long termNumber = 1L;
 		long globalOffset = 1L;
@@ -207,7 +207,7 @@ public class TestAvm {
 		clientNonce += 1;
 		initialLocalOffset += records.size();
 		
-		// Mutation offset is 2 -> pass
+		// Intention offset is 2 -> pass
 		byte[] key = new byte[32];
 		byte[] value = new byte[] {1,2,3};
 		records = bridge.runPut(context, termNumber, globalOffset, initialLocalOffset, clientId, clientNonce, topic, key, value);
@@ -217,13 +217,13 @@ public class TestAvm {
 		clientNonce += 1;
 		initialLocalOffset += records.size();
 		
-		// Mutation offset is 3 -> fail
+		// Intention offset is 3 -> fail
 		records = bridge.runPut(context, termNumber, globalOffset, initialLocalOffset, clientId, clientNonce, topic, key, value);
 		Assert.assertEquals(null, records);
 		globalOffset += 1;
 		clientNonce += 1;
 		
-		// Mutation offset is 4 -> pass
+		// Intention offset is 4 -> pass
 		records = bridge.runDelete(context, termNumber, globalOffset, initialLocalOffset, clientId, clientNonce, topic, key);
 		Assert.assertEquals(1, records.size());
 		Assert.assertArrayEquals(key, ((Payload_KeyDelete)records.get(0).payload).key);
@@ -231,7 +231,7 @@ public class TestAvm {
 		clientNonce += 1;
 		initialLocalOffset += records.size();
 		
-		// Mutation offset is 5 -> fail
+		// Intention offset is 5 -> fail
 		records = bridge.runDelete(context, termNumber, globalOffset, initialLocalOffset, clientId, clientNonce, topic, key);
 		Assert.assertEquals(null, records);
 		globalOffset += 1;

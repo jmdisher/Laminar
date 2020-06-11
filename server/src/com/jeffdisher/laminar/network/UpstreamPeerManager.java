@@ -43,8 +43,8 @@ public class UpstreamPeerManager {
 	 */
 	public void initializeForFollowerState(long lastReceivedMutationOffset) {
 		for (UpstreamPeerState peer : _upstreamPeerByNode.values()) {
-			peer.lastMutationOffsetReceived = lastReceivedMutationOffset;
-			peer.lastMutationOffsetAcknowledged = lastReceivedMutationOffset;
+			peer.lastIntentionOffsetReceived = lastReceivedMutationOffset;
+			peer.lastIntentionOffsetAcknowledged = lastReceivedMutationOffset;
 		}
 	}
 
@@ -124,7 +124,7 @@ public class UpstreamPeerManager {
 		UpstreamPeerState previous = _upstreamPeerByNode.put(node, state);
 		Assert.assertTrue(null == previous);
 		// Send back our PEER_STATE.
-		state.pendingPeerStateMutationOffsetReceived = lastReceivedMutationOffset;
+		state.pendingPeerStateIntentionOffsetReceived = lastReceivedMutationOffset;
 	}
 
 	/**
@@ -176,12 +176,12 @@ public class UpstreamPeerManager {
 	 * @param lastMutationOffsetReceived The last mutation we have now received from them.
 	 * @param lastMutationOffsetAcknowledged The last mutation we have last acknowledged.
 	 */
-	public void didApplyReceivedMutation(NetworkManager.NodeToken node, long lastMutationOffsetReceived, long lastMutationOffsetAcknowledged) {
+	public void didApplyReceivedIntention(NetworkManager.NodeToken node, long lastMutationOffsetReceived, long lastMutationOffsetAcknowledged) {
 		// This MUST be an established peer.
 		Assert.assertTrue(_upstreamPeerByNode.containsKey(node));
 		UpstreamPeerState state = _upstreamPeerByNode.get(node);
-		state.lastMutationOffsetReceived = lastMutationOffsetReceived;
-		state.lastMutationOffsetAcknowledged = lastMutationOffsetAcknowledged;
+		state.lastIntentionOffsetReceived = lastMutationOffsetReceived;
+		state.lastIntentionOffsetAcknowledged = lastMutationOffsetAcknowledged;
 	}
 
 	/**
@@ -192,11 +192,11 @@ public class UpstreamPeerManager {
 	 * @param lastReceivedMutationOffset The last mutation offset we believe is probably consistent on both sides so
 	 * they can send us the one after this, next.
 	 */
-	public void failedToApplyMutations(NetworkManager.NodeToken node, long lastReceivedMutationOffset) {
+	public void failedToApplyIntentions(NetworkManager.NodeToken node, long lastReceivedMutationOffset) {
 		// This MUST be an established peer.
 		Assert.assertTrue(_upstreamPeerByNode.containsKey(node));
 		// We failed to apply so send a new PEER_STATE to tell them what we actually need.
-		_upstreamPeerByNode.get(node).pendingPeerStateMutationOffsetReceived = lastReceivedMutationOffset;
+		_upstreamPeerByNode.get(node).pendingPeerStateIntentionOffsetReceived = lastReceivedMutationOffset;
 	}
 
 	/**
@@ -215,14 +215,14 @@ public class UpstreamPeerManager {
 		UpstreamPeerState state = _upstreamPeerByNode.get(node);
 		UpstreamResponse messageToSend = null;
 		if (state.isWritable) {
-			if (state.pendingPeerStateMutationOffsetReceived > -1L) {
+			if (state.pendingPeerStateIntentionOffsetReceived > -1L) {
 				// Send the PEER_STATE.
-				messageToSend = UpstreamResponse.peerState(state.pendingPeerStateMutationOffsetReceived);
-				state.pendingPeerStateMutationOffsetReceived = -1L;
-			} else if (!isLeader && (state.lastMutationOffsetAcknowledged < state.lastMutationOffsetReceived)) {
+				messageToSend = UpstreamResponse.peerState(state.pendingPeerStateIntentionOffsetReceived);
+				state.pendingPeerStateIntentionOffsetReceived = -1L;
+			} else if (!isLeader && (state.lastIntentionOffsetAcknowledged < state.lastIntentionOffsetReceived)) {
 				// Send the ack.
-				messageToSend = UpstreamResponse.receivedMutations(state.lastMutationOffsetReceived);
-				state.lastMutationOffsetAcknowledged = state.lastMutationOffsetReceived;
+				messageToSend = UpstreamResponse.receivedMutations(state.lastIntentionOffsetReceived);
+				state.lastIntentionOffsetAcknowledged = state.lastIntentionOffsetReceived;
 			} else if (!isLeader && (null != state.pendingVoteToSend)) {
 				messageToSend = state.pendingVoteToSend;
 				state.pendingVoteToSend = null;

@@ -10,7 +10,7 @@ import avm.Blockchain;
  */
 public class EmulateStutter {
 	public static byte[] main() {
-		// We just want to generate the 2 output mutations if this is a PUT.
+		// We just want to generate the 2 output intentions if this is a PUT.
 		byte[] key = Blockchain.getData();
 		// (AVM requires that we use a 32-byte key).
 		byte[] value = Blockchain.getStorage(new byte[32]);

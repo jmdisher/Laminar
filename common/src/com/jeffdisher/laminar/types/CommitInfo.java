@@ -11,17 +11,17 @@ import com.jeffdisher.laminar.utils.Assert;
  * deterministic nature of how messages are interpreted.
  */
 public class CommitInfo {
-	public static CommitInfo create(Effect effect, long mutationOffset) {
+	public static CommitInfo create(Effect effect, long intentionOffset) {
 		Assert.assertTrue(null != effect);
-		// Mutation offsets are always positive
-		Assert.assertTrue(mutationOffset > 0);
-		return new CommitInfo(effect, mutationOffset);
+		// Intention offsets are always positive
+		Assert.assertTrue(intentionOffset > 0);
+		return new CommitInfo(effect, intentionOffset);
 	}
 
 	public static CommitInfo deserialize(ByteBuffer serialized) {
 		Effect effect = Effect.values()[Byte.toUnsignedInt(serialized.get())];
-		long mutationOffset = serialized.getLong();
-		return new CommitInfo(effect, mutationOffset);
+		long intentionOffset = serialized.getLong();
+		return new CommitInfo(effect, intentionOffset);
 	}
 
 
@@ -30,13 +30,13 @@ public class CommitInfo {
 	 */
 	public final Effect effect;
 	/**
-	 * The global mutation offset assigned to this message.
+	 * The global intention offset assigned to this message.
 	 */
-	public final long mutationOffset;
+	public final long intentionOffset;
 
-	private CommitInfo(Effect effect, long mutationOffset) {
+	private CommitInfo(Effect effect, long intentionOffset) {
 		this.effect = effect;
-		this.mutationOffset = mutationOffset;
+		this.intentionOffset = intentionOffset;
 	}
 
 	public int serializedSize() {
@@ -45,13 +45,13 @@ public class CommitInfo {
 
 	public void serializeInto(ByteBuffer buffer) {
 		buffer.put((byte)this.effect.ordinal());
-		buffer.putLong(this.mutationOffset);
+		buffer.putLong(this.intentionOffset);
 	}
 
 	@Override
 	public String toString() {
 		return "(Effect=" + this.effect
-				+ ", Mutation=" + this.mutationOffset
+				+ ", Intention=" + this.intentionOffset
 				+ ")";
 	}
 

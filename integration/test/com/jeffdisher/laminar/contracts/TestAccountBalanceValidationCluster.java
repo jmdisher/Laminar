@@ -65,13 +65,13 @@ public class TestAccountBalanceValidationCluster {
 			byte[] args = ByteBuffer.allocate(Short.BYTES).putShort(CACHE_SIZE).array();
 			CommitInfo deployCommit = client.sendCreateProgrammableTopic(topic, jar, args).waitForCommitted();
 			Assert.assertEquals(CommitInfo.Effect.VALID, deployCommit.effect);
-			long commitOffset = deployCommit.mutationOffset;
+			long commitOffset = deployCommit.intentionOffset;
 			
 			for (int i = 0; i < CLIENT_COUNT; ++i) {
 				byte[] put = _packagePut(clientKeys[i], commitOffset + i, expectedBalance, 0, 0);
 				CommitInfo info = client.sendPut(topic, bank, put).waitForCommitted();
 				Assert.assertEquals(CommitInfo.Effect.VALID, info.effect);
-				endStartupOffset = info.mutationOffset;
+				endStartupOffset = info.intentionOffset;
 			}
 		}
 		
@@ -79,10 +79,10 @@ public class TestAccountBalanceValidationCluster {
 		// -first, set up a listener we will use for verifying the balances at each sync point.
 		ProjectingListener verifier = new ProjectingListener(followerAddress, topic, CLIENT_COUNT);
 		verifier.start();
-		verifier.verifyBalancesAtMutation(2 + CLIENT_COUNT, expectedBalance);
+		verifier.verifyBalancesAtIntention(2 + CLIENT_COUNT, expectedBalance);
 		
 		Thread[] clients = new Thread[CLIENT_COUNT];
-		BarrierContainer barrier = new BarrierContainer(CLIENT_COUNT, endStartupOffset, (expectedOffset) -> verifier.verifyBalancesAtMutation(expectedOffset, expectedBalance));
+		BarrierContainer barrier = new BarrierContainer(CLIENT_COUNT, endStartupOffset, (expectedOffset) -> verifier.verifyBalancesAtIntention(expectedOffset, expectedBalance));
 		for (int i = 0; i < CLIENT_COUNT; ++i) {
 			int thisIndex = i;
 			clients[thisIndex] = new Thread() {
@@ -108,7 +108,7 @@ public class TestAccountBalanceValidationCluster {
 									boolean keepTrying = true;
 									while (keepTrying) {
 										CommitInfo putInfo = localClient.sendPut(topic, clientKeys[thisIndex], put).waitForCommitted();
-										lastMutationOffset = putInfo.mutationOffset;
+										lastMutationOffset = putInfo.intentionOffset;
 										if (CommitInfo.Effect.VALID == putInfo.effect) {
 											keepTrying = false;
 											updateCount += 1;
@@ -129,7 +129,7 @@ public class TestAccountBalanceValidationCluster {
 									boolean keepTrying = true;
 									while (keepTrying) {
 										CommitInfo putInfo = localClient.sendPut(topic, clientKeys[j], put).waitForCommitted();
-										lastMutationOffset = putInfo.mutationOffset;
+										lastMutationOffset = putInfo.intentionOffset;
 										if (CommitInfo.Effect.VALID == putInfo.effect) {
 											keepTrying = false;
 											updateCount += 1;
@@ -224,8 +224,8 @@ public class TestAccountBalanceValidationCluster {
 			_listener.close();
 		}
 		
-		public synchronized void verifyBalancesAtMutation(long mutationOffset, int expectedBalance) {
-			while (_lastOffset < mutationOffset) {
+		public synchronized void verifyBalancesAtIntention(long intentionOffset, int expectedBalance) {
+			while (_lastOffset < intentionOffset) {
 				try {
 					this.wait();
 				} catch (InterruptedException e) {
@@ -254,7 +254,7 @@ public class TestAccountBalanceValidationCluster {
 								_balance[index] = balance;
 							} else {
 								// Index 0 is for the TRANSFER value - it terminates every sequence of events for a mutation.
-								_lastOffset = record.globalOffset;
+								_lastOffset = record.intentionOffset;
 								// This number is the only thing we wait on, so trigger it now.
 								this.notifyAll();
 							}

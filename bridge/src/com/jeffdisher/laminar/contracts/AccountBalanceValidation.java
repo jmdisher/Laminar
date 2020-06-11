@@ -15,16 +15,16 @@ import avm.Blockchain;
  * 
  * PUT value argument:
  * -32-byte destination key (all zero if this is burning)
- * -8-byte big-endian long of mutation offset corresponding to last consequence seen by client
+ * -8-byte big-endian long of intention offset corresponding to last consequence seen by client
  * -4-byte big-endian int of value to withdraw
- * -4-byte big-endian int of source value at last mutation offset seen by client
- * -4-byte big-endian int of destination value at last mutation offset seen by client
+ * -4-byte big-endian int of source value at last intention offset seen by client
+ * -4-byte big-endian int of destination value at last intention offset seen by client
  * 
  * The key in the PUT is the source of the transfer (all zero if this is minting).
  * 
  * In order to allow listeners to understand either the final result of the account states or the fact that a
  * transaction was processed (and, more importantly, to provide a "terminator" for the sequence of consequences in one
- * mutation), we will generate up to 3 consequences per PUT:
+ * intention), we will generate up to 3 consequences per PUT:
  * -key(source) -> balance(source) - (not present if source was minting)
  * -key(destination) ->  balance(destination) - (not present if destination was burning)
  * -key("transaction") -> value
@@ -142,7 +142,7 @@ public class AccountBalanceValidation {
 	}
 
 	private static void _checkinCache(CacheEntry entry) {
-		// We just modified this so we know it changed in this mutation offset.
+		// We just modified this so we know it changed in this intention offset.
 		long newOffset = Blockchain.getBlockNumber();
 		entry.validOffset = newOffset;
 		System.arraycopy(CACHE, 0, CACHE, 1, CACHE.length - 1);

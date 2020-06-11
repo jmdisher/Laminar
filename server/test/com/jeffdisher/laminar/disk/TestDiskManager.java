@@ -11,8 +11,8 @@ import org.junit.rules.TemporaryFolder;
 import com.jeffdisher.laminar.state.StateSnapshot;
 import com.jeffdisher.laminar.types.CommitInfo;
 import com.jeffdisher.laminar.types.Consequence;
+import com.jeffdisher.laminar.types.Intention;
 import com.jeffdisher.laminar.types.TopicName;
-import com.jeffdisher.laminar.types.mutation.MutationRecord;
 
 
 public class TestDiskManager {
@@ -56,8 +56,8 @@ public class TestDiskManager {
 	@Test
 	public void testMutationAndEventCommitAndFetch() throws Throwable {
 		TopicName topic = TopicName.fromString("fake");
-		MutationRecord mutation1 = MutationRecord.put(1L, 1L, topic, UUID.randomUUID(), 1L, new byte[0], new byte[] {1});
-		MutationRecord mutation2 = MutationRecord.put(1L, 2L, topic, UUID.randomUUID(), 2L, new byte[0], new byte[] {1});
+		Intention mutation1 = Intention.put(1L, 1L, topic, UUID.randomUUID(), 1L, new byte[0], new byte[] {1});
+		Intention mutation2 = Intention.put(1L, 2L, topic, UUID.randomUUID(), 2L, new byte[0], new byte[] {1});
 		Consequence event1 = Consequence.put(1L, 1L, 1L, UUID.randomUUID(), 1L, new byte[0], new byte[] {1});
 		Consequence event2 = Consequence.put(1L, 2L, 2L, UUID.randomUUID(), 2L, new byte[0], new byte[] {1});
 		
@@ -65,9 +65,9 @@ public class TestDiskManager {
 		DiskManager manager = new DiskManager(_folder.newFolder(), callbacks);
 		manager.startAndWaitForReady();
 		
-		manager.commitMutation(CommittedMutationRecord.create(mutation1, CommitInfo.Effect.VALID));
+		manager.commitIntention(CommittedIntention.create(mutation1, CommitInfo.Effect.VALID));
 		while (callbacks.commitMutationCount < 1) { callbacks.runOneCommand(); }
-		manager.commitMutation(CommittedMutationRecord.create(mutation2, CommitInfo.Effect.VALID));
+		manager.commitIntention(CommittedIntention.create(mutation2, CommitInfo.Effect.VALID));
 		while (callbacks.commitMutationCount < 2) { callbacks.runOneCommand(); }
 		manager.commitConsequence(topic, event1);
 		while (callbacks.commitEventCount < 1) { callbacks.runOneCommand(); }
@@ -77,7 +77,7 @@ public class TestDiskManager {
 		callbacks.expectedMutation = mutation1;
 		callbacks.expectedEvent = event2;
 		
-		manager.fetchMutation(1L);
+		manager.fetchIntention(1L);
 		manager.fetchConsequence(topic, 2L);
 		while (callbacks.fetchMutationCount < 1) { callbacks.runOneCommand(); }
 		while (callbacks.fetchEventCount < 1) { callbacks.runOneCommand(); }
@@ -90,7 +90,7 @@ public class TestDiskManager {
 	 * Used for simple cases where the external test only wants to verify that a call was made when expected.
 	 */
 	private static class LatchedCallbacks implements IDiskManagerBackgroundCallbacks {
-		public MutationRecord expectedMutation;
+		public Intention expectedMutation;
 		public Consequence expectedEvent;
 		public int commitMutationCount;
 		public int fetchMutationCount;
@@ -130,7 +130,7 @@ public class TestDiskManager {
 		}
 		
 		@Override
-		public void mainMutationWasCommitted(CommittedMutationRecord completed) {
+		public void mainIntentionWasCommitted(CommittedIntention completed) {
 			this.commitMutationCount += 1;
 		}
 		
@@ -140,7 +140,7 @@ public class TestDiskManager {
 		}
 		
 		@Override
-		public void mainMutationWasFetched(StateSnapshot snapshot, long previousMutationTermNumber, CommittedMutationRecord record) {
+		public void mainIntentionWasFetched(StateSnapshot snapshot, long previousMutationTermNumber, CommittedIntention record) {
 			// We currently just support a single match.
 			Assert.assertTrue(record.record == this.expectedMutation);
 			this.fetchMutationCount += 1;

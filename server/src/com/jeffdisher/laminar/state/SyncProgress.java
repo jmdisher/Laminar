@@ -35,7 +35,7 @@ public class SyncProgress {
 		// We want the majority (floor(count/2) + 1) so sort the responses strip off the low minority.
 		PriorityQueue<Long> sorter = new PriorityQueue<>();
 		for (DownstreamPeerSyncState state : _downstreamConnections) {
-			sorter.add(state.lastMutationOffsetReceived);
+			sorter.add(state.lastIntentionOffsetReceived);
 		}
 		int majority = (sorter.size() / 2) + 1;
 		int minoritySize = sorter.size() - majority;

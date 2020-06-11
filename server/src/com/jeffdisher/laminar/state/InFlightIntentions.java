@@ -2,41 +2,41 @@ package com.jeffdisher.laminar.state;
 
 import java.util.LinkedList;
 
-import com.jeffdisher.laminar.types.mutation.MutationRecord;
+import com.jeffdisher.laminar.types.Intention;
 import com.jeffdisher.laminar.utils.Assert;
 
 
 /**
- * Tracks the Mutations which haven't yet committed as well as information relating to where they are in the overall
- * mutation stream.
+ * Tracks the Intentions which haven't yet committed as well as information relating to where they are in the overall
+ * intention stream.
  * Note that this utility assumes it is being used strictly correctly so it doesn't explicitly handle bounds checks,
  * etc.  This means that indexing exceptions will be thrown if it is asked to provide data it was never given.
  */
-public class InFlightMutations {
-	// Tracking of in-flight mutations ready to be committed when the cluster agrees.
+public class InFlightIntentions {
+	// Tracking of in-flight intentions ready to be committed when the cluster agrees.
 	// These must be committed in-order, so they are a queue with a base offset bias.
 	// Note that we use a LinkedList since we want this to be addressable but also implement Queue.
-	private LinkedList<MutationRecord> _inFlightMutations;
-	private long _inFlightMutationOffsetBias;
+	private LinkedList<Intention> _inFlightIntentions;
+	private long _inFlightIntentionOffsetBias;
 
-	public InFlightMutations() {
+	public InFlightIntentions() {
 		// The first mutation has offset 1L so we use that as the initial bias.
-		_inFlightMutations = new LinkedList<>();
-		_inFlightMutationOffsetBias = 1L;
+		_inFlightIntentions = new LinkedList<>();
+		_inFlightIntentionOffsetBias = 1L;
 	}
 
 	/**
 	 * @return The offset of the next mutation to be added or otherwise handled.
 	 */
-	public long getNextMutationOffset() {
-		return _getNextMutationOffset();
+	public long getNextIntentionOffset() {
+		return _getNextIntentionOffset();
 	}
 
 	/**
 	 * @return True if there are no in-flight mutations (used in some checks to make sure commits can proceed).
 	 */
 	public boolean isEmpty() {
-		return _inFlightMutations.isEmpty();
+		return _inFlightIntentions.isEmpty();
 	}
 
 	/**
@@ -44,10 +44,10 @@ public class InFlightMutations {
 	 * 
 	 * @param mutation The mutation to add.
 	 */
-	public void add(MutationRecord mutation) {
+	public void add(Intention mutation) {
 		// Make sure that our offsets are consistent.
-		Assert.assertTrue(_getNextMutationOffset() == mutation.globalOffset);
-		_inFlightMutations.add(mutation);
+		Assert.assertTrue(_getNextIntentionOffset() == mutation.intentionOffset);
+		_inFlightIntentions.add(mutation);
 	}
 
 	/**
@@ -59,10 +59,10 @@ public class InFlightMutations {
 	 * @param currentTermNumber The term number where the current leader was elected.
 	 * @return True if the mutations up to and including mutationOffset can be committed.
 	 */
-	public boolean canCommitUpToMutation(long mutationOffset, long currentTermNumber) {
+	public boolean canCommitUpToIntention(long mutationOffset, long currentTermNumber) {
 		boolean canCommit = false;
-		for (MutationRecord mutation : _inFlightMutations) {
-			if (mutation.globalOffset <= mutationOffset) {
+		for (Intention mutation : _inFlightIntentions) {
+			if (mutation.intentionOffset <= mutationOffset) {
 				if (currentTermNumber == mutation.termNumber) {
 					// We found a match for this term, so all previous mutations can be committed.
 					canCommit = true;
@@ -83,12 +83,12 @@ public class InFlightMutations {
 	 * @param mutationOffset The upper limit offset of the mutation to remove.
 	 * @return The mutation, or null if all the mutations are later or there are no mutations.
 	 */
-	public MutationRecord removeFirstElementLessThanOrEqualTo(long mutationOffset) {
-		MutationRecord removed = null;
-		if ((_inFlightMutationOffsetBias <= mutationOffset) && !_inFlightMutations.isEmpty()) {
-			removed = _inFlightMutations.remove();
-			_inFlightMutationOffsetBias += 1;
-			Assert.assertTrue(removed.globalOffset <= mutationOffset);
+	public Intention removeFirstElementLessThanOrEqualTo(long mutationOffset) {
+		Intention removed = null;
+		if ((_inFlightIntentionOffsetBias <= mutationOffset) && !_inFlightIntentions.isEmpty()) {
+			removed = _inFlightIntentions.remove();
+			_inFlightIntentionOffsetBias += 1;
+			Assert.assertTrue(removed.intentionOffset <= mutationOffset);
 		}
 		return removed;
 	}
@@ -100,11 +100,11 @@ public class InFlightMutations {
 	 * @param mutationOffset The lower limit offset of the mutation to remove.
 	 * @return The mutation, or null if all the mutations are earlier or there are no mutations.
 	 */
-	public MutationRecord removeLastElementGreaterThanOrEqualTo(long mutationOffset) {
-		MutationRecord removed = null;
-		if (!_inFlightMutations.isEmpty() && (_inFlightMutations.getLast().globalOffset >= mutationOffset)) {
-			removed = _inFlightMutations.removeLast();
-			Assert.assertTrue(removed.globalOffset >= mutationOffset);
+	public Intention removeLastElementGreaterThanOrEqualTo(long mutationOffset) {
+		Intention removed = null;
+		if (!_inFlightIntentions.isEmpty() && (_inFlightIntentions.getLast().intentionOffset >= mutationOffset)) {
+			removed = _inFlightIntentions.removeLast();
+			Assert.assertTrue(removed.intentionOffset >= mutationOffset);
 		}
 		return removed;
 	}
@@ -113,40 +113,40 @@ public class InFlightMutations {
 	 * Gets, but does NOT remove, the mutation with the given mutationOffset.
 	 * 
 	 * @param mutationOffset The offset of the mutation to return.
-	 * @return The mutation with the given offset, null if there isn't one.
+	 * @return The intention with the given offset, null if there isn't one.
 	 */
-	public MutationRecord getMutationAtOffset(long mutationOffset) {
-		MutationRecord mutation = null;
-		if (mutationOffset >= _inFlightMutationOffsetBias) {
-			int index = (int)(mutationOffset - _inFlightMutationOffsetBias);
-			mutation = _inFlightMutations.get(index);
-			Assert.assertTrue(mutationOffset == mutation.globalOffset);
+	public Intention getMutationAtOffset(long mutationOffset) {
+		Intention mutation = null;
+		if (mutationOffset >= _inFlightIntentionOffsetBias) {
+			int index = (int)(mutationOffset - _inFlightIntentionOffsetBias);
+			mutation = _inFlightIntentions.get(index);
+			Assert.assertTrue(mutationOffset == mutation.intentionOffset);
 		}
 		return mutation;
 	}
 
 	/**
-	 * Updates the base mutation offset for future in-flight commits to the one given.
-	 * Asserts that this is only a single-step increment and that there aren't currently any in-flight mutations (since
+	 * Updates the base intention offset for future in-flight commits to the one given.
+	 * Asserts that this is only a single-step increment and that there aren't currently any in-flight intentions (since
 	 * this would shift them from their true offsets).
 	 * 
-	 * @param mutationOffset The new mutation offset bias.
+	 * @param mutationOffset The new intention offset bias.
 	 */
 	public void updateBiasForDirectCommit(long mutationOffset) {
-		Assert.assertTrue(_getNextMutationOffset() == mutationOffset);
-		Assert.assertTrue(_inFlightMutations.isEmpty());
-		_inFlightMutationOffsetBias += 1;
+		Assert.assertTrue(_getNextIntentionOffset() == mutationOffset);
+		Assert.assertTrue(_inFlightIntentions.isEmpty());
+		_inFlightIntentionOffsetBias += 1;
 	}
 
 	/**
-	 * @return The term number of the last mutation in-flight.
+	 * @return The term number of the last intention in-flight.
 	 */
 	public long getLastTermNumber() {
-		return _inFlightMutations.getLast().termNumber;
+		return _inFlightIntentions.getLast().termNumber;
 	}
 
 
-	private long _getNextMutationOffset() {
-		return _inFlightMutationOffsetBias + _inFlightMutations.size();
+	private long _getNextIntentionOffset() {
+		return _inFlightIntentionOffsetBias + _inFlightIntentions.size();
 	}
 }

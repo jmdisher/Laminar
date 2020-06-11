@@ -4,7 +4,7 @@ import java.nio.ByteBuffer;
 
 
 /**
- * The common interface of the payload component of MutationRecord and Consequence.
+ * The common interface of the payload component of Intention and Consequence.
  * Since these types are all wrappers on data moving in the same direction, there is a high degree of overlap between
  * the data elements being sent so they were generalized, in order to eliminate duplication.
  * ClientMessage uses its own types since it includes command messages and the topic is not a part of the core message.

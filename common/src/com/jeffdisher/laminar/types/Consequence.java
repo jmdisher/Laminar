@@ -13,7 +13,7 @@ import com.jeffdisher.laminar.utils.Assert;
 
 
 /**
- * See {@link MutationRecord} for a description of the distinction between MutationRecord and Consequence.
+ * See {@link Intention} for a description of the distinction between Intention and Consequence.
  * 
  * This class represents the logical representation of the consequence, as well as its physical
  * serialization/deserialization logic.
@@ -123,16 +123,16 @@ public class Consequence {
 
 	public final Type type;
 	public final long termNumber;
-	public final long globalOffset;
+	public final long intentionOffset;
 	public final long consequenceOffset;
 	public final UUID clientId;
 	public final long clientNonce;
 	public final IPayload payload;
 	
-	private Consequence(Type type, long termNumber, long globalOffset, long consequenceOffset, UUID clientId, long clientNonce, IPayload payload) {
+	private Consequence(Type type, long termNumber, long intentionOffset, long consequenceOffset, UUID clientId, long clientNonce, IPayload payload) {
 		this.type = type;
 		this.termNumber = termNumber;
-		this.globalOffset = globalOffset;
+		this.intentionOffset = intentionOffset;
 		this.consequenceOffset = consequenceOffset;
 		this.clientId = clientId;
 		this.clientNonce = clientNonce;
@@ -151,7 +151,7 @@ public class Consequence {
 		wrapper
 			.put((byte)this.type.ordinal())
 			.putLong(this.termNumber)
-			.putLong(this.globalOffset)
+			.putLong(this.intentionOffset)
 			.putLong(this.consequenceOffset)
 			.putLong(this.clientId.getMostSignificantBits()).putLong(this.clientId.getLeastSignificantBits())
 			.putLong(this.clientNonce)
@@ -162,7 +162,7 @@ public class Consequence {
 
 	@Override
 	public String toString() {
-		return "Consequence(type=" + this.type + ", global=" + this.globalOffset + ", local=" + this.consequenceOffset + ")";
+		return "Consequence(type=" + this.type + ", global=" + this.intentionOffset + ", local=" + this.consequenceOffset + ")";
 	}
 
 
@@ -188,10 +188,10 @@ public class Consequence {
 		 */
 		KEY_DELETE,
 		/**
-		 * A synthetic Consequence type which is never persisted or directly produced by a MutationRecord (although it is
+		 * A synthetic Consequence type which is never persisted or directly produced by a Intention (although it is
 		 * indirectly created, in some cases) and only used over-the-wire when communicating with listeners.
 		 * This type is used to communicate the cluster config when a listener first connects to a server or when a
-		 * consensus change commits (while these change consequences are created by committing a MutationRecord to change config,
+		 * consensus change commits (while these change consequences are created by committing a Intention to change config,
 		 * they are not associated with a specific topic and are sent to all connected listeners).
 		 * In a way, this type exists to hide cluster state changes in the Consequence stream which normally doesn't have
 		 * the message framing to facilitate such things.

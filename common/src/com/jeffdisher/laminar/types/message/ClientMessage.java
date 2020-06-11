@@ -41,7 +41,7 @@ public class ClientMessage {
 	 * @param lowestNextNonce The next nonce the client will use, assuming the server didn't see any of its in-flight
 	 * messages.  The server will use this to find any messages which the client didn't hear about.
 	 * @param clientId The UUID of the client (same as the UUID sent in the initial handshake).
-	 * @param lastCommitGlobalOffset The last global mutation offset the client knows that the server committed.  The
+	 * @param lastCommitGlobalOffset The last global intention offset the client knows that the server committed.  The
 	 * commit will start looking for missing messages after this point.
 	 * @return A new ClientMessage instance.
 	 */
@@ -160,8 +160,8 @@ public class ClientMessage {
 	/**
 	 * Creates a stutter message.  This message is purely for testing and will either be removed or further restricted,
 	 * later on.
-	 * A stutter message is converted into a stutter mutation but any server which executes and commits it will create
-	 * 2 PUT consequences from it.  It exists to test that multiple consequences can be generated from a single mutation.
+	 * A stutter message is converted into a stutter intention but any server which executes and commits it will create
+	 * 2 PUT consequences from it.  It exists to test that multiple consequences can be generated from a single intention.
 	 * 
 	 * @param nonce Per-client nonce.
 	 * @param topic The topic to which this message must be posted.
@@ -170,13 +170,13 @@ public class ClientMessage {
 	 * @return A new ClientMessage instance.
 	 */
 	public static ClientMessage stutter(long nonce, TopicName topic, byte[] key, byte[] value) {
-		// Note that stutter uses the PUT payload and is converted to a STUTTER mutation, on the lead server, but 2 PUT consequences, when committed.
+		// Note that stutter uses the PUT payload and is converted to a STUTTER intention, on the lead server, but 2 PUT consequences, when committed.
 		return new ClientMessage(ClientMessageType.STUTTER, nonce, ClientMessagePayload_KeyPut.create(topic, key, value));
 	}
 
 	/**
 	 * Creates a message to update the cluster config.  This message is different from most others in that it is never
-	 * written to a local topic and is only ever a global mutation.  This means that listeners will never see it through
+	 * written to a local topic and is only ever a global intention.  This means that listeners will never see it through
 	 * their normal polling paths, only through special consequence synthesis.
 	 * The important aspect of this message type is that the cluster will enter joint consensus when it receives it,
 	 * meaning that this message (and any which follow) will only commit once joint consensus has been resolved into the

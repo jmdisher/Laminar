@@ -28,7 +28,7 @@ public class TestConsequence {
 		Consequence deserialized = Consequence.deserialize(serialized);
 		Assert.assertEquals(record.type, deserialized.type);
 		Assert.assertEquals(record.termNumber, deserialized.termNumber);
-		Assert.assertEquals(record.globalOffset, deserialized.globalOffset);
+		Assert.assertEquals(record.intentionOffset, deserialized.intentionOffset);
 		Assert.assertEquals(record.consequenceOffset, deserialized.consequenceOffset);
 		Assert.assertEquals(record.clientId, deserialized.clientId);
 		Assert.assertEquals(record.clientNonce, deserialized.clientNonce);

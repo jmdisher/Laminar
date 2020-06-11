@@ -10,16 +10,16 @@ import java.util.function.Consumer;
 import com.jeffdisher.laminar.components.INetworkManagerBackgroundCallbacks;
 import com.jeffdisher.laminar.components.NetworkManager;
 import com.jeffdisher.laminar.network.p2p.DownstreamMessage;
-import com.jeffdisher.laminar.network.p2p.DownstreamPayload_AppendMutations;
+import com.jeffdisher.laminar.network.p2p.DownstreamPayload_AppendIntentions;
 import com.jeffdisher.laminar.network.p2p.DownstreamPayload_Identity;
 import com.jeffdisher.laminar.network.p2p.DownstreamPayload_RequestVotes;
 import com.jeffdisher.laminar.network.p2p.UpstreamPayload_CastVote;
 import com.jeffdisher.laminar.network.p2p.UpstreamPayload_PeerState;
-import com.jeffdisher.laminar.network.p2p.UpstreamPayload_ReceivedMutations;
+import com.jeffdisher.laminar.network.p2p.UpstreamPayload_ReceivedIntentions;
 import com.jeffdisher.laminar.network.p2p.UpstreamResponse;
 import com.jeffdisher.laminar.state.StateSnapshot;
 import com.jeffdisher.laminar.types.ConfigEntry;
-import com.jeffdisher.laminar.types.mutation.MutationRecord;
+import com.jeffdisher.laminar.types.Intention;
 import com.jeffdisher.laminar.utils.Assert;
 
 
@@ -50,10 +50,10 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 
 	// These elements are relevant when _THIS_ node is the LEADER.
 	private final DownstreamPeerManager _downstreamPeers;
-	// The last mutation offset received by _THIS_ node (either from a client or peer).
-	private long _lastReceivedMutationOffset = DownstreamPeerState.NO_NEXT_MUTATION;
-	// The last mutation offset committed on _THIS_ node.
-	private long _lastCommittedMutationOffset = DownstreamPeerState.NO_NEXT_MUTATION;
+	// The last intention offset received by _THIS_ node (either from a client or peer).
+	private long _lastReceivedIntentionOffset = DownstreamPeerState.NO_NEXT_INTENTION;
+	// The last intention offset committed on _THIS_ node.
+	private long _lastCommittedIntentionOffset = DownstreamPeerState.NO_NEXT_INTENTION;
 
 	// These elements are relevant when _THIS_ node is a FOLLOWER.
 	private final UpstreamPeerManager _upstreamPeers;
@@ -99,33 +99,33 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 	}
 
 	@Override
-	public boolean mainMutationWasReceivedOrFetched(StateSnapshot snapshot, long previousMutationTermNumber, MutationRecord mutation) {
+	public boolean mainIntentionWasReceivedOrFetched(StateSnapshot snapshot, long previousMutationTermNumber, Intention mutation) {
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		
 		// See if any of our downstream peers were waiting for this mutation and are writable.
 		boolean didSend = false;
 		if (_isLeader) {
-			long mutationOffset = mutation.globalOffset;
+			long mutationOffset = mutation.intentionOffset;
 			long nowMillis = System.currentTimeMillis();
 			// Get only the downstream peers which can receive this mutation.
-			for (ReadOnlyDownstreamPeerState state : _downstreamPeers.immutablePeersReadyToReceiveMutation(mutationOffset)) {
-				_sendMutationToPeer(state, snapshot.currentTermNumber, previousMutationTermNumber, mutation, nowMillis);
+			for (ReadOnlyDownstreamPeerState state : _downstreamPeers.immutablePeersReadyToReceiveIntention(mutationOffset)) {
+				_sendIntentionToPeer(state, snapshot.currentTermNumber, previousMutationTermNumber, mutation, nowMillis);
 				didSend = true;
 			}
 		}
 		// If this was a fetch, we don't want to revert, but this path is taken by new mutations from a client or leader.
 		// TODO:  Fix this duplication of "RECEIVED" paths.
-		_lastReceivedMutationOffset = Math.max(_lastReceivedMutationOffset, mutation.globalOffset);
+		_lastReceivedIntentionOffset = Math.max(_lastReceivedIntentionOffset, mutation.intentionOffset);
 		return didSend;
 	}
 
 	@Override
-	public void mainMutationWasCommitted(long mutationOffset) {
+	public void mainIntentionWasCommitted(long mutationOffset) {
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		
 		// This should never skip a value.
-		Assert.assertTrue((_lastCommittedMutationOffset + 1) == mutationOffset);
-		_lastCommittedMutationOffset = mutationOffset;
+		Assert.assertTrue((_lastCommittedIntentionOffset + 1) == mutationOffset);
+		_lastCommittedIntentionOffset = mutationOffset;
 	}
 
 	@Override
@@ -133,7 +133,7 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		_isLeader = false;
 		// Initialize our upstream state, since we haven't heard anything from them, yet.
-		_upstreamPeers.initializeForFollowerState(_lastReceivedMutationOffset);
+		_upstreamPeers.initializeForFollowerState(_lastReceivedIntentionOffset);
 		// Schedule a timeout in case the leader disappears.
 		_mainStartNewElectionTimeout();
 	}
@@ -164,9 +164,9 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		_isLeader = true;
 		// We will start by sending them the most recent mutation we received and let them walk back from that.
-		_downstreamPeers.setAllNextMutationToSend(_lastReceivedMutationOffset + 1);
-		for (ReadOnlyDownstreamPeerState peer : _downstreamPeers.immutablePeersReadyToReceiveMutation(_lastReceivedMutationOffset)) {
-			_sendReadyMutationNow(peer, snapshot.currentTermNumber);
+		_downstreamPeers.setAllNextIntentionToSend(_lastReceivedIntentionOffset + 1);
+		for (ReadOnlyDownstreamPeerState peer : _downstreamPeers.immutablePeersReadyToReceiveIntention(_lastReceivedIntentionOffset)) {
+			_sendReadyIntentionNow(peer, snapshot.currentTermNumber);
 		}
 		_mainRegisterHeartbeat(System.currentTimeMillis());
 	}
@@ -261,19 +261,19 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 					UpstreamResponse response = UpstreamResponse.deserializeFrom(ByteBuffer.wrap(payload));
 					
 					if (UpstreamResponse.Type.PEER_STATE == response.type) {
-						long lastReceivedMutationOffset = ((UpstreamPayload_PeerState)response.payload).lastReceivedMutationOffset;
+						long lastReceivedMutationOffset = ((UpstreamPayload_PeerState)response.payload).lastReceivedIntentionOffset;
 						
 						// Set the state of the node and request that the next mutation they need be fetched.
 						ReadOnlyDownstreamPeerState peer = _downstreamPeers.nodeDidHandshake(node, lastReceivedMutationOffset);
 						
 						// See if we can send them anything or just fetch, if they are writable.
 						_tryFetchOrSend(peer, arg0.currentTermNumber);
-					} else if (UpstreamResponse.Type.RECEIVED_MUTATIONS == response.type) {
-						long lastReceivedMutationOffset = ((UpstreamPayload_ReceivedMutations)response.payload).lastReceivedMutationOffset;
+					} else if (UpstreamResponse.Type.RECEIVED_INTENTIONS == response.type) {
+						long lastReceivedMutationOffset = ((UpstreamPayload_ReceivedIntentions)response.payload).lastReceivedIntentionOffset;
 						
 						// Internally, we don't actually use this value (we stream the mutations independent of acks, so
 						// long as the network is writable) but the NodeState uses it for consensus offset.
-						ReadOnlyDownstreamPeerState peer = _downstreamPeers.nodeDidAckMutation(node, lastReceivedMutationOffset);
+						ReadOnlyDownstreamPeerState peer = _downstreamPeers.nodeDidAckIntention(node, lastReceivedMutationOffset);
 						_callbacks.mainReceivedAckFromDownstream(peer.entry, lastReceivedMutationOffset);
 						
 						// See if we can send them anything right away.
@@ -293,7 +293,7 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 					Assert.assertTrue(DownstreamMessage.Type.IDENTITY == message.type);
 					ConfigEntry entry = ((DownstreamPayload_Identity)message.payload).self;
 					
-					_upstreamPeers.establishPeer(entry, node, _lastReceivedMutationOffset);
+					_upstreamPeers.establishPeer(entry, node, _lastReceivedIntentionOffset);
 					
 					_trySendUpstream(node);
 					
@@ -306,12 +306,12 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 					DownstreamMessage message = DownstreamMessage.deserializeFrom(ByteBuffer.wrap(raw));
 					
 					// There are 2 messages which come from upstream peers:  APPEND_MUTATIONS and REQUEST_VOTES.
-					if (DownstreamMessage.Type.APPEND_MUTATIONS == message.type) {
-						DownstreamPayload_AppendMutations payload = (DownstreamPayload_AppendMutations)message.payload;
-						_mainHandleAppendMutations(node, entry, payload);
+					if (DownstreamMessage.Type.APPEND_INTENTIONS == message.type) {
+						DownstreamPayload_AppendIntentions payload = (DownstreamPayload_AppendIntentions)message.payload;
+						_mainHandleAppendIntentions(node, entry, payload);
 					} else if (DownstreamMessage.Type.REQUEST_VOTES == message.type) {
 						DownstreamPayload_RequestVotes payload = (DownstreamPayload_RequestVotes)message.payload;
-						boolean shouldVote = _callbacks.mainReceivedRequestForVotes(entry, payload.newTermNumber, payload.previousMutationTerm, payload.previousMuationOffset);
+						boolean shouldVote = _callbacks.mainReceivedRequestForVotes(entry, payload.newTermNumber, payload.previousIntentionTerm, payload.previousIntentionOffset);
 						if (shouldVote) {
 							// We should now be in the follower state.
 							Assert.assertTrue(!_isLeader);
@@ -395,8 +395,8 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 		// This path is used when something _may_ have made this peer writable so verify all those cases.
 		if (peer.isReadyForSend()) {
 			// However, even in that writable state, we need to see if there is something we can send, based on our current state.
-			if (_isLeader && peer.hasMutationToSend()) {
-				_sendReadyMutationNow(peer, currentTermNumber);
+			if (_isLeader && peer.hasIntentionToSend()) {
+				_sendReadyIntentionNow(peer, currentTermNumber);
 			} else if (!_isLeader && peer.hasVoteToSend()) {
 				_sendReadyVoteRequestNow(peer);
 			}
@@ -416,12 +416,12 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 		}
 	}
 
-	private void _sendMutationToPeer(ReadOnlyDownstreamPeerState peer, long currentTermNumber, long previousMutationTermNumber, MutationRecord mutation, long nowMillis) {
+	private void _sendIntentionToPeer(ReadOnlyDownstreamPeerState peer, long currentTermNumber, long previousMutationTermNumber, Intention mutation, long nowMillis) {
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		// We can only call this path if leader.
 		Assert.assertTrue(_isLeader);
 		
-		DownstreamMessage message = peer.commitToSendMutations(currentTermNumber, previousMutationTermNumber, mutation, _lastCommittedMutationOffset, nowMillis);
+		DownstreamMessage message = peer.commitToSendIntentions(currentTermNumber, previousMutationTermNumber, mutation, _lastCommittedIntentionOffset, nowMillis);
 		_sendDownstreamMessage(peer.token, message);
 	}
 
@@ -454,47 +454,47 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 		if (_isLeader && _downstreamPeers.hasPeers()) {
 			long thresholdForHeartbeat = nowMillis - MILLIS_BETWEEN_HEARTBEATS;
 			for (ReadOnlyDownstreamPeerState peer : _downstreamPeers.immutablePeersReadyForHearbeat(thresholdForHeartbeat)) {
-				DownstreamMessage heartbeat = peer.commitToSendHeartbeat(currentTermNumber, _lastCommittedMutationOffset, nowMillis);
+				DownstreamMessage heartbeat = peer.commitToSendHeartbeat(currentTermNumber, _lastCommittedIntentionOffset, nowMillis);
 				_sendDownstreamMessage(peer.token, heartbeat);
 			}
 		}
 	}
 
-	private void _mainHandleAppendMutations(NetworkManager.NodeToken node, ConfigEntry entry, DownstreamPayload_AppendMutations payload) {
+	private void _mainHandleAppendIntentions(NetworkManager.NodeToken node, ConfigEntry entry, DownstreamPayload_AppendIntentions payload) {
 		// If there were no mutations, this is a heart-beat, and they are implicitly "applied".
 		boolean didApplyMutation = (0 == payload.records.length);
 		// The previous mutation term number is for the mutation prior to those in the list so we will update this as we see each mutation.
-		long previousMutationTermNumber = payload.previousMutationTermNumber;
-		for (MutationRecord record : payload.records) {
+		long previousMutationTermNumber = payload.previousIntentionTermNumber;
+		for (Intention record : payload.records) {
 			// Update our last offset received and notify the callbacks of this mutation.
-			long nextMutationToRequest = _callbacks.mainAppendMutationFromUpstream(entry, payload.termNumber, previousMutationTermNumber, record);
+			long nextMutationToRequest = _callbacks.mainAppendIntentionFromUpstream(entry, payload.termNumber, previousMutationTermNumber, record);
 			// Only if we are requesting the very next mutation does this mean we applied the one we received.
-			didApplyMutation = (nextMutationToRequest == (record.globalOffset + 1));
+			didApplyMutation = (nextMutationToRequest == (record.intentionOffset + 1));
 			// If we move forward, it should only be by 1 record at a time.
-			if (nextMutationToRequest > record.globalOffset) {
+			if (nextMutationToRequest > record.intentionOffset) {
 				Assert.assertTrue(didApplyMutation);
 			}
 			// Advance term number of the next mutation in the list.
 			previousMutationTermNumber = record.termNumber;
 			// TODO:  Fix this duplication of "RECEIVED" paths.
-			_lastReceivedMutationOffset = nextMutationToRequest - 1;
+			_lastReceivedIntentionOffset = nextMutationToRequest - 1;
 			// Make sure that this never goes negative (would imply a bug somewhere).
-			Assert.assertTrue(_lastReceivedMutationOffset >= 0);
+			Assert.assertTrue(_lastReceivedIntentionOffset >= 0);
 			
 			if (didApplyMutation) {
 				long lastMutationOffsetReceived = nextMutationToRequest - 1L;
 				// We are moving forward so we want to ack this.
-				long lastMutationOffsetAcknowledged = record.globalOffset - 1L;
-				_upstreamPeers.didApplyReceivedMutation(node, lastMutationOffsetReceived, lastMutationOffsetAcknowledged);
+				long lastMutationOffsetAcknowledged = record.intentionOffset - 1L;
+				_upstreamPeers.didApplyReceivedIntention(node, lastMutationOffsetReceived, lastMutationOffsetAcknowledged);
 			} else {
 				break;
 			}
 		}
 		if (didApplyMutation) {
 			// This is normal operation so proceed with committing.
-			_callbacks.mainCommittedMutationOffsetFromUpstream(entry, payload.termNumber, payload.lastCommittedMutationOffset);
+			_callbacks.mainCommittedIntentionOffsetFromUpstream(entry, payload.termNumber, payload.lastCommittedIntentionOffset);
 		} else {
-			_upstreamPeers.failedToApplyMutations(node, _lastReceivedMutationOffset);
+			_upstreamPeers.failedToApplyIntentions(node, _lastReceivedIntentionOffset);
 		}
 	}
 
@@ -536,14 +536,14 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 		_mainRegisterElectionTimer(now);
 	}
 
-	private void _sendReadyMutationNow(ReadOnlyDownstreamPeerState peer, long currentTermNumber) {
+	private void _sendReadyIntentionNow(ReadOnlyDownstreamPeerState peer, long currentTermNumber) {
 		Assert.assertTrue(_isLeader);
-		Assert.assertTrue(peer.hasMutationToSend());
+		Assert.assertTrue(peer.hasIntentionToSend());
 		
-		IClusterManagerCallbacks.MutationWrapper wrapper = _callbacks.mainClusterFetchMutationIfAvailable(peer.getNextMutationOffsetToSend());
+		IClusterManagerCallbacks.IntentionWrapper wrapper = _callbacks.mainClusterFetchIntentionIfAvailable(peer.getNextIntentionOffsetToSend());
 		if (null != wrapper) {
 			long nowMillis = System.currentTimeMillis();
-			_sendMutationToPeer(peer, currentTermNumber, wrapper.previousMutationTermNumber, wrapper.record, nowMillis);
+			_sendIntentionToPeer(peer, currentTermNumber, wrapper.previousIntentionTermNumber, wrapper.record, nowMillis);
 		} else {
 			// We will try to send once the mutation we wanted is fetched.
 		}

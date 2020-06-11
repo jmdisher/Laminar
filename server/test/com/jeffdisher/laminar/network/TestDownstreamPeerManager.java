@@ -7,8 +7,8 @@ import org.junit.Test;
 
 import com.jeffdisher.laminar.components.NetworkManager;
 import com.jeffdisher.laminar.types.ConfigEntry;
+import com.jeffdisher.laminar.types.Intention;
 import com.jeffdisher.laminar.types.TopicName;
-import com.jeffdisher.laminar.types.mutation.MutationRecord;
 
 
 public class TestDownstreamPeerManager {
@@ -42,21 +42,21 @@ public class TestDownstreamPeerManager {
 		
 		// Set one writable and see that we get one.
 		manager.setNodeWritable(token1);
-		Assert.assertEquals(1, manager.immutablePeersReadyToReceiveMutation(4L).size());
-		Assert.assertEquals(0, manager.immutablePeersReadyToReceiveMutation(5L).size());
+		Assert.assertEquals(1, manager.immutablePeersReadyToReceiveIntention(4L).size());
+		Assert.assertEquals(0, manager.immutablePeersReadyToReceiveIntention(5L).size());
 		manager.setNodeWritable(token2);
-		Assert.assertEquals(1, manager.immutablePeersReadyToReceiveMutation(5L).size());
+		Assert.assertEquals(1, manager.immutablePeersReadyToReceiveIntention(5L).size());
 		
 		// Use one of these and see that it is no longer here.
 		TopicName topic = TopicName.fromString("test");
-		MutationRecord mutation = MutationRecord.put(1L, 4L, topic, UUID.randomUUID(), 1, new byte[0], new byte[0]);
-		manager.immutablePeersReadyToReceiveMutation(4L).iterator().next().commitToSendMutations(1L, 1L, mutation, 1L, 1L);
-		Assert.assertEquals(0, manager.immutablePeersReadyToReceiveMutation(4L).size());
+		Intention mutation = Intention.put(1L, 4L, topic, UUID.randomUUID(), 1, new byte[0], new byte[0]);
+		manager.immutablePeersReadyToReceiveIntention(4L).iterator().next().commitToSendIntentions(1L, 1L, mutation, 1L, 1L);
+		Assert.assertEquals(0, manager.immutablePeersReadyToReceiveIntention(4L).size());
 		
 		// Check the case where it acks and both nodes are now at the same point.
-		manager.nodeDidAckMutation(token1, mutation.globalOffset);
+		manager.nodeDidAckIntention(token1, mutation.intentionOffset);
 		manager.setNodeWritable(token1);
-		Assert.assertEquals(2, manager.immutablePeersReadyToReceiveMutation(5L).size());
+		Assert.assertEquals(2, manager.immutablePeersReadyToReceiveIntention(5L).size());
 	}
 
 

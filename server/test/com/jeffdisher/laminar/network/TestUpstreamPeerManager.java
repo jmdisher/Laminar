@@ -25,9 +25,9 @@ public class TestUpstreamPeerManager {
 		manager.setNodeWritable(upstream);
 		
 		// Receive the mutation.
-		manager.didApplyReceivedMutation(upstream, 4L, 3L);
+		manager.didApplyReceivedIntention(upstream, 4L, 3L);
 		UpstreamResponse ack = manager.commitToSendNextMessage(upstream, false);
-		Assert.assertEquals(UpstreamResponse.Type.RECEIVED_MUTATIONS, ack.type);
+		Assert.assertEquals(UpstreamResponse.Type.RECEIVED_INTENTIONS, ack.type);
 	}
 
 	@Test
@@ -44,7 +44,7 @@ public class TestUpstreamPeerManager {
 		manager.setNodeWritable(upstream);
 		
 		// Reject the mutation.
-		manager.failedToApplyMutations(upstream, 3L);
+		manager.failedToApplyIntentions(upstream, 3L);
 		UpstreamResponse ack = manager.commitToSendNextMessage(upstream, false);
 		Assert.assertEquals(UpstreamResponse.Type.PEER_STATE, ack.type);
 	}

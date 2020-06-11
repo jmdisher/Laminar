@@ -62,9 +62,9 @@ public class ConfigBuilder {
 			System.out.println("\tConfig received!  Waiting for commit (ctrl-c at this point is safe - config _will_ commit)...");
 			CommitInfo info = result.waitForCommitted();
 			if (CommitInfo.Effect.VALID == info.effect) {
-				System.out.println("\tCommitted successfully at offset " + info.mutationOffset);
+				System.out.println("\tCommitted successfully at offset " + info.intentionOffset);
 			} else {
-				System.out.println("\tCommit failed with effect " + info.effect + " at offset " + info.mutationOffset);
+				System.out.println("\tCommit failed with effect " + info.effect + " at offset " + info.intentionOffset);
 			}
 		}
 	}

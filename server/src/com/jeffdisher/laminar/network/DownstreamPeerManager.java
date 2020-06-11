@@ -86,18 +86,18 @@ public class DownstreamPeerManager {
 	}
 
 	/**
-	 * Returns a set of read-only peers which are ready to receive the given mutationOffset.
-	 * A "ready" node is connected, writable, has completed a handshake, and it waiting for this mutation.
+	 * Returns a set of read-only peers which are ready to receive the given intentionOffset.
+	 * A "ready" node is connected, writable, has completed a handshake, and it waiting for this intention.
 	 * 
-	 * @param mutationOffset The offset of the mutation we want to send.
+	 * @param intentionOffset The offset of the intention we want to send.
 	 * @return A set of the peers which are ready to receive this.
 	 */
-	public Set<ReadOnlyDownstreamPeerState> immutablePeersReadyToReceiveMutation(long mutationOffset) {
+	public Set<ReadOnlyDownstreamPeerState> immutablePeersReadyToReceiveIntention(long intentionOffset) {
 		return _downstreamPeerByNode.values().stream()
 				.filter((state) -> (state.isConnectionUp
 						&& state.isWritable
 						&& state.didHandshake
-						&& (state.nextMutationOffsetToSend == mutationOffset)
+						&& (state.nextIntentionOffsetToSend == intentionOffset)
 				))
 				.map((state) -> new ReadOnlyDownstreamPeerState(state))
 				.collect(Collectors.toSet());
@@ -150,27 +150,27 @@ public class DownstreamPeerManager {
 	}
 
 	/**
-	 * Sets the next mutation to send, on all downstream peers, to nextMutationToSend, clearing any pending vote
+	 * Sets the next intention to send, on all downstream peers, to nextIntentionToSend, clearing any pending vote
 	 * requests which were waiting to be sent.
 	 * 
-	 * @param nextMutationToSend The next mutation we will send to all peers.
+	 * @param nextIntentionToSend The next intention we will send to all peers.
 	 */
-	public void setAllNextMutationToSend(long nextMutationToSend) {
+	public void setAllNextIntentionToSend(long nextIntentionToSend) {
 		for (DownstreamPeerState peer : _downstreamPeerByNode.values()) {
-			peer.nextMutationOffsetToSend = nextMutationToSend;
+			peer.nextIntentionOffsetToSend = nextIntentionToSend;
 			peer.pendingVoteRequest = null;
 		}
 	}
 
 	/**
 	 * Sets all downstream peers to prepare to send the given request for votes message, clearing any pending next
-	 * mutation decisions.
+	 * intention decisions.
 	 * 
 	 * @param request The request for votes message all peers should be sent.
 	 */
 	public void setAllRequestForVotes(DownstreamMessage request) {
 		for (DownstreamPeerState peer : _downstreamPeerByNode.values()) {
-			peer.nextMutationOffsetToSend = DownstreamPeerState.NO_NEXT_MUTATION;
+			peer.nextIntentionOffsetToSend = DownstreamPeerState.NO_NEXT_INTENTION;
 			peer.pendingVoteRequest = request;
 		}
 	}
@@ -190,36 +190,36 @@ public class DownstreamPeerManager {
 	}
 
 	/**
-	 * Sets the handshake flag on the given node and sets it to be ready to receiver the mutation after
-	 * lastReceivedMutationOffset.
+	 * Sets the handshake flag on the given node and sets it to be ready to receiver the intention after
+	 * lastReceivedIntentionOffset.
 	 * Note that this is used for both initial handshake but also "resets" or "rewinds" in the sync flow.
 	 * 
 	 * @param node The node which completed the handshake.
-	 * @param lastReceivedMutationOffset The last mutation this node says it received.
+	 * @param lastReceivedIntentionOffset The last intention this node says it received.
 	 * @return A ready-only wrapper of the peer.
 	 */
-	public ReadOnlyDownstreamPeerState nodeDidHandshake(NetworkManager.NodeToken node, long lastReceivedMutationOffset) {
+	public ReadOnlyDownstreamPeerState nodeDidHandshake(NetworkManager.NodeToken node, long lastReceivedIntentionOffset) {
 		DownstreamPeerState peer = _downstreamPeerByNode.get(node);
 		Assert.assertTrue(peer.isConnectionUp);
 		// Note that "handshake" is also how the downstream asks to rewind a request so a peer may send this after it actually _did_ "handshake".
 		peer.didHandshake = true;
-		Assert.assertTrue(DownstreamPeerState.NO_NEXT_MUTATION == peer.nextMutationOffsetToSend);
-		peer.nextMutationOffsetToSend = lastReceivedMutationOffset + 1;
+		Assert.assertTrue(DownstreamPeerState.NO_NEXT_INTENTION == peer.nextIntentionOffsetToSend);
+		peer.nextIntentionOffsetToSend = lastReceivedIntentionOffset + 1;
 		Assert.assertTrue(null == peer.pendingVoteRequest);
 		return new ReadOnlyDownstreamPeerState(peer);
 	}
 
 	/**
-	 * Updates the next mutation to send to the given node to be the one after lastReceivedMutationOffset.
+	 * Updates the next intention to send to the given node to be the one after lastReceivedIntentionOffset.
 	 * 
 	 * @param node The node which sent the ack.
-	 * @param lastReceivedMutationOffset The last mutation offset they are acknowledging.
+	 * @param lastReceivedIntentionOffset The last intention offset they are acknowledging.
 	 * @return A read-only wrapper of the peer.
 	 */
-	public ReadOnlyDownstreamPeerState nodeDidAckMutation(NetworkManager.NodeToken node, long lastReceivedMutationOffset) {
+	public ReadOnlyDownstreamPeerState nodeDidAckIntention(NetworkManager.NodeToken node, long lastReceivedIntentionOffset) {
 		DownstreamPeerState peer = _downstreamPeerByNode.get(node);
-		Assert.assertTrue(DownstreamPeerState.NO_NEXT_MUTATION == peer.nextMutationOffsetToSend);
-		peer.nextMutationOffsetToSend = lastReceivedMutationOffset + 1;
+		Assert.assertTrue(DownstreamPeerState.NO_NEXT_INTENTION == peer.nextIntentionOffsetToSend);
+		peer.nextIntentionOffsetToSend = lastReceivedIntentionOffset + 1;
 		Assert.assertTrue(null == peer.pendingVoteRequest);
 		return new ReadOnlyDownstreamPeerState(peer);
 	}

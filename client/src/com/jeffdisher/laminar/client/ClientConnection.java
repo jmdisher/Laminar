@@ -33,7 +33,7 @@ import com.jeffdisher.laminar.utils.UninterruptibleQueue;
  * -when a new client connects, it sends a CONNECT message, with a version number
  * -the server response with CONNECT_OK, and provides its current committed offset
  * -the client sends (SEND) messages with its self-assigned UUID and a monotonically increasing nonce (1-indexed)
- * -the server will respond (ACK) with the nonce, the corresponding global mutation offset of this message, and its current
+ * -the server will respond (ACK) with the nonce, the corresponding global intention offset of this message, and its current
  *  committed offset
  * -once the server has decided to commit the message and run it, it will send a COMMIT with the nonce, corresponding
  *  result state (always SUCCESS except in the case of AVM execution which may be FAILED or EXCEPTION), and its current
@@ -44,9 +44,9 @@ import com.jeffdisher.laminar.utils.UninterruptibleQueue;
  * 
  * -when an existing client reconnects, it sends a RECONNECT message, with a version number, its existing UUID, and the
  *  last known commit offset from the server
- * -the server responds with a sequence of DURABLE messages with the nonce, corresponding global mutation offset, and
+ * -the server responds with a sequence of DURABLE messages with the nonce, corresponding global intention offset, and
  *  result state of any committed messages which occur after the given commit offset (sent in-order)
- * -the server then sends a sequence of PENDING message with the nonce, and corresponding global mutation offset for any
+ * -the server then sends a sequence of PENDING message with the nonce, and corresponding global intention offset for any
  *  messages after that which are still not yet committed (they will be communicated using normal COMMIT messages,
  *  later)
  * -once these streams have been sent, the server will send a RECONNECT_DONE message, providing its current committed
@@ -110,7 +110,7 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 	private long _nextNonce;
 	// We store the last global commit the server sends us in responses so we can ask what happened since then, when
 	// reconnecting.  It is only read or written by _internalThread.
-	private long _lastCommitGlobalOffset;
+	private long _lastCommitIntentionOffset;
 
 	// Due to reconnection requirements, it is possible to fail a connection but not want to bring down the system.
 	// Therefore, we will continue reconnection attempts, until told to close.  Unless we have an active connection, we
@@ -382,7 +382,7 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 					for (ClientResult result : _inFlightMessages.values()) {
 						result.clearReceived();
 					}
-					handshakeToSend = ClientMessage.reconnect(lowestPossibleNextNonce, _clientId, _lastCommitGlobalOffset);
+					handshakeToSend = ClientMessage.reconnect(lowestPossibleNextNonce, _clientId, _lastCommitIntentionOffset);
 				} else {
 					// New connection.
 					handshakeToSend = ClientMessage.handshake(_clientId);
@@ -455,10 +455,10 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 		// Decode this.
 		ClientResponse deserialized = ClientResponse.deserialize(message);
 		// Update the global commit offset.
-		// The _lastCommitGlobalOffset generally just stays the same or increases but a decrease can happen after reconnecting to a new leader.
+		// The _lastCommitIntentionOffset generally just stays the same or increases but a decrease can happen after reconnecting to a new leader.
 		// We account for this by only increasing the value we have if it is moving in the right direction.
-		if (deserialized.lastCommitGlobalOffset > this._lastCommitGlobalOffset) {
-			this._lastCommitGlobalOffset = deserialized.lastCommitGlobalOffset;
+		if (deserialized.lastCommitIntentionOffset > this._lastCommitIntentionOffset) {
+			this._lastCommitIntentionOffset = deserialized.lastCommitIntentionOffset;
 		}
 		// Find the corresponding in-flight message and set its state.
 		ClientResult result = _inFlightMessages.get(deserialized.nonce);
@@ -472,7 +472,7 @@ public class ClientConnection implements Closeable, INetworkManagerBackgroundCal
 		case CLIENT_READY:
 			// This means that we are able to start sending normal messages.
 			// Between the RECONNECT and this message, the server re-sent synthesized received and committed messsages
-			// from the lastCommitGlobalOffset we set them so they know the nonce of the next message we will send.
+			// from the lastCommitIntentionOffset we set them so they know the nonce of the next message we will send.
 			// Now, all we have to do is take any remaining in-flight messages (those not satisfied by the sythesized
 			// messages) and push them onto the front of outgoing messages, in the correct nonce order.  Then we can set
 			// _isClientReady and the normal logic should play out as though nothing was wrong.

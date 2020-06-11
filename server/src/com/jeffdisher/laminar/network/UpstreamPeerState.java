@@ -25,25 +25,25 @@ public class UpstreamPeerState {
 	 */
 	public boolean isWritable = true;
 	/**
-	 * The most recent mutation offset we received from them.
+	 * The most recent intention offset we received from them.
 	 */
-	public long lastMutationOffsetReceived = 0L;
+	public long lastIntentionOffsetReceived = 0L;
 	/**
-	 * The most recent mutation acknowledgement we sent them.
-	 * When the peer is writable and this value is less than lastMutationOffsetReceived, we send them an
+	 * The most recent intention acknowledgement we sent them.
+	 * When the peer is writable and this value is less than lastIntentionOffsetReceived, we send them an
 	 * acknowledgement.
-	 * This value starts at 0L since we haven't received a mutation from them.
+	 * This value starts at 0L since we haven't received a intention from them.
 	 */
-	public long lastMutationOffsetAcknowledged = 0L;
+	public long lastIntentionOffsetAcknowledged = 0L;
 	/**
 	 * Defaults to -1 when nothing needs to happen but set to a different value when we need to send a PEER_STATE
 	 * message to the upstream peer.  Usually, this is only set for a moment during start-up, directly in response to an
 	 * IDENTITY message _from_ the upstream peer (at which point the connection is writable so it is sent, immediately).
-	 * However, this is also used to re-send the PEER_STATE when there is an inconsistency in the synced mutations from
-	 * the upstream leader and we need to tell them to restart from an earlier base mutation.
+	 * However, this is also used to re-send the PEER_STATE when there is an inconsistency in the synced intentions from
+	 * the upstream leader and we need to tell them to restart from an earlier base intention.
 	 * (0L is a valid starting point so -1L is the default).
 	 */
-	public long pendingPeerStateMutationOffsetReceived = -1L;
+	public long pendingPeerStateIntentionOffsetReceived = -1L;
 	/**
 	 * If an election is in-progress and we want to vote for an upstream peer, we need to send CAST_VOTE up to it. That
 	 * response is stored here until the socket is writable.  Once sent, this is set to null.

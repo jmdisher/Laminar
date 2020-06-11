@@ -4,7 +4,7 @@ import java.util.function.Consumer;
 
 import com.jeffdisher.laminar.state.StateSnapshot;
 import com.jeffdisher.laminar.types.ConfigEntry;
-import com.jeffdisher.laminar.types.mutation.MutationRecord;
+import com.jeffdisher.laminar.types.Intention;
 
 
 public interface IClusterManagerCallbacks {
@@ -37,51 +37,51 @@ public interface IClusterManagerCallbacks {
 	void mainEnqueuePriorityClusterCommandForMainThread(Consumer<StateSnapshot> command, long delayMillis);
 
 	/**
-	 * Called when a new mutation arrives from an upstream peer.
+	 * Called when a new intention arrives from an upstream peer.
 	 * The ClusterManager doesn't expose upstream nodes so the peer is only provided so the receiver can capture this
 	 * as the leader, for redirects.
 	 * The potential return value from this is somewhat complex so here is a break-down of the cases which may happen:
-	 * -the next mutation - this is the most common case and happens if this mutation was applied or it matches one we
+	 * -the next intention - this is the most common case and happens if this intention was applied or it matches one we
 	 *  already had.
-	 * -the previous mutation - if we already had this mutation but there was a term mismatch, so we want to search back
-	 *  in the leader's history to get the correct sequence of mutations.
-	 * -a much earlier mutation - if the leader is far ahead of us, this is just to tell them to rewind to the next
-	 *  mutation we need.
+	 * -the previous intention - if we already had this intention but there was a term mismatch, so we want to search back
+	 *  in the leader's history to get the correct sequence of intentions.
+	 * -a much earlier intention - if the leader is far ahead of us, this is just to tell them to rewind to the next
+	 *  intention we need.
 	 * 
-	 * @param peer The peer which sent the mutation.
+	 * @param peer The peer which sent the intention.
 	 * @param upstreamTermNumber The term number of the upstream peer.
-	 * @param previousMutationTermNumber The term number of the mutation before this one.
-	 * @param mutation The mutation.
-	 * @return The offset of the next mutation number required (if successfully applied, this will be the next one).
+	 * @param previousIntentionTermNumber The term number of the intention before this one.
+	 * @param intention The intention.
+	 * @return The offset of the next intention number required (if successfully applied, this will be the next one).
 	 */
-	long mainAppendMutationFromUpstream(ConfigEntry peer, long upstreamTermNumber, long previousMutationTermNumber, MutationRecord mutation);
+	long mainAppendIntentionFromUpstream(ConfigEntry peer, long upstreamTermNumber, long previousIntentionTermNumber, Intention intention);
 
 	/**
-	 * Called after processing a list of incoming mutations or a heartbeat from an upstream peer.
+	 * Called after processing a list of incoming intentions or a heartbeat from an upstream peer.
 	 * The ClusterManager doesn't expose upstream nodes so the peer is only provided so the receiver can capture this
 	 * as the leader, for redirects.
-	 * Note that there is no chance of term number conflict leading up to this mutation since the leader only commits
+	 * Note that there is no chance of term number conflict leading up to this intention since the leader only commits
 	 * when one of their own messages has been replicated to the cluster.  That replication will do the term number
 	 * check, causing a resync of the inconsistent messages before the leader uses this follower's offset to determine
 	 * whether it can commit a message from its term (this safety is a consequence of section 5.4.2 in the Raft paper).
 	 * 
 	 * @param peer The peer which sent the update.
 	 * @param upstreamTermNumber The term number of the upstream peer.
-	 * @param lastCommittedMutationOffset The leader has committed mutations up to this point.
+	 * @param lastCommittedIntentionOffset The leader has committed intentions up to this point.
 	 */
-	void mainCommittedMutationOffsetFromUpstream(ConfigEntry peer, long upstreamTermNumber, long lastCommittedMutationOffset);
+	void mainCommittedIntentionOffsetFromUpstream(ConfigEntry peer, long upstreamTermNumber, long lastCommittedIntentionOffset);
 
 	/**
-	 * Called when the ClusterManager wishes to send a mutation to a downstream peer and needs it to be loaded.
+	 * Called when the ClusterManager wishes to send a intention to a downstream peer and needs it to be loaded.
 	 * Note that the receiver can respond to this in 3 different ways:
 	 * 1) return immediately if this is in-memory.
 	 * 2) schedule that it be fetched from disk.
-	 * 3) wait until a client sends this mutation.
+	 * 3) wait until a client sends this intention.
 	 * 
-	 * @param mutationOffset The offset to fetch/return/await.
-	 * @return The mutation wrapper, only if it was immediately available, in-memory (not yet committed).
+	 * @param intentionOffset The offset to fetch/return/await.
+	 * @return The intention wrapper, only if it was immediately available, in-memory (not yet committed).
 	 */
-	MutationWrapper mainClusterFetchMutationIfAvailable(long mutationOffset);
+	IntentionWrapper mainClusterFetchIntentionIfAvailable(long intentionOffset);
 
 	/**
 	 * Sent by the ClusterManager whenever a new acknowledgement arrives from a downstream peer.
@@ -90,9 +90,9 @@ public interface IClusterManagerCallbacks {
 	 * equal to the last value it acked.
 	 * 
 	 * @param peer The peer who send the ack.
-	 * @param mutationOffset The mutation offset most recently acknowledged.
+	 * @param intentionOffset The intention offset most recently acknowledged.
 	 */
-	void mainReceivedAckFromDownstream(ConfigEntry peer, long mutationOffset);
+	void mainReceivedAckFromDownstream(ConfigEntry peer, long intentionOffset);
 
 	/**
 	 * Called when an upstream peer has declared itself a CANDIDATE in a new term and started an election.  The receiver
@@ -100,11 +100,11 @@ public interface IClusterManagerCallbacks {
 	 * 
 	 * @param peer The upstream peer who started the election.
 	 * @param newTermNumber The term number of the term it opened with the election.
-	 * @param candidateLastReceivedMutationTerm The term number of the last mutation the candidate RECEIVED.
-	 * @param candidateLastReceivedMutation The mutation offset of the last mutation the candidate RECEIVED.
+	 * @param candidateLastReceivedIntentionTerm The term number of the last intention the candidate RECEIVED.
+	 * @param candidateLastReceivedIntention The intention offset of the last intention the candidate RECEIVED.
 	 * @return True if the receiver wants to send the vote, false if it wants to ignore it.
 	 */
-	boolean mainReceivedRequestForVotes(ConfigEntry peer, long newTermNumber, long candidateLastReceivedMutationTerm, long candidateLastReceivedMutation);
+	boolean mainReceivedRequestForVotes(ConfigEntry peer, long newTermNumber, long candidateLastReceivedIntentionTerm, long candidateLastReceivedIntention);
 
 	/**
 	 * Called when a downstream peer has become a FOLLOWER in the new term and voted for the receiver in their election.
@@ -123,14 +123,14 @@ public interface IClusterManagerCallbacks {
 
 	/**
 	 * Just a container for returning a tuple in this interface.
-	 * This contains the MutationRecord requested but also the term number of the mutation immediately before it (0 if
-	 * this mutation is the first mutation).
+	 * This contains the Intention requested but also the term number of the intention immediately before it (0 if
+	 * this intention is the first intention).
 	 */
-	public static class MutationWrapper {
-		public final long previousMutationTermNumber;
-		public final MutationRecord record;
-		public MutationWrapper(long previousMutationTermNumber, MutationRecord record) {
-			this.previousMutationTermNumber = previousMutationTermNumber;
+	public static class IntentionWrapper {
+		public final long previousIntentionTermNumber;
+		public final Intention record;
+		public IntentionWrapper(long previousIntentionTermNumber, Intention record) {
+			this.previousIntentionTermNumber = previousIntentionTermNumber;
 			this.record = record;
 		}
 	}

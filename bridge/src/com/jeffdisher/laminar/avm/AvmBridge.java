@@ -26,7 +26,7 @@ public class AvmBridge {
 	public AvmBridge() {
 		_capabilities = new OneCallCapabilities();
 		AvmConfiguration config = new AvmConfiguration();
-		// We only interact with AVM with 1 mutation at a time so running multiple threads is pointless.
+		// We only interact with AVM with 1 intention at a time so running multiple threads is pointless.
 		config.threadCount = 1;
 		_avm = CommonAvmFactory.buildAvmInstanceForConfiguration(_capabilities, config);
 	}

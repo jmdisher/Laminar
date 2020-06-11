@@ -29,11 +29,11 @@ import com.jeffdisher.laminar.utils.Assert;
  * from that point onward.
  * If the user needs to restart the ListenerConnection, at a later time, they will need to provide the localOffset of
  * the last consequence returned in order to ensure a seamless continuation of consequences.
- * NOTE:  "Local" offsets are the per-topic offsets while the "global" offsets are the input mutation offsets.  For a
- * single-topic, non-programmable system, they map 1-to-1.  The input mutations are split into per-topic consequences, when
+ * NOTE:  "Local" offsets are the per-topic offsets while the "global" offsets are the input intention offsets.  For a
+ * single-topic, non-programmable system, they map 1-to-1.  The input intentions are split into per-topic consequences, when
  * committed, meaning they are given local offsets.  This, alone, would not be a reason to use this "local" addressing
  * mode.  The ultimate reason is due to programmable topics as they can produce 0 or many consequences in response to
- * processing an input mutation.
+ * processing an input intention.
  * The user directly polls the connection for the next consequence received.  As the user owns this thread, it can send an
  * interrupt to break it out of its poll operation.
  * Note that the only internal thread this creates is to manage the network, not process the incoming data, so no

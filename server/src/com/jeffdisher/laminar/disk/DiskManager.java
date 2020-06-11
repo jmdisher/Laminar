@@ -25,15 +25,15 @@ public class DiskManager implements IDiskManager {
 
 	// These are all accessed under monitor.
 	private boolean _keepRunning;
-	// We track the incoming commits in 2 lists:  one for the "global" mutations and one for the "local" consequences.
-	private final List<CommittedMutationRecord> _incomingCommitMutations;
+	// We track the incoming commits in 2 lists:  one for the "global" intentions and one for the "local" consequences.
+	private final List<CommittedIntention> _incomingCommitIntentions;
 	private final List<ConsequenceCommitTuple> _incomingCommitConsequences;
-	// We track fetch requests in 2 lists:  one for the "global" mutations and one for the "local" consequences.
-	private final List<Long> _incomingFetchMutationRequests;
+	// We track fetch requests in 2 lists:  one for the "global" intentions and one for the "local" consequences.
+	private final List<Long> _incomingFetchIntentionRequests;
 	private final List<ConsequenceFetchTuple> _incomingFetchConsequenceRequests;
 
 	// Only accessed by background thread (current virtual "disk").
-	private final List<CommittedMutationRecord> _committedMutationVirtualDisk;
+	private final List<CommittedIntention> _committedIntentionVirtualDisk;
 	private final Map<TopicName, List<Consequence>> _committedConsequenceVirtualDisk;
 
 	public DiskManager(File dataDirectory, IDiskManagerBackgroundCallbacks callbackTarget) {
@@ -53,15 +53,15 @@ public class DiskManager implements IDiskManager {
 		};
 		
 		_keepRunning = false;
-		_incomingCommitMutations = new LinkedList<>();
+		_incomingCommitIntentions = new LinkedList<>();
 		_incomingCommitConsequences = new LinkedList<>();
-		_incomingFetchMutationRequests = new LinkedList<>();
+		_incomingFetchIntentionRequests = new LinkedList<>();
 		_incomingFetchConsequenceRequests = new LinkedList<>();
-		_committedMutationVirtualDisk = new LinkedList<>();
+		_committedIntentionVirtualDisk = new LinkedList<>();
 		_committedConsequenceVirtualDisk = new HashMap<>();
 		
 		// (we introduce a null to all virtual disk extents since they must be 1-indexed)
-		_committedMutationVirtualDisk.add(null);
+		_committedIntentionVirtualDisk.add(null);
 	}
 
 	/**
@@ -90,10 +90,10 @@ public class DiskManager implements IDiskManager {
 	}
 
 	@Override
-	public synchronized void commitMutation(CommittedMutationRecord mutation) {
+	public synchronized void commitIntention(CommittedIntention mutation) {
 		// Make sure this isn't reentrant.
 		Assert.assertTrue(Thread.currentThread() != _background);
-		_incomingCommitMutations.add(mutation);
+		_incomingCommitIntentions.add(mutation);
 		this.notifyAll();
 	}
 
@@ -106,10 +106,10 @@ public class DiskManager implements IDiskManager {
 	}
 
 	@Override
-	public synchronized void fetchMutation(long globalOffset) {
+	public synchronized void fetchIntention(long globalOffset) {
 		// Make sure this isn't reentrant.
 		Assert.assertTrue(Thread.currentThread() != _background);
-		_incomingFetchMutationRequests.add(globalOffset);
+		_incomingFetchIntentionRequests.add(globalOffset);
 		this.notifyAll();
 	}
 
@@ -127,10 +127,10 @@ public class DiskManager implements IDiskManager {
 		// (this would also avoiding needing multiple intermediary containers and structures)
 		Work work = _backgroundWaitForWork();
 		while (null != work) {
-			if (null != work.commitMutation) {
-				_committedMutationVirtualDisk.add(work.commitMutation);
-				CommittedMutationRecord record = work.commitMutation;
-				_callbackTarget.ioEnqueueDiskCommandForMainThread((snapshot) -> _callbackTarget.mainMutationWasCommitted(record));
+			if (null != work.commitIntention) {
+				_committedIntentionVirtualDisk.add(work.commitIntention);
+				CommittedIntention record = work.commitIntention;
+				_callbackTarget.ioEnqueueDiskCommandForMainThread((snapshot) -> _callbackTarget.mainIntentionWasCommitted(record));
 			}
 			else if (null != work.commitConsequence) {
 				TopicName topic = work.commitConsequence.topic;
@@ -138,7 +138,7 @@ public class DiskManager implements IDiskManager {
 				getOrCreateTopicList(topic).add(record);
 				_callbackTarget.ioEnqueueDiskCommandForMainThread((snapshot) -> _callbackTarget.mainConsequenceWasCommitted(topic, record));
 			}
-			else if (0L != work.fetchMutation) {
+			else if (0L != work.fetchIntention) {
 				// This design might change but we currently "push" the fetched data over the background callback instead
 				// of telling the caller that it is available and that they must request it.
 				// The reason for this is that keeping it here would represent a sort of logical cache which the DiskManager
@@ -147,13 +147,13 @@ public class DiskManager implements IDiskManager {
 				// In the future, this layer almost definitely will have a cache but it will be an LRU physical cache which
 				// is not required to satisfy all requests.
 				// These indexing errors should be intercepted at a higher level, before we get to the disk.
-				Assert.assertTrue((int)work.fetchMutation < _committedMutationVirtualDisk.size());
-				CommittedMutationRecord record = _committedMutationVirtualDisk.get((int)work.fetchMutation);
+				Assert.assertTrue((int)work.fetchIntention < _committedIntentionVirtualDisk.size());
+				CommittedIntention record = _committedIntentionVirtualDisk.get((int)work.fetchIntention);
 				// See if we can get the previous term number.
-				long previousMutationTermNumber = (work.fetchMutation > 1)
-						? _committedMutationVirtualDisk.get((int)work.fetchMutation - 1).record.termNumber
+				long previousMutationTermNumber = (work.fetchIntention > 1)
+						? _committedIntentionVirtualDisk.get((int)work.fetchIntention - 1).record.termNumber
 						: 0L;
-				_callbackTarget.ioEnqueueDiskCommandForMainThread((snapshot) -> _callbackTarget.mainMutationWasFetched(snapshot, previousMutationTermNumber, record));
+				_callbackTarget.ioEnqueueDiskCommandForMainThread((snapshot) -> _callbackTarget.mainIntentionWasFetched(snapshot, previousMutationTermNumber, record));
 			}
 			else if (null != work.fetchConsequence) {
 				TopicName topic = work.fetchConsequence.topic;
@@ -169,7 +169,7 @@ public class DiskManager implements IDiskManager {
 	}
 
 	private synchronized Work _backgroundWaitForWork() {
-		while (_keepRunning && _incomingCommitConsequences.isEmpty() && _incomingCommitMutations.isEmpty() && _incomingFetchConsequenceRequests.isEmpty() && _incomingFetchMutationRequests.isEmpty()) {
+		while (_keepRunning && _incomingCommitConsequences.isEmpty() && _incomingCommitIntentions.isEmpty() && _incomingFetchConsequenceRequests.isEmpty() && _incomingFetchIntentionRequests.isEmpty()) {
 			try {
 				this.wait();
 			} catch (InterruptedException e) {
@@ -181,12 +181,12 @@ public class DiskManager implements IDiskManager {
 		if (_keepRunning) {
 			if (!_incomingCommitConsequences.isEmpty()) {
 				todo = Work.commitConsequence(_incomingCommitConsequences.remove(0));
-			} else if (!_incomingCommitMutations.isEmpty()) {
-				todo = Work.commitMutation(_incomingCommitMutations.remove(0));
+			} else if (!_incomingCommitIntentions.isEmpty()) {
+				todo = Work.commitIntention(_incomingCommitIntentions.remove(0));
 			} else if (!_incomingFetchConsequenceRequests.isEmpty()) {
 				todo = Work.fetchConsequence(_incomingFetchConsequenceRequests.remove(0));
-			} else if (!_incomingFetchMutationRequests.isEmpty()) {
-				todo = Work.fetchMutation(_incomingFetchMutationRequests.remove(0));
+			} else if (!_incomingFetchIntentionRequests.isEmpty()) {
+				todo = Work.fetchIntention(_incomingFetchIntentionRequests.remove(0));
 			}
 		}
 		return todo;
@@ -209,28 +209,28 @@ public class DiskManager implements IDiskManager {
 	 * A simple tuple used to pass back work from the synchronized wait loop.
 	 */
 	private static class Work {
-		public static Work commitMutation(CommittedMutationRecord toCommit) {
+		public static Work commitIntention(CommittedIntention toCommit) {
 			return new Work(toCommit, null, 0L, null);
 		}
 		public static Work commitConsequence(ConsequenceCommitTuple toCommit) {
 			return new Work(null, toCommit, 0L, null);
 		}
-		public static Work fetchMutation(long toFetch) {
+		public static Work fetchIntention(long toFetch) {
 			return new Work(null, null, toFetch, null);
 		}
 		public static Work fetchConsequence(ConsequenceFetchTuple toFetch) {
 			return new Work(null, null, 0L, toFetch);
 		}
 		
-		public final CommittedMutationRecord commitMutation;
+		public final CommittedIntention commitIntention;
 		public final ConsequenceCommitTuple commitConsequence;
-		public final long fetchMutation;
+		public final long fetchIntention;
 		public final ConsequenceFetchTuple fetchConsequence;
 		
-		private Work(CommittedMutationRecord commitMutation, ConsequenceCommitTuple commitConsequence, long fetchMutation, ConsequenceFetchTuple fetchConsequence) {
-			this.commitMutation = commitMutation;
+		private Work(CommittedIntention commitIntention, ConsequenceCommitTuple commitConsequence, long fetchIntention, ConsequenceFetchTuple fetchConsequence) {
+			this.commitIntention = commitIntention;
 			this.commitConsequence = commitConsequence;
-			this.fetchMutation = fetchMutation;
+			this.fetchIntention = fetchIntention;
 			this.fetchConsequence = fetchConsequence;
 		}
 	}

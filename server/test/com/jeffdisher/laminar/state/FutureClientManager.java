@@ -2,7 +2,7 @@ package com.jeffdisher.laminar.state;
 
 import org.junit.Assert;
 
-import com.jeffdisher.laminar.disk.CommittedMutationRecord;
+import com.jeffdisher.laminar.disk.CommittedIntention;
 import com.jeffdisher.laminar.network.IClientManager;
 import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.types.ConfigEntry;
@@ -37,16 +37,16 @@ public class FutureClientManager implements IClientManager {
 	@Override
 	public void mainEnterFollowerState(ConfigEntry clusterLeader, StateSnapshot snapshot) {
 		if (null != f_mainEnterFollowerState) {
-			f_mainEnterFollowerState.put(snapshot.lastCommittedMutationOffset);
+			f_mainEnterFollowerState.put(snapshot.lastCommittedIntentionOffset);
 			f_mainEnterFollowerState = f_mainEnterFollowerState.nextLink;
 		} else {
 			System.out.println("IClientManager - mainEnterFollowerState");
 		}
 	}
 	@Override
-	public void mainProcessingPendingMessageForRecord(CommittedMutationRecord committedRecord) {
+	public void mainProcessingPendingMessageForRecord(CommittedIntention committedRecord) {
 		if (null != f_mainProcessingPendingMessageCommits) {
-			f_mainProcessingPendingMessageCommits.put(committedRecord.record.globalOffset);
+			f_mainProcessingPendingMessageCommits.put(committedRecord.record.intentionOffset);
 			f_mainProcessingPendingMessageCommits = f_mainProcessingPendingMessageCommits.nextLink;
 		} else {
 			System.out.println("IClientManager - mainProcessingPendingMessageCommits");
@@ -61,7 +61,7 @@ public class FutureClientManager implements IClientManager {
 		System.out.println("IClientManager - mainSendRecordToListeners");
 	}
 	@Override
-	public void mainReplayCommittedMutationForReconnects(StateSnapshot arg, CommittedMutationRecord record) {
+	public void mainReplayCommittedIntentionForReconnects(StateSnapshot arg, CommittedIntention record) {
 		System.out.println("IClientManager - mainReplayCommittedMutationForReconnects");
 	}
 	@Override

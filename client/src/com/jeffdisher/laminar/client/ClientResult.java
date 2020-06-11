@@ -40,7 +40,7 @@ public class ClientResult {
 	/**
 	 * Blocks the caller until the message has been committed across a majority of the cluster.
 	 * This method returning means that the cluster has (or unavoidably will) reached consensus that this message is
-	 * part of the cluster's mutation history in the order it was received.
+	 * part of the cluster's intention history in the order it was received.
 	 * This is the primary means of blocking on "completion" of the message.
 	 * 
 	 * @return Description of how the commit was done.
@@ -73,7 +73,7 @@ public class ClientResult {
 		// We can't be committed twice.
 		Assert.assertTrue(null == _commitInfo);
 		// The commit offset must be a positive number.
-		Assert.assertTrue(info.mutationOffset > 0L);
+		Assert.assertTrue(info.intentionOffset > 0L);
 		
 		_commitInfo = info;
 		this.notifyAll();

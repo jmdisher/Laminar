@@ -21,7 +21,7 @@ public class TestUpstreamResponse {
 		
 		UpstreamResponse test = UpstreamResponse.deserializeFrom(buffer);
 		UpstreamPayload_PeerState payload = (UpstreamPayload_PeerState)test.payload;
-		Assert.assertEquals(lastReceivedMutationOffset, payload.lastReceivedMutationOffset);
+		Assert.assertEquals(lastReceivedMutationOffset, payload.lastReceivedIntentionOffset);
 	}
 
 	@Test
@@ -34,8 +34,8 @@ public class TestUpstreamResponse {
 		buffer.flip();
 		
 		UpstreamResponse test = UpstreamResponse.deserializeFrom(buffer);
-		UpstreamPayload_ReceivedMutations payload = (UpstreamPayload_ReceivedMutations)test.payload;
-		Assert.assertEquals(lastReceivedMutationOffset, payload.lastReceivedMutationOffset);
+		UpstreamPayload_ReceivedIntentions payload = (UpstreamPayload_ReceivedIntentions)test.payload;
+		Assert.assertEquals(lastReceivedMutationOffset, payload.lastReceivedIntentionOffset);
 	}
 
 	@Test

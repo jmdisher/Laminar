@@ -282,11 +282,11 @@ public class TestCluster {
 			// Finally, check that the listeners saw all the results.
 			Consequence[] leaderRecords = leaderListener.waitForTerminate();
 			Consequence[] followerRecords = followerListener.waitForTerminate();
-			Assert.assertEquals(leaderRecords[0].globalOffset, followerRecords[0].globalOffset);
-			Assert.assertEquals(leaderRecords[1].globalOffset, followerRecords[1].globalOffset);
-			Assert.assertEquals(leaderRecords[2].globalOffset, followerRecords[2].globalOffset);
-			Assert.assertEquals(leaderRecords[1].globalOffset, leaderRecords[0].globalOffset + 1);
-			Assert.assertEquals(leaderRecords[2].globalOffset, leaderRecords[1].globalOffset + 1);
+			Assert.assertEquals(leaderRecords[0].intentionOffset, followerRecords[0].intentionOffset);
+			Assert.assertEquals(leaderRecords[1].intentionOffset, followerRecords[1].intentionOffset);
+			Assert.assertEquals(leaderRecords[2].intentionOffset, followerRecords[2].intentionOffset);
+			Assert.assertEquals(leaderRecords[1].intentionOffset, leaderRecords[0].intentionOffset + 1);
+			Assert.assertEquals(leaderRecords[2].intentionOffset, leaderRecords[1].intentionOffset + 1);
 			
 			// The listeners should also have seen the config update, even though they didn't both change target.
 			Assert.assertEquals(2, leaderListener.getCurrentConfig().entries.length);
@@ -496,11 +496,11 @@ public class TestCluster {
 			// Finally, check that the listeners saw all the results.
 			Consequence[] records1 = listener1.waitForTerminate();
 			Consequence[] records2 = listener2.waitForTerminate();
-			Assert.assertEquals(records1[0].globalOffset, records2[0].globalOffset);
-			Assert.assertEquals(records1[1].globalOffset, records2[1].globalOffset);
-			Assert.assertEquals(records1[1].globalOffset, records2[0].globalOffset + 1);
-			Assert.assertEquals(records1[2].globalOffset, records2[2].globalOffset);
-			Assert.assertEquals(records1[2].globalOffset, records2[1].globalOffset + 1);
+			Assert.assertEquals(records1[0].intentionOffset, records2[0].intentionOffset);
+			Assert.assertEquals(records1[1].intentionOffset, records2[1].intentionOffset);
+			Assert.assertEquals(records1[1].intentionOffset, records2[0].intentionOffset + 1);
+			Assert.assertEquals(records1[2].intentionOffset, records2[2].intentionOffset);
+			Assert.assertEquals(records1[2].intentionOffset, records2[1].intentionOffset + 1);
 		} finally {
 			// Shut down.
 			client.close();

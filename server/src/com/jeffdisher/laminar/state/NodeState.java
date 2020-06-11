@@ -9,10 +9,10 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.function.Consumer;
 
-import com.jeffdisher.laminar.bridge.MutationExecutor;
+import com.jeffdisher.laminar.bridge.IntentionExecutor;
 import com.jeffdisher.laminar.console.IConsoleManager;
 import com.jeffdisher.laminar.console.IConsoleManagerBackgroundCallbacks;
-import com.jeffdisher.laminar.disk.CommittedMutationRecord;
+import com.jeffdisher.laminar.disk.CommittedIntention;
 import com.jeffdisher.laminar.disk.IDiskManager;
 import com.jeffdisher.laminar.disk.IDiskManagerBackgroundCallbacks;
 import com.jeffdisher.laminar.network.IClientManager;
@@ -23,11 +23,10 @@ import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.types.CommitInfo;
 import com.jeffdisher.laminar.types.ConfigEntry;
 import com.jeffdisher.laminar.types.Consequence;
+import com.jeffdisher.laminar.types.Intention;
 import com.jeffdisher.laminar.types.TopicName;
 import com.jeffdisher.laminar.types.message.ClientMessage;
 import com.jeffdisher.laminar.types.message.ClientMessageType;
-import com.jeffdisher.laminar.types.mutation.MutationRecord;
-import com.jeffdisher.laminar.types.mutation.MutationRecordType;
 import com.jeffdisher.laminar.types.payload.Payload_ConfigChange;
 import com.jeffdisher.laminar.utils.Assert;
 import com.jeffdisher.laminar.utils.UninterruptibleQueue;
@@ -52,7 +51,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 	private IClusterManager _clusterManager;
 	private IDiskManager _diskManager;
 	private IConsoleManager _consoleManager;
-	private final MutationExecutor _mutationExecutor;
+	private final IntentionExecutor _mutationExecutor;
 
 	private RaftState _currentState;
 	private ConfigEntry _clusterLeader;
@@ -73,7 +72,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 	private long _lastTermNumberRemovedFromInFlight;
 
 	// Tracking of in-flight mutations ready to be committed when the cluster agrees.
-	private InFlightMutations _inFlightMutations;
+	private InFlightIntentions _inFlightMutations;
 
 	// Information related to the state of the main execution thread.
 	private boolean _keepRunning;
@@ -95,9 +94,9 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		_currentConfig = new SyncProgress(initialConfig, Collections.singleton(_selfState));
 		_configsPendingCommit = new HashMap<>();
 		
-		_mutationExecutor = new MutationExecutor();
+		_mutationExecutor = new IntentionExecutor();
 		
-		_inFlightMutations = new InFlightMutations();
+		_inFlightMutations = new InFlightIntentions();
 		
 		_commandQueue = new UninterruptibleQueue<>();
 	}
@@ -122,7 +121,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 			// Poll for the next work item.
 			Consumer<StateSnapshot> next = _commandQueue.blockingGet();
 			// Create the state snapshot and pass it to the consumer.
-			StateSnapshot snapshot = new StateSnapshot(_currentConfig.config, _lastCommittedMutationOffset, _selfState.lastMutationOffsetReceived, _currentTermNumber);
+			StateSnapshot snapshot = new StateSnapshot(_currentConfig.config, _lastCommittedMutationOffset, _selfState.lastIntentionOffsetReceived, _currentTermNumber);
 			next.accept(snapshot);
 		}
 		_mutationExecutor.stop();
@@ -201,7 +200,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		// All nonce accounting is done before we get here and acks are managed on response so just apply the message.
 		// (we return the globalMutationOffset it was assigned so the caller can generate correct acks).
 		long mutationOffsetToAssign = _getAndUpdateNextMutationOffset();
-		MutationRecord mutation = Helpers.convertClientMessageToMutation(incoming, _currentTermNumber, clientId, mutationOffsetToAssign);
+		Intention mutation = Helpers.convertClientMessageToIntention(incoming, _currentTermNumber, clientId, mutationOffsetToAssign);
 		_processReceivedMutation(mutation);
 		if (ClientMessageType.POISON == incoming.type) {
 			// POISON is special in that it is just for testing so it maps to a TEMP, as a mutation, but we still want to preserve this.
@@ -213,10 +212,10 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 	}
 
 	@Override
-	public MutationRecord mainClientFetchMutationIfAvailable(long mutationOffset) {
+	public Intention mainClientFetchIntentionIfAvailable(long mutationOffset) {
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		// It is invalid to request a mutation from the future.
-		Assert.assertTrue(mutationOffset <= _selfState.lastMutationOffsetReceived);
+		Assert.assertTrue(mutationOffset <= _selfState.lastIntentionOffsetReceived);
 		return _mainFetchMutationIfAvailable(mutationOffset);
 	}
 
@@ -261,33 +260,33 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 	}
 
 	@Override
-	public long mainAppendMutationFromUpstream(ConfigEntry peer, long upstreamTermNumber, long previousMutationTermNumber, MutationRecord record) {
+	public long mainAppendIntentionFromUpstream(ConfigEntry peer, long upstreamTermNumber, long previousMutationTermNumber, Intention record) {
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		
 		_considerBecomingFollower(peer, upstreamTermNumber);
 		long nextMutationToRequest;
 		// We can only append mutations if we are a follower and this mutation is either from the past or is the next mutation we were waiting for.
-		if ((RaftState.FOLLOWER == _currentState) && (record.globalOffset <= (_selfState.lastMutationOffsetReceived + 1))) {
+		if ((RaftState.FOLLOWER == _currentState) && (record.intentionOffset <= (_selfState.lastIntentionOffsetReceived + 1))) {
 			// We will never receive a mutation from before our commit offset (but it could be _at_ the commit offset if the leader was behind us yet still up-to-date with the majority).
-			Assert.assertTrue(record.globalOffset >= _lastCommittedMutationOffset);
-			if (record.globalOffset == _lastCommittedMutationOffset) {
+			Assert.assertTrue(record.intentionOffset >= _lastCommittedMutationOffset);
+			if (record.intentionOffset == _lastCommittedMutationOffset) {
 				// This should only happen right after an election and should then be somewhat rare:  it only happens when the leader is only as up-to-date as the majority, not ahead.
 				// We just make sure it is consistent with what we committed and then ask for the next.
 				Assert.assertTrue(_lastTermNumberRemovedFromInFlight == record.termNumber);
-				nextMutationToRequest = record.globalOffset + 1;
+				nextMutationToRequest = record.intentionOffset + 1;
 			} else {
-				Assert.assertTrue(record.globalOffset > _lastCommittedMutationOffset);
+				Assert.assertTrue(record.intentionOffset > _lastCommittedMutationOffset);
 				nextMutationToRequest = _mainProcessValidMutationFromUpstream(previousMutationTermNumber, record);
 			}
 		} else {
 			// They are ahead of us so tell them to wind back and give us the next mutation we are waiting for.
-			nextMutationToRequest = (_selfState.lastMutationOffsetReceived + 1);
+			nextMutationToRequest = (_selfState.lastIntentionOffsetReceived + 1);
 		}
 		return nextMutationToRequest;
 	}
 
 	@Override
-	public void mainCommittedMutationOffsetFromUpstream(ConfigEntry peer, long upstreamTermNumber, long lastCommittedMutationOffset) {
+	public void mainCommittedIntentionOffsetFromUpstream(ConfigEntry peer, long upstreamTermNumber, long lastCommittedMutationOffset) {
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		
 		_considerBecomingFollower(peer, upstreamTermNumber);
@@ -303,7 +302,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 	}
 
 	@Override
-	public IClusterManagerCallbacks.MutationWrapper mainClusterFetchMutationIfAvailable(long mutationOffset) {
+	public IClusterManagerCallbacks.IntentionWrapper mainClusterFetchIntentionIfAvailable(long mutationOffset) {
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		return _mainFetchMutationWrapperIfAvailable(mutationOffset);
 	}
@@ -315,7 +314,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		Assert.assertTrue(RaftState.LEADER == _currentState);
 		
 		// Update the offset in our sync tracking.
-		_unionOfDownstreamNodes.get(peer.nodeUuid).lastMutationOffsetReceived = mutationOffset;
+		_unionOfDownstreamNodes.get(peer.nodeUuid).lastIntentionOffsetReceived = mutationOffset;
 		
 		// See if this changed the consensus offset.
 		// (we are the leader so we need to do a term check).
@@ -332,7 +331,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 			// Rules here defined in section 5.4.1 of Raft paper.
 			// Check if their last received mutation term is greater than ours.
 			long mostRecentMutationTerm = _getPreviousMutationTermNumber();
-			if ((candidateLastReceivedMutationTerm > mostRecentMutationTerm) || ((candidateLastReceivedMutationTerm == mostRecentMutationTerm) && (candidateLastReceivedMutation >= _selfState.lastMutationOffsetReceived))) {
+			if ((candidateLastReceivedMutationTerm > mostRecentMutationTerm) || ((candidateLastReceivedMutationTerm == mostRecentMutationTerm) && (candidateLastReceivedMutation >= _selfState.lastIntentionOffsetReceived))) {
 				// They are more up-to-date so we presume they are the leader.
 				_enterFollowerState(peer, newTermNumber);
 				// Send them our vote.
@@ -392,22 +391,22 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 	}
 
 	@Override
-	public void mainMutationWasCommitted(CommittedMutationRecord completed) {
+	public void mainIntentionWasCommitted(CommittedIntention completed) {
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		// Update our global commit offset (set this first since other methods we are calling might want to read for common state).
 		// We setup this commit so it must be sequential (this is a good check to make sure the commits aren't being re-ordered in the disk layer, too).
-		Assert.assertTrue((_lastCommittedMutationOffset + 1) == completed.record.globalOffset);
-		_lastCommittedMutationOffset = completed.record.globalOffset;
+		Assert.assertTrue((_lastCommittedMutationOffset + 1) == completed.record.intentionOffset);
+		_lastCommittedMutationOffset = completed.record.intentionOffset;
 		// Only notify clients if we are the LEADER.
 		if (RaftState.LEADER == _currentState) {
 			_clientManager.mainProcessingPendingMessageForRecord(completed);
 		}
 		
 		// The mutation is only committed to disk when it is committed to the joint consensus so we can advance this now.
-		SyncProgress newConfigProgress = _configsPendingCommit.remove(completed.record.globalOffset);
+		SyncProgress newConfigProgress = _configsPendingCommit.remove(completed.record.intentionOffset);
 		if (null != newConfigProgress) {
 			// We need a new snapshot since we just changed state in this command, above.
-			StateSnapshot newSnapshot = new StateSnapshot(_currentConfig.config, _lastCommittedMutationOffset, _selfState.lastMutationOffsetReceived, _currentTermNumber);
+			StateSnapshot newSnapshot = new StateSnapshot(_currentConfig.config, _lastCommittedMutationOffset, _selfState.lastIntentionOffsetReceived, _currentTermNumber);
 			// This requires that we broadcast the config update to the connected clients and listeners.
 			_clientManager.mainBroadcastConfigUpdate(newSnapshot, newConfigProgress.config);
 			// We change the config but this would render the snapshot stale so we do it last, to make that clear.
@@ -415,7 +414,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 			// Update we may need to purge now-stale downstream connections.
 			_rebuildDownstreamUnionAfterConfigChange();
 		}
-		_clusterManager.mainMutationWasCommitted(completed.record.globalOffset);
+		_clusterManager.mainIntentionWasCommitted(completed.record.intentionOffset);
 	}
 
 	@Override
@@ -426,14 +425,14 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 	}
 
 	@Override
-	public void mainMutationWasFetched(StateSnapshot snapshot, long previousMutationTermNumber, CommittedMutationRecord record) {
+	public void mainIntentionWasFetched(StateSnapshot snapshot, long previousMutationTermNumber, CommittedIntention record) {
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		
 		// Check to see if a client needs this
-		_clientManager.mainReplayCommittedMutationForReconnects(snapshot, record);
+		_clientManager.mainReplayCommittedIntentionForReconnects(snapshot, record);
 		
 		// Check to see if a downstream peer needs this.
-		_clusterManager.mainMutationWasReceivedOrFetched(snapshot, previousMutationTermNumber, record.record);
+		_clusterManager.mainIntentionWasReceivedOrFetched(snapshot, previousMutationTermNumber, record.record);
 	}
 
 	@Override
@@ -459,7 +458,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 	// </IConsoleManagerBackgroundCallbacks>
 
 
-	private void _processReceivedMutation(MutationRecord mutation) {
+	private void _processReceivedMutation(Intention mutation) {
 		// Main thread helper.
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		
@@ -503,7 +502,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 				nodesInConfig.add(peer);
 			}
 			// Add this to our pending map of commits so we know when to exit joint consensus.
-			SyncProgress overwrite = _configsPendingCommit.put(mutation.globalOffset, new SyncProgress(newConfig, nodesInConfig));
+			SyncProgress overwrite = _configsPendingCommit.put(mutation.intentionOffset, new SyncProgress(newConfig, nodesInConfig));
 			// We should never be overwriting something.
 			Assert.assertTrue(null == overwrite);
 		}
@@ -517,24 +516,24 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		}
 	}
 
-	private void _enqueueForCommit(MutationRecord mutation) {
+	private void _enqueueForCommit(Intention mutation) {
 		// Make sure the in-flight queue is consistent.
-		Assert.assertTrue(mutation.globalOffset == _inFlightMutations.getNextMutationOffset());
+		Assert.assertTrue(mutation.intentionOffset == _inFlightMutations.getNextIntentionOffset());
 		
 		// Make sure we aren't in a degenerate case where we can commit this, immediately (only applies to single-node clusters).
 		long consensusOffset = _checkConsesusMutationOffset();
-		if (mutation.globalOffset <= consensusOffset) {
+		if (mutation.intentionOffset <= consensusOffset) {
 			// Commit, immediately.
 			Assert.assertTrue(_inFlightMutations.isEmpty());
 			_executeAndCommit(mutation);
 			// We also need to tell the in-flight mutations to increment its bias since it won't see this mutation.
-			_inFlightMutations.updateBiasForDirectCommit(mutation.globalOffset);
+			_inFlightMutations.updateBiasForDirectCommit(mutation.intentionOffset);
 		} else {
 			// Store in list for later commit.
 			_inFlightMutations.add(mutation);
 			// Notify anyone downstream about this.
 			long previousMutationTermNumber = _getPreviousMutationTermNumber();
-			_clusterManager.mainMutationWasReceivedOrFetched(new StateSnapshot(_currentConfig.config, _lastCommittedMutationOffset, _selfState.lastMutationOffsetReceived, _currentTermNumber), previousMutationTermNumber, mutation);
+			_clusterManager.mainIntentionWasReceivedOrFetched(new StateSnapshot(_currentConfig.config, _lastCommittedMutationOffset, _selfState.lastIntentionOffsetReceived, _currentTermNumber), previousMutationTermNumber, mutation);
 		}
 	}
 
@@ -557,18 +556,18 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 	}
 
 	private long _getAndUpdateNextMutationOffset() {
-		_selfState.lastMutationOffsetReceived += 1;
-		return _selfState.lastMutationOffsetReceived;
+		_selfState.lastIntentionOffsetReceived += 1;
+		return _selfState.lastIntentionOffsetReceived;
 	}
 
-	private void _commit(MutationRecord mutation, CommitInfo.Effect effect, TopicName topic, List<Consequence> events) {
+	private void _commit(Intention mutation, CommitInfo.Effect effect, TopicName topic, List<Consequence> events) {
 		// (note that the event is null for certain meta-messages like UPDATE_CONFIG).
 		for (Consequence event : events) {
 			_diskManager.commitConsequence(topic, event);
 		}
-		CommittedMutationRecord committedMutationRecord = CommittedMutationRecord.create(mutation, effect);
+		CommittedIntention committedIntention = CommittedIntention.create(mutation, effect);
 		// TODO:  We probably want to lock-step the mutation on the event commit since we will be able to detect the broken data, that way, and replay it.
-		_diskManager.commitMutation(committedMutationRecord);
+		_diskManager.commitIntention(committedIntention);
 		_lastTermNumberRemovedFromInFlight = mutation.termNumber;
 	}
 
@@ -602,13 +601,13 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 			// The term check is done in the case of a leader, to make sure we don't commit mutations from previous terms
 			// until we can commit something from our own term (Section 5.4.2 of the Raft paper).
 			// See if we encounter our current term before we need to stop.
-			canCommit = _inFlightMutations.canCommitUpToMutation(consensusOffset, _currentTermNumber);
+			canCommit = _inFlightMutations.canCommitUpToIntention(consensusOffset, _currentTermNumber);
 		} else {
 			// The follower always blindly does what it was told.
 			canCommit = true;
 		}
 		if (canCommit) {
-			MutationRecord mutation = _inFlightMutations.removeFirstElementLessThanOrEqualTo(consensusOffset);
+			Intention mutation = _inFlightMutations.removeFirstElementLessThanOrEqualTo(consensusOffset);
 			while (null != mutation) {
 				_executeAndCommit(mutation);
 				mutation = _inFlightMutations.removeFirstElementLessThanOrEqualTo(consensusOffset);
@@ -616,50 +615,50 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		}
 	}
 
-	private MutationRecord _getInFlightMutation(long mutationOffsetToFetch) {
-		Assert.assertTrue(mutationOffsetToFetch <= _selfState.lastMutationOffsetReceived);
+	private Intention _getInFlightMutation(long mutationOffsetToFetch) {
+		Assert.assertTrue(mutationOffsetToFetch <= _selfState.lastIntentionOffsetReceived);
 		
 		return _inFlightMutations.getMutationAtOffset(mutationOffsetToFetch);
 	}
 
-	private MutationRecord _mainFetchMutationIfAvailable(long mutationOffset) {
+	private Intention _mainFetchMutationIfAvailable(long mutationOffset) {
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		// The mutations are 1-indexed so this must be a positive number.
 		Assert.assertTrue(mutationOffset > 0L);
 		
 		// See if this could be on-disk or if we are waiting for something new from the client.
-		MutationRecord inlineResponse = null;
-		if (mutationOffset <= _selfState.lastMutationOffsetReceived) {
+		Intention inlineResponse = null;
+		if (mutationOffset <= _selfState.lastIntentionOffsetReceived) {
 			// See if this is in-memory.
-			MutationRecord inFlight = _getInFlightMutation(mutationOffset);
+			Intention inFlight = _getInFlightMutation(mutationOffset);
 			if (null != inFlight) {
 				inlineResponse = inFlight;
 			} else {
 				// We should have this.
-				_diskManager.fetchMutation(mutationOffset);
+				_diskManager.fetchIntention(mutationOffset);
 			}
 		} else {
 			// They are waiting for the next, just as we are.
-			Assert.assertTrue(mutationOffset == (_selfState.lastMutationOffsetReceived + 1));
+			Assert.assertTrue(mutationOffset == (_selfState.lastIntentionOffsetReceived + 1));
 		}
 		return inlineResponse;
 	}
 
-	private IClusterManagerCallbacks.MutationWrapper _mainFetchMutationWrapperIfAvailable(long mutationOffset) {
+	private IClusterManagerCallbacks.IntentionWrapper _mainFetchMutationWrapperIfAvailable(long mutationOffset) {
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		// The mutations are 1-indexed so this must be a positive number.
 		Assert.assertTrue(mutationOffset > 0L);
 		
 		// See if this could be on-disk or if we are waiting for something new from the client.
-		IClusterManagerCallbacks.MutationWrapper inlineResponse = null;
-		if (mutationOffset <= _selfState.lastMutationOffsetReceived) {
+		IClusterManagerCallbacks.IntentionWrapper inlineResponse = null;
+		if (mutationOffset <= _selfState.lastIntentionOffsetReceived) {
 			// See if this is in-memory.
-			MutationRecord inFlight = _getInFlightMutation(mutationOffset);
+			Intention inFlight = _getInFlightMutation(mutationOffset);
 			if (null != inFlight) {
 				// Find the term number of the mutation before this.
 				long previousMutationTermNumber = 0L;
 				if (mutationOffset > 1) {
-					MutationRecord prior = _getInFlightMutation(mutationOffset - 1);
+					Intention prior = _getInFlightMutation(mutationOffset - 1);
 					if (null != prior) {
 						previousMutationTermNumber = prior.termNumber;
 					} else {
@@ -667,14 +666,14 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 					}
 				}
 				Assert.assertTrue(null != inFlight);
-				inlineResponse = new IClusterManagerCallbacks.MutationWrapper(previousMutationTermNumber, inFlight);
+				inlineResponse = new IClusterManagerCallbacks.IntentionWrapper(previousMutationTermNumber, inFlight);
 			} else {
 				// We should have this.
-				_diskManager.fetchMutation(mutationOffset);
+				_diskManager.fetchIntention(mutationOffset);
 			}
 		} else {
 			// They are waiting for the next, just as we are.
-			Assert.assertTrue(mutationOffset == (_selfState.lastMutationOffsetReceived + 1));
+			Assert.assertTrue(mutationOffset == (_selfState.lastIntentionOffsetReceived + 1));
 		}
 		return inlineResponse;
 	}
@@ -686,12 +685,12 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 	}
 
 	private void _reverseInFlightMutationsBefore(long globalOffset) {
-		MutationRecord removed = _inFlightMutations.removeLastElementGreaterThanOrEqualTo(globalOffset);
+		Intention removed = _inFlightMutations.removeLastElementGreaterThanOrEqualTo(globalOffset);
 		while (null != removed) {
-			_selfState.lastMutationOffsetReceived -= 1;
+			_selfState.lastIntentionOffsetReceived -= 1;
 			// Only CONFIG_UPDATE results in a change to our own state so revert that change if this is what we removed.
-			if (MutationRecordType.CONFIG_CHANGE == removed.type) {
-				SyncProgress reverted = _configsPendingCommit.remove(removed.globalOffset);
+			if (Intention.Type.CONFIG_CHANGE == removed.type) {
+				SyncProgress reverted = _configsPendingCommit.remove(removed.intentionOffset);
 				Assert.assertTrue(null != reverted);
 				// We just rebuild the downstream union now that this has been removed and it will disconnect anything stale.
 				_rebuildDownstreamUnionAfterConfigChange();
@@ -705,7 +704,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		_clusterLeader = peer;
 		_currentTermNumber = termNumber;
 		System.out.println("FOLLOWER(" + peer.nodeUuid + "): " + termNumber);
-		StateSnapshot snapshot = new StateSnapshot(_currentConfig.config, _lastCommittedMutationOffset, _selfState.lastMutationOffsetReceived, _currentTermNumber);
+		StateSnapshot snapshot = new StateSnapshot(_currentConfig.config, _lastCommittedMutationOffset, _selfState.lastIntentionOffsetReceived, _currentTermNumber);
 		_clientManager.mainEnterFollowerState(_clusterLeader, snapshot);
 		_clusterManager.mainEnterFollowerState();
 	}
@@ -723,26 +722,26 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 			// Vote for ourselves, pause client interactions, and request downstream votes.
 			_selfState.termOfLastCastVote = _currentTermNumber;
 			_clientManager.mainEnterCandidateState();
-			_clusterManager.mainEnterCandidateState(_currentTermNumber, _getPreviousMutationTermNumber(), _selfState.lastMutationOffsetReceived);
+			_clusterManager.mainEnterCandidateState(_currentTermNumber, _getPreviousMutationTermNumber(), _selfState.lastIntentionOffsetReceived);
 		}
 	}
 
-	private long _mainProcessValidMutationFromUpstream(long previousMutationTermNumber, MutationRecord record) {
+	private long _mainProcessValidMutationFromUpstream(long previousMutationTermNumber, Intention record) {
 		long nextMutationToRequest;
 		// It is possible that this record requires that we drop some in-flight mutations, though (could happen to fix a term inconsistency shortly after a new election).
-		_reverseInFlightMutationsBefore(record.globalOffset);
-		Assert.assertTrue((_selfState.lastMutationOffsetReceived + 1) == record.globalOffset);
+		_reverseInFlightMutationsBefore(record.intentionOffset);
+		Assert.assertTrue((_selfState.lastIntentionOffsetReceived + 1) == record.intentionOffset);
 		// We now want to make sure that the term numbers are consistent (otherwise, we can fail here and the next data will do the revert).
 		if (_getPreviousMutationTermNumber() == previousMutationTermNumber) {
 			// This is good so we can apply the mutation.
-			_selfState.lastMutationOffsetReceived = record.globalOffset;
+			_selfState.lastIntentionOffsetReceived = record.intentionOffset;
 			_processReceivedMutation(record);
 			_enqueueForCommit(record);
 			// We just want the next one.
-			nextMutationToRequest = (record.globalOffset + 1);
+			nextMutationToRequest = (record.intentionOffset + 1);
 		} else {
 			// This is inconsistent so there is something wrong - re-fetch the previous mutation since that might fix the inconsistency (the reverse will already have updated this)
-			nextMutationToRequest = (record.globalOffset - 1);
+			nextMutationToRequest = (record.intentionOffset - 1);
 		}
 		return nextMutationToRequest;
 	}
@@ -760,7 +759,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 			// We won the election so enter the leader state.
 			_currentState = RaftState.LEADER;
 			System.out.println("LEADER: " + _currentTermNumber);
-			StateSnapshot snapshot = new StateSnapshot(_currentConfig.config, _lastCommittedMutationOffset, _selfState.lastMutationOffsetReceived, _currentTermNumber);
+			StateSnapshot snapshot = new StateSnapshot(_currentConfig.config, _lastCommittedMutationOffset, _selfState.lastIntentionOffsetReceived, _currentTermNumber);
 			_clientManager.mainEnterLeaderState(snapshot);
 			_clusterManager.mainEnterLeaderState(snapshot);
 		}
@@ -776,9 +775,9 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		}
 	}
 
-	private void _executeAndCommit(MutationRecord mutation) {
+	private void _executeAndCommit(Intention mutation) {
 		TopicName topic = mutation.topic;
-		MutationExecutor.ExecutionResult result = _mutationExecutor.execute(mutation);
+		IntentionExecutor.ExecutionResult result = _mutationExecutor.execute(mutation);
 		_commit(mutation, result.effect, topic, result.consequences);
 	}
 }

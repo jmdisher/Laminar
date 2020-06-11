@@ -9,15 +9,15 @@ import org.junit.Assert;
 import org.junit.Test;
 
 import com.jeffdisher.laminar.console.IConsoleManager;
-import com.jeffdisher.laminar.disk.CommittedMutationRecord;
+import com.jeffdisher.laminar.disk.CommittedIntention;
 import com.jeffdisher.laminar.network.IClusterManagerCallbacks;
 import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.types.CommitInfo;
 import com.jeffdisher.laminar.types.ConfigEntry;
 import com.jeffdisher.laminar.types.Consequence;
+import com.jeffdisher.laminar.types.Intention;
 import com.jeffdisher.laminar.types.TopicName;
 import com.jeffdisher.laminar.types.message.ClientMessage;
-import com.jeffdisher.laminar.types.mutation.MutationRecord;
 import com.jeffdisher.laminar.types.payload.Payload_KeyPut;
 
 
@@ -51,23 +51,23 @@ public class TestNodeState {
 		Runner runner = new Runner(test.nodeState);
 		
 		// Register the topic and say it was committed.
-		F<CommittedMutationRecord> preMutation = test.diskManager.get_commitMutation();
+		F<CommittedIntention> preMutation = test.diskManager.get_commitMutation();
 		long mutationNumber = runner.run((snapshot) -> test.nodeState.mainHandleValidClientMessage(UUID.randomUUID(), ClientMessage.createTopic(1L, topic, new byte[0], new byte[0])));
 		Assert.assertEquals(1L, mutationNumber);
-		runner.runVoid((snapshot) -> test.nodeState.mainMutationWasCommitted(preMutation.get()));
+		runner.runVoid((snapshot) -> test.nodeState.mainIntentionWasCommitted(preMutation.get()));
 		
 		// Send the ClientMessage.
-		F<CommittedMutationRecord> mutation = test.diskManager.get_commitMutation();
+		F<CommittedIntention> mutation = test.diskManager.get_commitMutation();
 		F<Consequence> event = test.diskManager.get_commitEvent();
 		mutationNumber = runner.run((snapshot) -> test.nodeState.mainHandleValidClientMessage(UUID.randomUUID(), ClientMessage.put(2L, topic, new byte[0], new byte[] {1})));
 		Assert.assertEquals(2L, mutationNumber);
-		Assert.assertEquals(mutationNumber, mutation.get().record.globalOffset);
-		Assert.assertEquals(mutationNumber, event.get().globalOffset);
+		Assert.assertEquals(mutationNumber, mutation.get().record.intentionOffset);
+		Assert.assertEquals(mutationNumber, event.get().intentionOffset);
 		
 		// Say the corresponding mutation was committed.
 		F<Long> toClient = test.clientManager.get_mainProcessingPendingMessageCommits();
 		F<Long> toCluster = test.clusterManager.get_mainMutationWasCommitted();
-		runner.runVoid((snapshot) -> test.nodeState.mainMutationWasCommitted(mutation.get()));
+		runner.runVoid((snapshot) -> test.nodeState.mainIntentionWasCommitted(mutation.get()));
 		Assert.assertEquals(mutationNumber, toClient.get().longValue());
 		Assert.assertEquals(mutationNumber, toCluster.get().longValue());
 		
@@ -88,32 +88,32 @@ public class TestNodeState {
 		Runner runner = new Runner(test.nodeState);
 		TopicName topic = TopicName.fromString("fake");
 		ConfigEntry upstream = new ConfigEntry(UUID.randomUUID(), new InetSocketAddress(3), new InetSocketAddress(4));
-		MutationRecord record1 = MutationRecord.put(1L, 1L, topic, UUID.randomUUID(), 1, new byte[0], new byte[] {1});
-		MutationRecord record2 = MutationRecord.put(2L, 2L, topic, UUID.randomUUID(), 1, new byte[0], new byte[] {2});
-		MutationRecord record1_fix = MutationRecord.put(2L, 1L, record1.topic, record1.clientId, record1.clientNonce, ((Payload_KeyPut)record1.payload).key, ((Payload_KeyPut)record1.payload).value);
+		Intention record1 = Intention.put(1L, 1L, topic, UUID.randomUUID(), 1, new byte[0], new byte[] {1});
+		Intention record2 = Intention.put(2L, 2L, topic, UUID.randomUUID(), 1, new byte[0], new byte[] {2});
+		Intention record1_fix = Intention.put(2L, 1L, record1.topic, record1.clientId, record1.clientNonce, ((Payload_KeyPut)record1.payload).key, ((Payload_KeyPut)record1.payload).value);
 		
 		// Send the initial message.
 		F<Long> client_mainEnterFollowerState = test.clientManager.get_mainEnterFollowerState();
 		F<Void> cluster_mainEnterFollowerState = test.clusterManager.get_mainEnterFollowerState();
-		F<MutationRecord> mainMutationWasReceivedOrFetched = test.clusterManager.get_mainMutationWasReceivedOrFetched();
-		long nextToLoad = runner.run((snapshot) -> test.nodeState.mainAppendMutationFromUpstream(upstream, 1L, 0L, record1));
-		Assert.assertEquals(record1.globalOffset + 1, nextToLoad);
+		F<Intention> mainMutationWasReceivedOrFetched = test.clusterManager.get_mainMutationWasReceivedOrFetched();
+		long nextToLoad = runner.run((snapshot) -> test.nodeState.mainAppendIntentionFromUpstream(upstream, 1L, 0L, record1));
+		Assert.assertEquals(record1.intentionOffset + 1, nextToLoad);
 		Assert.assertEquals(0L, client_mainEnterFollowerState.get().longValue());
 		Assert.assertEquals(record1, mainMutationWasReceivedOrFetched.get());
 		cluster_mainEnterFollowerState.get();
 		// Send a message which contradicts that.
 		// (note that the contradiction doesn't send mainMutationWasReceivedOrFetched)
-		nextToLoad = runner.run((snapshot) -> test.nodeState.mainAppendMutationFromUpstream(upstream, 2L, 2L, record2));
-		Assert.assertEquals(record2.globalOffset - 1, nextToLoad);
+		nextToLoad = runner.run((snapshot) -> test.nodeState.mainAppendIntentionFromUpstream(upstream, 2L, 2L, record2));
+		Assert.assertEquals(record2.intentionOffset - 1, nextToLoad);
 		// Send a replacement message.
 		mainMutationWasReceivedOrFetched = test.clusterManager.get_mainMutationWasReceivedOrFetched();
-		nextToLoad = runner.run((snapshot) -> test.nodeState.mainAppendMutationFromUpstream(upstream, 2L, 0L, record1_fix));
-		Assert.assertEquals(record1_fix.globalOffset + 1, nextToLoad);
+		nextToLoad = runner.run((snapshot) -> test.nodeState.mainAppendIntentionFromUpstream(upstream, 2L, 0L, record1_fix));
+		Assert.assertEquals(record1_fix.intentionOffset + 1, nextToLoad);
 		Assert.assertEquals(record1_fix, mainMutationWasReceivedOrFetched.get());
 		// Re-send the failure.
 		mainMutationWasReceivedOrFetched = test.clusterManager.get_mainMutationWasReceivedOrFetched();
-		nextToLoad = runner.run((snapshot) -> test.nodeState.mainAppendMutationFromUpstream(upstream, 2L, 2L, record2));
-		Assert.assertEquals(record2.globalOffset + 1, nextToLoad);
+		nextToLoad = runner.run((snapshot) -> test.nodeState.mainAppendIntentionFromUpstream(upstream, 2L, 2L, record2));
+		Assert.assertEquals(record2.intentionOffset + 1, nextToLoad);
 		Assert.assertEquals(record2, mainMutationWasReceivedOrFetched.get());
 		
 		// Stop.
@@ -143,15 +143,15 @@ public class TestNodeState {
 		ConfigEntry upstreamEntry = new ConfigEntry(UUID.randomUUID(), new InetSocketAddress(3), new InetSocketAddress(4));
 		ClusterConfig newConfig = ClusterConfig.configFromEntries(new ConfigEntry[] {originalEntry, upstreamEntry});
 		// Send it 2 mutations (first one is 2-node config).
-		MutationRecord configChangeRecord = MutationRecord.updateConfig(1L, 1L, UUID.randomUUID(), 1L, newConfig);
+		Intention configChangeRecord = Intention.updateConfig(1L, 1L, UUID.randomUUID(), 1L, newConfig);
 		// (note that this will cause them to become a FOLLOWER).
-		long nextToLoad = runner.run((snapshot) -> nodeState.mainAppendMutationFromUpstream(upstreamEntry, 1L, 0L, configChangeRecord));
-		Assert.assertEquals(configChangeRecord.globalOffset + 1, nextToLoad);
-		MutationRecord tempRecord = MutationRecord.put(1L, 2L, topic, UUID.randomUUID(), 1L, new byte[0], new byte[] {1});
-		nextToLoad = runner.run((snapshot) -> nodeState.mainAppendMutationFromUpstream(upstreamEntry, 1L, 1L, tempRecord));
-		Assert.assertEquals(tempRecord.globalOffset + 1, nextToLoad);
+		long nextToLoad = runner.run((snapshot) -> nodeState.mainAppendIntentionFromUpstream(upstreamEntry, 1L, 0L, configChangeRecord));
+		Assert.assertEquals(configChangeRecord.intentionOffset + 1, nextToLoad);
+		Intention tempRecord = Intention.put(1L, 2L, topic, UUID.randomUUID(), 1L, new byte[0], new byte[] {1});
+		nextToLoad = runner.run((snapshot) -> nodeState.mainAppendIntentionFromUpstream(upstreamEntry, 1L, 1L, tempRecord));
+		Assert.assertEquals(tempRecord.intentionOffset + 1, nextToLoad);
 		// Tell it the first mutation committed (meaning that config will be active).
-		runner.runVoid((snapshot) -> nodeState.mainCommittedMutationOffsetFromUpstream(upstreamEntry, 1L, 1L));
+		runner.runVoid((snapshot) -> nodeState.mainCommittedIntentionOffsetFromUpstream(upstreamEntry, 1L, 1L));
 		
 		// <election>
 		// Force it to enter CANDIDATE state.
@@ -165,32 +165,32 @@ public class TestNodeState {
 		// </election>
 		
 		// Ask it to send the remaining mutation downstream.
-		IClusterManagerCallbacks.MutationWrapper wrapper = runner.run((snapshot) -> nodeState.mainClusterFetchMutationIfAvailable(2L));
+		IClusterManagerCallbacks.IntentionWrapper wrapper = runner.run((snapshot) -> nodeState.mainClusterFetchIntentionIfAvailable(2L));
 		Assert.assertNotNull(wrapper);
 		// Send it the ack for the mutation.
 		runner.runVoid((snapshot) -> nodeState.mainReceivedAckFromDownstream(upstreamEntry, 2L));
 		// Verify that mutation 2 still hasn't committed (we do that by trying to fetch it, inline - committed mutations need to be fetched).
-		MutationRecord mutation = runner.run((snapshot) -> nodeState.mainClientFetchMutationIfAvailable(2L));
+		Intention mutation = runner.run((snapshot) -> nodeState.mainClientFetchIntentionIfAvailable(2L));
 		Assert.assertEquals(tempRecord, mutation);
 		// Create new mutation (3).
 		ClientMessage newTemp = ClientMessage.put(1L, TopicName.fromString("fake"), new byte[0], new byte[]{2});
 		long mutationOffset = runner.run((snapshot) -> nodeState.mainHandleValidClientMessage(UUID.randomUUID(), newTemp));
 		Assert.assertEquals(3L, mutationOffset);
 		// Ask it to send the new mutation downstream.
-		wrapper = runner.run((snapshot) -> nodeState.mainClusterFetchMutationIfAvailable(3L));
-		Assert.assertEquals(1L, wrapper.previousMutationTermNumber);
+		wrapper = runner.run((snapshot) -> nodeState.mainClusterFetchIntentionIfAvailable(3L));
+		Assert.assertEquals(1L, wrapper.previousIntentionTermNumber);
 		Assert.assertEquals(2L, wrapper.record.termNumber);
 		// Send it the ack for the new mutation (this causes it to immediately commit mutations 2 and 3).
-		F<CommittedMutationRecord> commit1 = test.diskManager.get_commitMutation();
-		F<CommittedMutationRecord> commit2 = test.diskManager.get_commitMutation();
+		F<CommittedIntention> commit1 = test.diskManager.get_commitMutation();
+		F<CommittedIntention> commit2 = test.diskManager.get_commitMutation();
 		runner.runVoid((snapshot) -> nodeState.mainReceivedAckFromDownstream(upstreamEntry, 3L));
-		Assert.assertEquals(2L, commit1.get().record.globalOffset);
-		Assert.assertEquals(3L, commit2.get().record.globalOffset);
+		Assert.assertEquals(2L, commit1.get().record.intentionOffset);
+		Assert.assertEquals(3L, commit2.get().record.intentionOffset);
 		
 		// Verify all mutations are committed.
-		Assert.assertNull(runner.run((snapshot) -> nodeState.mainClusterFetchMutationIfAvailable(1L)));
-		Assert.assertNull(runner.run((snapshot) -> nodeState.mainClusterFetchMutationIfAvailable(2L)));
-		Assert.assertNull(runner.run((snapshot) -> nodeState.mainClusterFetchMutationIfAvailable(3L)));
+		Assert.assertNull(runner.run((snapshot) -> nodeState.mainClusterFetchIntentionIfAvailable(1L)));
+		Assert.assertNull(runner.run((snapshot) -> nodeState.mainClusterFetchIntentionIfAvailable(2L)));
+		Assert.assertNull(runner.run((snapshot) -> nodeState.mainClusterFetchIntentionIfAvailable(3L)));
 		
 		// Stop.
 		runner.runVoid((snapshot) -> test.nodeState.mainHandleStopCommand());
@@ -231,11 +231,11 @@ public class TestNodeState {
 		ConfigEntry upstreamEntry1 = new ConfigEntry(UUID.randomUUID(), new InetSocketAddress(3), new InetSocketAddress(4));
 		ClusterConfig newConfig = ClusterConfig.configFromEntries(new ConfigEntry[] {originalEntry, upstreamEntry1});
 		
-		F<CommittedMutationRecord> commit = test.diskManager.get_commitMutation();
+		F<CommittedIntention> commit = test.diskManager.get_commitMutation();
 		long mutationNumber = runner.run((snapshot) -> test.nodeState.mainHandleValidClientMessage(UUID.randomUUID(), ClientMessage.updateConfig(1L, newConfig)));
 		Assert.assertEquals(1L, mutationNumber);
 		runner.runVoid((snapshot) -> test.nodeState.mainReceivedAckFromDownstream(upstreamEntry1, 1L));
-		Assert.assertEquals(1L, commit.get().record.globalOffset);
+		Assert.assertEquals(1L, commit.get().record.intentionOffset);
 		
 		// Synthesize a call for an election from a peer behind us and verify that this causes us to start an election in the next term.
 		F<Long> startElection = test.clusterManager.get_mainEnterCandidateState();
@@ -267,15 +267,15 @@ public class TestNodeState {
 		TopicName topic = TopicName.fromString("fake");
 		
 		// Create the common mutation.
-		MutationRecord record1 = MutationRecord.put(1L, 1L, topic, UUID.randomUUID(), 1, new byte[0], new byte[] {1});
+		Intention record1 = Intention.put(1L, 1L, topic, UUID.randomUUID(), 1, new byte[0], new byte[] {1});
 		
 		// Create the first config change and common mutation.
-		MutationRecord record2 = MutationRecord.updateConfig(1L, 2L, UUID.randomUUID(), 1L, config1);
-		MutationRecord record3 = MutationRecord.put(1L, 3L, topic, UUID.randomUUID(), 1, new byte[0], new byte[] {2});
+		Intention record2 = Intention.updateConfig(1L, 2L, UUID.randomUUID(), 1L, config1);
+		Intention record3 = Intention.put(1L, 3L, topic, UUID.randomUUID(), 1, new byte[0], new byte[] {2});
 		
 		// Create the second config change and commont mutation.
-		MutationRecord record4 = MutationRecord.updateConfig(1L, 4L, UUID.randomUUID(), 1L, config2);
-		MutationRecord record5 = MutationRecord.put(1L, 5L, topic, UUID.randomUUID(), 1, new byte[0], new byte[] {3});
+		Intention record4 = Intention.updateConfig(1L, 4L, UUID.randomUUID(), 1L, config2);
+		Intention record5 = Intention.put(1L, 5L, topic, UUID.randomUUID(), 1, new byte[0], new byte[] {3});
 		
 		test.start();
 		test.startLatch.await();
@@ -283,8 +283,8 @@ public class TestNodeState {
 		
 		// Send all 5 mutations, verifying that the acks are generated.
 		F<Void> becomeFollower = test.clusterManager.get_mainEnterFollowerState();
-		F<MutationRecord> received = test.clusterManager.get_mainMutationWasReceivedOrFetched();
-		long nextToLoad = runner.run((snapshot) -> test.nodeState.mainAppendMutationFromUpstream(leader, 1L, 0L, record1));
+		F<Intention> received = test.clusterManager.get_mainMutationWasReceivedOrFetched();
+		long nextToLoad = runner.run((snapshot) -> test.nodeState.mainAppendIntentionFromUpstream(leader, 1L, 0L, record1));
 		Assert.assertEquals(2L, nextToLoad);
 		becomeFollower.get();
 		Assert.assertEquals(record1, received.get());
@@ -293,7 +293,7 @@ public class TestNodeState {
 		F<ConfigEntry> downstreamConnect1 = test.clusterManager.get_mainOpenDownstreamConnection();
 		F<ConfigEntry> downstreamConnect2 = test.clusterManager.get_mainOpenDownstreamConnection();
 		received = test.clusterManager.get_mainMutationWasReceivedOrFetched();
-		nextToLoad = runner.run((snapshot) -> test.nodeState.mainAppendMutationFromUpstream(leader, 1L, 1L, record2));
+		nextToLoad = runner.run((snapshot) -> test.nodeState.mainAppendIntentionFromUpstream(leader, 1L, 1L, record2));
 		Assert.assertEquals(3L, nextToLoad);
 		Assert.assertEquals(record2, received.get());
 		// (we know these are currently sent back in order so we can check these, directly).
@@ -301,38 +301,38 @@ public class TestNodeState {
 		Assert.assertEquals(peer1.nodeUuid, downstreamConnect2.get().nodeUuid);
 		
 		received = test.clusterManager.get_mainMutationWasReceivedOrFetched();
-		nextToLoad = runner.run((snapshot) -> test.nodeState.mainAppendMutationFromUpstream(leader, 1L, 1L, record3));
+		nextToLoad = runner.run((snapshot) -> test.nodeState.mainAppendIntentionFromUpstream(leader, 1L, 1L, record3));
 		Assert.assertEquals(4L, nextToLoad);
 		Assert.assertEquals(record3, received.get());
 		
 		// Verify that we open the last downstream connection.
 		F<ConfigEntry> downstreamConnect3 = test.clusterManager.get_mainOpenDownstreamConnection();
 		received = test.clusterManager.get_mainMutationWasReceivedOrFetched();
-		nextToLoad = runner.run((snapshot) -> test.nodeState.mainAppendMutationFromUpstream(leader, 1L, 1L, record4));
+		nextToLoad = runner.run((snapshot) -> test.nodeState.mainAppendIntentionFromUpstream(leader, 1L, 1L, record4));
 		Assert.assertEquals(5L, nextToLoad);
 		Assert.assertEquals(record4, received.get());
 		Assert.assertEquals(peer2.nodeUuid, downstreamConnect3.get().nodeUuid);
 		
 		received = test.clusterManager.get_mainMutationWasReceivedOrFetched();
-		nextToLoad = runner.run((snapshot) -> test.nodeState.mainAppendMutationFromUpstream(leader, 1L, 1L, record5));
+		nextToLoad = runner.run((snapshot) -> test.nodeState.mainAppendIntentionFromUpstream(leader, 1L, 1L, record5));
 		Assert.assertEquals(6L, nextToLoad);
 		Assert.assertEquals(record5, received.get());
 		
 		// Now send the commit notifications and observe the disconnects as the configs are committed:
 		// -note that the commit processing is only done after the disk returns so we need to send those calls, too
 		// -in this test, the first config change is purely additive but the second does drop one peer.
-		runner.runVoid((snapshot) -> test.nodeState.mainCommittedMutationOffsetFromUpstream(leader, 1L, 1L));
-		runner.runVoid((snapshot) -> test.nodeState.mainMutationWasCommitted(CommittedMutationRecord.create(record1, CommitInfo.Effect.VALID)));
-		runner.runVoid((snapshot) -> test.nodeState.mainCommittedMutationOffsetFromUpstream(leader, 1L, 2L));
-		runner.runVoid((snapshot) -> test.nodeState.mainMutationWasCommitted(CommittedMutationRecord.create(record2, CommitInfo.Effect.VALID)));
-		runner.runVoid((snapshot) -> test.nodeState.mainCommittedMutationOffsetFromUpstream(leader, 1L, 3L));
-		runner.runVoid((snapshot) -> test.nodeState.mainMutationWasCommitted(CommittedMutationRecord.create(record3, CommitInfo.Effect.VALID)));
+		runner.runVoid((snapshot) -> test.nodeState.mainCommittedIntentionOffsetFromUpstream(leader, 1L, 1L));
+		runner.runVoid((snapshot) -> test.nodeState.mainIntentionWasCommitted(CommittedIntention.create(record1, CommitInfo.Effect.VALID)));
+		runner.runVoid((snapshot) -> test.nodeState.mainCommittedIntentionOffsetFromUpstream(leader, 1L, 2L));
+		runner.runVoid((snapshot) -> test.nodeState.mainIntentionWasCommitted(CommittedIntention.create(record2, CommitInfo.Effect.VALID)));
+		runner.runVoid((snapshot) -> test.nodeState.mainCommittedIntentionOffsetFromUpstream(leader, 1L, 3L));
+		runner.runVoid((snapshot) -> test.nodeState.mainIntentionWasCommitted(CommittedIntention.create(record3, CommitInfo.Effect.VALID)));
 		F<ConfigEntry> disconnect = test.clusterManager.get_mainCloseDownstreamConnection();
-		runner.runVoid((snapshot) -> test.nodeState.mainCommittedMutationOffsetFromUpstream(leader, 1L, 4L));
-		runner.runVoid((snapshot) -> test.nodeState.mainMutationWasCommitted(CommittedMutationRecord.create(record4, CommitInfo.Effect.VALID)));
+		runner.runVoid((snapshot) -> test.nodeState.mainCommittedIntentionOffsetFromUpstream(leader, 1L, 4L));
+		runner.runVoid((snapshot) -> test.nodeState.mainIntentionWasCommitted(CommittedIntention.create(record4, CommitInfo.Effect.VALID)));
 		Assert.assertEquals(peer1.nodeUuid, disconnect.get().nodeUuid);
-		runner.runVoid((snapshot) -> test.nodeState.mainCommittedMutationOffsetFromUpstream(leader, 1L, 5L));
-		runner.runVoid((snapshot) -> test.nodeState.mainMutationWasCommitted(CommittedMutationRecord.create(record5, CommitInfo.Effect.VALID)));
+		runner.runVoid((snapshot) -> test.nodeState.mainCommittedIntentionOffsetFromUpstream(leader, 1L, 5L));
+		runner.runVoid((snapshot) -> test.nodeState.mainIntentionWasCommitted(CommittedIntention.create(record5, CommitInfo.Effect.VALID)));
 		
 		// Stop.
 		runner.runVoid((snapshot) -> test.nodeState.mainHandleStopCommand());
@@ -361,15 +361,15 @@ public class TestNodeState {
 		TopicName topic = TopicName.fromString("fake");
 		
 		// Create the common mutation.
-		MutationRecord record1 = MutationRecord.put(1L, 1L, topic, UUID.randomUUID(), 1, new byte[0], new byte[] {1});
+		Intention record1 = Intention.put(1L, 1L, topic, UUID.randomUUID(), 1, new byte[0], new byte[] {1});
 		
 		// Create the first config change and TEMP mutation.
-		MutationRecord record12 = MutationRecord.updateConfig(1L, 2L, UUID.randomUUID(), 1L, config1);
-		MutationRecord record13 = MutationRecord.put(1L, 3L, topic, UUID.randomUUID(), 1, new byte[0], new byte[] {2});
+		Intention record12 = Intention.updateConfig(1L, 2L, UUID.randomUUID(), 1L, config1);
+		Intention record13 = Intention.put(1L, 3L, topic, UUID.randomUUID(), 1, new byte[0], new byte[] {2});
 		
 		// Create the second config change and TEMP mutation.
-		MutationRecord record22 = MutationRecord.updateConfig(2L, 2L, UUID.randomUUID(), 1L, config2);
-		MutationRecord record23 = MutationRecord.put(2L, 3L, topic, UUID.randomUUID(), 1, new byte[0], new byte[] {3});
+		Intention record22 = Intention.updateConfig(2L, 2L, UUID.randomUUID(), 1L, config2);
+		Intention record23 = Intention.put(2L, 3L, topic, UUID.randomUUID(), 1, new byte[0], new byte[] {3});
 		
 		test.start();
 		test.startLatch.await();
@@ -377,8 +377,8 @@ public class TestNodeState {
 		
 		// Send the first 3 mutations from stream1, verifying that the acks are generated.
 		F<Void> becomeFollower = test.clusterManager.get_mainEnterFollowerState();
-		F<MutationRecord> received = test.clusterManager.get_mainMutationWasReceivedOrFetched();
-		long nextToLoad = runner.run((snapshot) -> test.nodeState.mainAppendMutationFromUpstream(leader1, 1L, 0L, record1));
+		F<Intention> received = test.clusterManager.get_mainMutationWasReceivedOrFetched();
+		long nextToLoad = runner.run((snapshot) -> test.nodeState.mainAppendIntentionFromUpstream(leader1, 1L, 0L, record1));
 		Assert.assertEquals(2L, nextToLoad);
 		becomeFollower.get();
 		Assert.assertEquals(record1, received.get());
@@ -388,7 +388,7 @@ public class TestNodeState {
 		F<ConfigEntry> downstreamConnect2 = test.clusterManager.get_mainOpenDownstreamConnection();
 		F<ConfigEntry> downstreamConnect3 = test.clusterManager.get_mainOpenDownstreamConnection();
 		received = test.clusterManager.get_mainMutationWasReceivedOrFetched();
-		nextToLoad = runner.run((snapshot) -> test.nodeState.mainAppendMutationFromUpstream(leader1, 1L, 1L, record12));
+		nextToLoad = runner.run((snapshot) -> test.nodeState.mainAppendIntentionFromUpstream(leader1, 1L, 1L, record12));
 		Assert.assertEquals(3L, nextToLoad);
 		Assert.assertEquals(record12, received.get());
 		// (we know these are currently sent back in order so we can check these, directly).
@@ -397,7 +397,7 @@ public class TestNodeState {
 		Assert.assertEquals(peer1.nodeUuid, downstreamConnect3.get().nodeUuid);
 		
 		received = test.clusterManager.get_mainMutationWasReceivedOrFetched();
-		nextToLoad = runner.run((snapshot) -> test.nodeState.mainAppendMutationFromUpstream(leader1, 1L, 1L, record13));
+		nextToLoad = runner.run((snapshot) -> test.nodeState.mainAppendIntentionFromUpstream(leader1, 1L, 1L, record13));
 		Assert.assertEquals(4L, nextToLoad);
 		Assert.assertEquals(record13, received.get());
 		
@@ -411,7 +411,7 @@ public class TestNodeState {
 		F<ConfigEntry> laterDownstreamConnect2 = test.clusterManager.get_mainOpenDownstreamConnection();
 		F<ConfigEntry> laterDownstreamConnect3 = test.clusterManager.get_mainOpenDownstreamConnection();
 		received = test.clusterManager.get_mainMutationWasReceivedOrFetched();
-		nextToLoad = runner.run((snapshot) -> test.nodeState.mainAppendMutationFromUpstream(leader2, 2L, 1L, record22));
+		nextToLoad = runner.run((snapshot) -> test.nodeState.mainAppendIntentionFromUpstream(leader2, 2L, 1L, record22));
 		Assert.assertEquals(3L, nextToLoad);
 		Assert.assertEquals(record22, received.get());
 		// (note that the disconnects don't come in a specific order).
@@ -428,22 +428,22 @@ public class TestNodeState {
 		Assert.assertEquals(peer2.nodeUuid, laterDownstreamConnect3.get().nodeUuid);
 		
 		received = test.clusterManager.get_mainMutationWasReceivedOrFetched();
-		nextToLoad = runner.run((snapshot) -> test.nodeState.mainAppendMutationFromUpstream(leader1, 2L, 2L, record23));
+		nextToLoad = runner.run((snapshot) -> test.nodeState.mainAppendIntentionFromUpstream(leader1, 2L, 2L, record23));
 		Assert.assertEquals(4L, nextToLoad);
 		Assert.assertEquals(record23, received.get());
 		
 		// We now send the commits from the new leader and we should observe all 3 commit (note that the leader won't commit 1L, since it didn't send it, but will start at 2L).
-		F<CommittedMutationRecord> commit1 = test.diskManager.get_commitMutation();
-		F<CommittedMutationRecord> commit2 = test.diskManager.get_commitMutation();
-		F<CommittedMutationRecord> commit3 = test.diskManager.get_commitMutation();
-		runner.runVoid((snapshot) -> test.nodeState.mainCommittedMutationOffsetFromUpstream(leader2, 2L, record22.globalOffset));
+		F<CommittedIntention> commit1 = test.diskManager.get_commitMutation();
+		F<CommittedIntention> commit2 = test.diskManager.get_commitMutation();
+		F<CommittedIntention> commit3 = test.diskManager.get_commitMutation();
+		runner.runVoid((snapshot) -> test.nodeState.mainCommittedIntentionOffsetFromUpstream(leader2, 2L, record22.intentionOffset));
 		Assert.assertEquals(record1, commit1.get().record);
 		Assert.assertEquals(record22, commit2.get().record);
-		runner.runVoid((snapshot) -> test.nodeState.mainMutationWasCommitted(CommittedMutationRecord.create(record1, CommitInfo.Effect.VALID)));
-		runner.runVoid((snapshot) -> test.nodeState.mainMutationWasCommitted(CommittedMutationRecord.create(record22, CommitInfo.Effect.VALID)));
-		runner.runVoid((snapshot) -> test.nodeState.mainCommittedMutationOffsetFromUpstream(leader2, 2L, record23.globalOffset));
+		runner.runVoid((snapshot) -> test.nodeState.mainIntentionWasCommitted(CommittedIntention.create(record1, CommitInfo.Effect.VALID)));
+		runner.runVoid((snapshot) -> test.nodeState.mainIntentionWasCommitted(CommittedIntention.create(record22, CommitInfo.Effect.VALID)));
+		runner.runVoid((snapshot) -> test.nodeState.mainCommittedIntentionOffsetFromUpstream(leader2, 2L, record23.intentionOffset));
 		Assert.assertEquals(record23, commit3.get().record);
-		runner.runVoid((snapshot) -> test.nodeState.mainMutationWasCommitted(CommittedMutationRecord.create(record23, CommitInfo.Effect.VALID)));
+		runner.runVoid((snapshot) -> test.nodeState.mainIntentionWasCommitted(CommittedIntention.create(record23, CommitInfo.Effect.VALID)));
 		
 		// Stop.
 		runner.runVoid((snapshot) -> test.nodeState.mainHandleStopCommand());
@@ -466,11 +466,11 @@ public class TestNodeState {
 		TopicName topic = TopicName.fromString("fake");
 		
 		// Send the node this mutation so it becomes a FOLLOWER and then we can tell it to become a CANDIDATE (can't start election in empty config).
-		MutationRecord configChangeRecord = MutationRecord.updateConfig(1L, 1L, UUID.randomUUID(), 1L, newConfig);
-		long nextToLoad = runner.run((snapshot) -> nodeState.mainAppendMutationFromUpstream(upstreamEntry, 1L, 0L, configChangeRecord));
-		Assert.assertEquals(configChangeRecord.globalOffset + 1, nextToLoad);
+		Intention configChangeRecord = Intention.updateConfig(1L, 1L, UUID.randomUUID(), 1L, newConfig);
+		long nextToLoad = runner.run((snapshot) -> nodeState.mainAppendIntentionFromUpstream(upstreamEntry, 1L, 0L, configChangeRecord));
+		Assert.assertEquals(configChangeRecord.intentionOffset + 1, nextToLoad);
 		// Tell it the first mutation committed (meaning that config will be active).
-		runner.runVoid((snapshot) -> nodeState.mainCommittedMutationOffsetFromUpstream(upstreamEntry, 1L, 1L));
+		runner.runVoid((snapshot) -> nodeState.mainCommittedIntentionOffsetFromUpstream(upstreamEntry, 1L, 1L));
 		
 		// Force it to enter CANDIDATE state.
 		F<Long> electionStart = test.clusterManager.get_mainEnterCandidateState();
@@ -479,10 +479,10 @@ public class TestNodeState {
 		
 		// This node is now holding an election in term 2 so we will need to send it a heart beat from term 3.
 		F<Void> becomeFollower = test.clusterManager.get_mainEnterFollowerState();
-		MutationRecord tempRecord = MutationRecord.put(3L, 2L, topic, UUID.randomUUID(), 1, new byte[0], new byte[] {1});
-		nextToLoad = runner.run((snapshot) -> nodeState.mainAppendMutationFromUpstream(upstreamEntry, tempRecord.termNumber, configChangeRecord.termNumber, tempRecord));
+		Intention tempRecord = Intention.put(3L, 2L, topic, UUID.randomUUID(), 1, new byte[0], new byte[] {1});
+		nextToLoad = runner.run((snapshot) -> nodeState.mainAppendIntentionFromUpstream(upstreamEntry, tempRecord.termNumber, configChangeRecord.termNumber, tempRecord));
 		becomeFollower.get();
-		Assert.assertEquals(tempRecord.globalOffset + 1, nextToLoad);
+		Assert.assertEquals(tempRecord.intentionOffset + 1, nextToLoad);
 		
 		// Stop.
 		runner.runVoid((snapshot) -> test.nodeState.mainHandleStopCommand());

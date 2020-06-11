@@ -12,8 +12,8 @@ import com.jeffdisher.laminar.network.p2p.DownstreamMessage;
 import com.jeffdisher.laminar.network.p2p.DownstreamPayload_Identity;
 import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.types.ConfigEntry;
+import com.jeffdisher.laminar.types.Intention;
 import com.jeffdisher.laminar.types.TopicName;
-import com.jeffdisher.laminar.types.mutation.MutationRecord;
 import com.jeffdisher.laminar.types.payload.Payload_KeyPut;
 
 
@@ -38,18 +38,18 @@ public class TestDownstreamMessage {
 	@Test
 	public void testAppendMutations() throws Throwable {
 		TopicName topic = TopicName.fromString("test");
-		MutationRecord mutation = MutationRecord.put(1L, 1L, topic, UUID.randomUUID(), 1L, new byte[0], new byte[] {1,2,3});
+		Intention mutation = Intention.put(1L, 1L, topic, UUID.randomUUID(), 1L, new byte[0], new byte[] {1,2,3});
 		long lastCommittedMutationOffset = 1L;
-		DownstreamMessage message = DownstreamMessage.appendMutations(1L, 0L, mutation, lastCommittedMutationOffset);
+		DownstreamMessage message = DownstreamMessage.appendIntentions(1L, 0L, mutation, lastCommittedMutationOffset);
 		int size = message.serializedSize();
 		ByteBuffer buffer = ByteBuffer.allocate(size);
 		message.serializeInto(buffer);
 		buffer.flip();
 		
 		DownstreamMessage test = DownstreamMessage.deserializeFrom(buffer);
-		DownstreamPayload_AppendMutations payload = (DownstreamPayload_AppendMutations)test.payload;
+		DownstreamPayload_AppendIntentions payload = (DownstreamPayload_AppendIntentions)test.payload;
 		Assert.assertEquals(1L, payload.termNumber);
-		Assert.assertEquals(lastCommittedMutationOffset, payload.lastCommittedMutationOffset);
+		Assert.assertEquals(lastCommittedMutationOffset, payload.lastCommittedIntentionOffset);
 		Assert.assertArrayEquals(((Payload_KeyPut)mutation.payload).key, ((Payload_KeyPut)payload.records[0].payload).key);
 		Assert.assertArrayEquals(((Payload_KeyPut)mutation.payload).value, ((Payload_KeyPut)payload.records[0].payload).value);
 	}
@@ -64,9 +64,9 @@ public class TestDownstreamMessage {
 		buffer.flip();
 		
 		DownstreamMessage test = DownstreamMessage.deserializeFrom(buffer);
-		DownstreamPayload_AppendMutations payload = (DownstreamPayload_AppendMutations)test.payload;
+		DownstreamPayload_AppendIntentions payload = (DownstreamPayload_AppendIntentions)test.payload;
 		Assert.assertEquals(1L, payload.termNumber);
-		Assert.assertEquals(lastCommittedMutationOffset, payload.lastCommittedMutationOffset);
+		Assert.assertEquals(lastCommittedMutationOffset, payload.lastCommittedIntentionOffset);
 		Assert.assertEquals(0, payload.records.length);
 	}
 
@@ -84,7 +84,7 @@ public class TestDownstreamMessage {
 		DownstreamMessage test = DownstreamMessage.deserializeFrom(buffer);
 		DownstreamPayload_RequestVotes payload = (DownstreamPayload_RequestVotes)test.payload;
 		Assert.assertEquals(newTermNumber, payload.newTermNumber);
-		Assert.assertEquals(previousMutationTerm, payload.previousMutationTerm);
-		Assert.assertEquals(previousMuationOffset, payload.previousMuationOffset);
+		Assert.assertEquals(previousMutationTerm, payload.previousIntentionTerm);
+		Assert.assertEquals(previousMuationOffset, payload.previousIntentionOffset);
 	}
 }

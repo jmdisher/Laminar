@@ -86,11 +86,11 @@ public class ClientResponse {
 	 * so it can only be sent to a client which has send a HANDSHAKE or RECONNECT at some point.
 	 * 
 	 * @param clusterLeader The new leader the client should contact.
-	 * @param lastCommitGlobalOffset The most recent global message offset which was committed on the server.
+	 * @param lastCommittedIntentionOffset The most recent global message offset which was committed on the server.
 	 * @return A new ClientResponse instance.
 	 */
-	public static ClientResponse redirect(ConfigEntry clusterLeader, long lastCommittedMutationOffset) {
-		return new ClientResponse(ClientResponseType.REDIRECT, -1L, lastCommittedMutationOffset, ClientResponsePayload_ConfigEntry.create(clusterLeader));
+	public static ClientResponse redirect(ConfigEntry clusterLeader, long lastCommittedIntentionOffset) {
+		return new ClientResponse(ClientResponseType.REDIRECT, -1L, lastCommittedIntentionOffset, ClientResponsePayload_ConfigEntry.create(clusterLeader));
 	}
 
 	/**
@@ -137,13 +137,13 @@ public class ClientResponse {
 
 	public final ClientResponseType type;
 	public final long nonce;
-	public final long lastCommitGlobalOffset;
+	public final long lastCommitIntentionOffset;
 	public final IClientResponsePayload payload;
 
-	private ClientResponse(ClientResponseType type, long nonce, long lastCommitGlobalOffset, IClientResponsePayload payload) {
+	private ClientResponse(ClientResponseType type, long nonce, long lastCommitIntentionOffset, IClientResponsePayload payload) {
 		this.type = type;
 		this.nonce = nonce;
-		this.lastCommitGlobalOffset = lastCommitGlobalOffset;
+		this.lastCommitIntentionOffset = lastCommitIntentionOffset;
 		this.payload = payload;
 	}
 
@@ -157,7 +157,7 @@ public class ClientResponse {
 		buffer
 				.put((byte)this.type.ordinal())
 				.putLong(this.nonce)
-				.putLong(this.lastCommitGlobalOffset)
+				.putLong(this.lastCommitIntentionOffset)
 		;
 		this.payload.serializeInto(buffer);
 		return buffer.array();

@@ -3,7 +3,7 @@ package com.jeffdisher.laminar.network;
 import com.jeffdisher.laminar.components.NetworkManager;
 import com.jeffdisher.laminar.network.p2p.DownstreamMessage;
 import com.jeffdisher.laminar.types.ConfigEntry;
-import com.jeffdisher.laminar.types.mutation.MutationRecord;
+import com.jeffdisher.laminar.types.Intention;
 import com.jeffdisher.laminar.utils.Assert;
 
 
@@ -42,11 +42,11 @@ public class ReadOnlyDownstreamPeerState {
 	}
 
 	/**
-	 * @return True if the peer has a mutation it could send.
+	 * @return True if the peer has a intention it could send.
 	 */
-	public boolean hasMutationToSend() {
+	public boolean hasIntentionToSend() {
 		Assert.assertTrue(_isValid);
-		return (DownstreamPeerState.NO_NEXT_MUTATION != _original.nextMutationOffsetToSend);
+		return (DownstreamPeerState.NO_NEXT_INTENTION != _original.nextIntentionOffsetToSend);
 	}
 
 	/**
@@ -58,12 +58,12 @@ public class ReadOnlyDownstreamPeerState {
 	}
 
 	/**
-	 * @return The next mutation offset the receiver could send.
+	 * @return The next intention offset the receiver could send.
 	 */
-	public long getNextMutationOffsetToSend() {
+	public long getNextIntentionOffsetToSend() {
 		Assert.assertTrue(_isValid);
-		Assert.assertTrue(DownstreamPeerState.NO_NEXT_MUTATION != _original.nextMutationOffsetToSend);
-		return _original.nextMutationOffsetToSend;
+		Assert.assertTrue(DownstreamPeerState.NO_NEXT_INTENTION != _original.nextIntentionOffsetToSend);
+		return _original.nextIntentionOffsetToSend;
 	}
 
 	/**
@@ -88,30 +88,30 @@ public class ReadOnlyDownstreamPeerState {
 	}
 
 	/**
-	 * Called when the caller has decided to send a mutation to the peer.
+	 * Called when the caller has decided to send an intention to the peer.
 	 * Mutative operation which invalidates the receiver.
-	 * Note that this assumes the receiver was already ready to send this mutation.
+	 * Note that this assumes the receiver was already ready to send this intention.
 	 * 
 	 * @param currentTermNumber The current term of this node.
-	 * @param previousMutationTermNumber The term number of the mutation before this one.
-	 * @param mutation The mutation to send.
-	 * @param lastCommittedMutationOffset The last mutation this node has committed.
+	 * @param previousIntentionTermNumber The term number of the intention before this one.
+	 * @param intention The intention to send.
+	 * @param lastCommittedIntentionOffset The last intention this node has committed.
 	 * @param nowMillis The time of the send.
 	 * @return The message which now MUST be sent to the peer.
 	 */
-	public DownstreamMessage commitToSendMutations(long currentTermNumber, long previousMutationTermNumber, MutationRecord mutation, long lastCommittedMutationOffset, long nowMillis) {
+	public DownstreamMessage commitToSendIntentions(long currentTermNumber, long previousIntentionTermNumber, Intention intention, long lastCommittedIntentionOffset, long nowMillis) {
 		Assert.assertTrue(_isValid);
 		Assert.assertTrue(_original.isConnectionUp);
 		Assert.assertTrue(_original.isWritable);
 		Assert.assertTrue(_original.didHandshake);
-		Assert.assertTrue(_original.nextMutationOffsetToSend == mutation.globalOffset);
+		Assert.assertTrue(_original.nextIntentionOffsetToSend == intention.intentionOffset);
 		Assert.assertTrue(null == _original.pendingVoteRequest);
 		
-		DownstreamMessage message = DownstreamMessage.appendMutations(currentTermNumber, previousMutationTermNumber, mutation, lastCommittedMutationOffset);
+		DownstreamMessage message = DownstreamMessage.appendIntentions(currentTermNumber, previousIntentionTermNumber, intention, lastCommittedIntentionOffset);
 		_original.isWritable = false;
 		_original.lastSentMessageMillis = nowMillis;
-		// Clear the next mutation until they ack it.
-		_original.nextMutationOffsetToSend = DownstreamPeerState.NO_NEXT_MUTATION;
+		// Clear the next intention until they ack it.
+		_original.nextIntentionOffsetToSend = DownstreamPeerState.NO_NEXT_INTENTION;
 		_isValid = false;
 		return message;
 	}
@@ -121,18 +121,18 @@ public class ReadOnlyDownstreamPeerState {
 	 * Mutative operation which invalidates the receiver.
 	 * 
 	 * @param currentTermNumber The current term of this node.
-	 * @param lastCommittedMutationOffset The last mutation this node has committed.
+	 * @param lastCommittedIntentionOffset The last intention this node has committed.
 	 * @param nowMillis The time of the send.
 	 * @return The message which now MUST be sent to the peer.
 	 */
-	public DownstreamMessage commitToSendHeartbeat(long currentTermNumber, long lastCommittedMutationOffset, long nowMillis) {
+	public DownstreamMessage commitToSendHeartbeat(long currentTermNumber, long lastCommittedIntentionOffset, long nowMillis) {
 		Assert.assertTrue(_isValid);
 		Assert.assertTrue(_original.isConnectionUp);
 		Assert.assertTrue(_original.isWritable);
 		Assert.assertTrue(_original.didHandshake);
 		Assert.assertTrue(null == _original.pendingVoteRequest);
 		
-		DownstreamMessage message = DownstreamMessage.heartbeat(currentTermNumber, lastCommittedMutationOffset);
+		DownstreamMessage message = DownstreamMessage.heartbeat(currentTermNumber, lastCommittedIntentionOffset);
 		_original.isWritable = false;
 		_original.lastSentMessageMillis = nowMillis;
 		_isValid = false;

@@ -30,9 +30,9 @@ public class ReconnectingClientState {
 	 * This means that the client knows no reconnect data can be from this mutation or earlier, so the server will start
 	 * looking for mutations which match this clientId with the mutation after this.
 	 */
-	public final long lastCheckedGlobalOffset;
+	public final long lastCheckedIntentionOffset;
 	/**
-	 * Initialized to the lastCheckedGlobalOffset (since we know that the client received this value) but then updated
+	 * Initialized to the lastCheckedIntentionOffset (since we know that the client received this value) but then updated
 	 * as COMMITTED messages are sent to the client, as the reconnect progresses.  This is updated to the offset of a
 	 * mutation's offset if its COMMITTED is to be sent, but the value is left as is for RECEIVED-only responses.
 	 */
@@ -43,22 +43,22 @@ public class ReconnectingClientState {
 	 * This stops the server from continuing to search through mutations which arrived after the reconnect started (as
 	 * it is impossible for those to come from this client).
 	 */
-	public final long finalGlobalOffsetToCheck;
+	public final long finalIntentionOffsetToCheck;
 	/**
 	 * This is used to avoid sending a commit for something we found in reconnect but also committed during the
 	 * reconnect, therefore already queueing up a committed ack to be sent out after the reconnect completes.  This
 	 * avoids sending that message twice.
-	 * Messages with offsets > this value but <= finalGlobalOffsetToCheck will still generate received acks, though.
+	 * Messages with offsets > this value but <= finalIntentionOffsetToCheck will still generate received acks, though.
 	 */
 	public final long finalCommitToReturnInReconnect;
 
-	public ReconnectingClientState(NetworkManager.NodeToken token, UUID clientId, long earliestNextNonce, long lastCheckedGlobalOffset, long finalGlobalOffsetToCheck, long finalCommitToReturnInReconnect) {
+	public ReconnectingClientState(NetworkManager.NodeToken token, UUID clientId, long earliestNextNonce, long lastCheckedIntentionOffset, long finalIntentionOffsetToCheck, long finalCommitToReturnInReconnect) {
 		this.token = token;
 		this.clientId = clientId;
 		this.earliestNextNonce = earliestNextNonce;
-		this.lastCheckedGlobalOffset = lastCheckedGlobalOffset;
-		this.mostRecentlySentServerCommitOffset = lastCheckedGlobalOffset;
-		this.finalGlobalOffsetToCheck = finalGlobalOffsetToCheck;
+		this.lastCheckedIntentionOffset = lastCheckedIntentionOffset;
+		this.mostRecentlySentServerCommitOffset = lastCheckedIntentionOffset;
+		this.finalIntentionOffsetToCheck = finalIntentionOffsetToCheck;
 		this.finalCommitToReturnInReconnect = finalCommitToReturnInReconnect;
 	}
 }

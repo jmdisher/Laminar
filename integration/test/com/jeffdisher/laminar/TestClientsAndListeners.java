@@ -53,7 +53,7 @@ public class TestClientsAndListeners {
 			result.waitForReceived();
 			CommitInfo info = result.waitForCommitted();
 			Assert.assertEquals(CommitInfo.Effect.VALID, info.effect);
-			long commitOffset = info.mutationOffset;
+			long commitOffset = info.intentionOffset;
 			Assert.assertEquals(2L, commitOffset);
 		}
 		Assert.assertEquals(0, wrapper.stop());
@@ -79,7 +79,7 @@ public class TestClientsAndListeners {
 			result.waitForReceived();
 			CommitInfo info = result.waitForCommitted();
 			Assert.assertEquals(CommitInfo.Effect.VALID, info.effect);
-			long commitOffset = info.mutationOffset;
+			long commitOffset = info.intentionOffset;
 			Assert.assertEquals(2L, commitOffset);
 		}
 		
@@ -181,7 +181,7 @@ public class TestClientsAndListeners {
 			client.waitForConnection();
 			CommitInfo info = result.waitForCommitted();
 			Assert.assertEquals(CommitInfo.Effect.VALID, info.effect);
-			long commitOffset = info.mutationOffset;
+			long commitOffset = info.intentionOffset;
 			Assert.assertEquals(2L, commitOffset);
 			client.waitForConnection();
 		}
@@ -189,9 +189,9 @@ public class TestClientsAndListeners {
 	}
 
 	@Test
-	public void testGlobalMutationCommitOffset() throws Throwable {
+	public void testGlobalIntentionCommitOffset() throws Throwable {
 		// Start up a fake client to verify that the RECEIVED and COMMITTED responses have the expected commit offsets.
-		ServerWrapper wrapper = ServerWrapper.startedServerWrapper("testGlobalMutationCommitOffset", 2003, 2002, _folder.newFolder());
+		ServerWrapper wrapper = ServerWrapper.startedServerWrapper("testGlobalIntentionCommitOffset", 2003, 2002, _folder.newFolder());
 		
 		// Fake a connection from a client:  send the handshake and a few messages, then disconnect.
 		InetSocketAddress address = new InetSocketAddress(InetAddress.getLocalHost(), 2002);
@@ -209,8 +209,8 @@ public class TestClientsAndListeners {
 		ClientResponse committed = _readResponse(outbound);
 		Assert.assertEquals(ClientResponseType.RECEIVED, received.type);
 		Assert.assertEquals(ClientResponseType.COMMITTED, committed.type);
-		Assert.assertEquals(0L, received.lastCommitGlobalOffset);
-		Assert.assertEquals(1L, committed.lastCommitGlobalOffset);
+		Assert.assertEquals(0L, received.lastCommitIntentionOffset);
+		Assert.assertEquals(1L, committed.lastCommitIntentionOffset);
 		
 		outbound.close();
 		Assert.assertEquals(0, wrapper.stop());
@@ -236,7 +236,7 @@ public class TestClientsAndListeners {
 		ClientMessage temp3 = ClientMessage.put(3L, topic, new byte[0], new byte[] {3});
 		_sendMessage(outbound, temp1);
 		_readResponse(outbound);
-		long lastCommitGlobalOffset = _readResponse(outbound).lastCommitGlobalOffset;
+		long lastCommitGlobalOffset = _readResponse(outbound).lastCommitIntentionOffset;
 		// We will fake that 2 and 3 went missing.
 		_sendMessage(outbound, temp2);
 		_readResponse(outbound);
@@ -265,7 +265,7 @@ public class TestClientsAndListeners {
 		Assert.assertEquals(ClientResponseType.COMMITTED, commit4.type);
 		Assert.assertEquals(temp4.nonce, commit4.nonce);
 		// Since this is a commit and we sent 4 messages, we must see a final commit of 4.
-		Assert.assertEquals(4L, commit4.lastCommitGlobalOffset);
+		Assert.assertEquals(4L, commit4.lastCommitIntentionOffset);
 		
 		Assert.assertEquals(0, wrapper.stop());
 	}
@@ -297,7 +297,7 @@ public class TestClientsAndListeners {
 				results[i].waitForReceived();
 				CommitInfo info = results[i].waitForCommitted();
 				Assert.assertEquals(CommitInfo.Effect.VALID, info.effect);
-				long commitOffset = info.mutationOffset;
+				long commitOffset = info.intentionOffset;
 				Assert.assertEquals((long)(2 + i), commitOffset);
 			}
 			// By this point, the client must have received the config (since it gets that before any received/committed).
@@ -350,7 +350,7 @@ public class TestClientsAndListeners {
 			});
 			CommitInfo info = client.sendUpdateConfig(newConfig).waitForCommitted();
 			Assert.assertEquals(CommitInfo.Effect.VALID, info.effect);
-			long commitOffset = info.mutationOffset;
+			long commitOffset = info.intentionOffset;
 			Assert.assertEquals(1L, commitOffset);
 		}
 		try (ClientConnection client = ClientConnection.open(address)) {
@@ -421,12 +421,12 @@ public class TestClientsAndListeners {
 			client.waitForConnection();
 			CommitInfo info = client.sendUpdateConfig(config).waitForCommitted();
 			Assert.assertEquals(CommitInfo.Effect.VALID, info.effect);
-			long commitOffset = info.mutationOffset;
+			long commitOffset = info.intentionOffset;
 			Assert.assertEquals(1L, commitOffset);
 			Assert.assertEquals(CommitInfo.Effect.VALID, client.sendCreateTopic(topic).waitForCommitted().effect);
 			info = client.sendPut(topic, new byte[0], new byte[] {1}).waitForCommitted();
 			Assert.assertEquals(CommitInfo.Effect.VALID, info.effect);
-			commitOffset = info.mutationOffset;
+			commitOffset = info.intentionOffset;
 			Assert.assertEquals(3L, commitOffset);
 			
 			// Stop the leader and ask another node to become leader then see if we can continue sending messages.
@@ -441,11 +441,11 @@ public class TestClientsAndListeners {
 			
 			info = client.sendPut(topic, new byte[0], new byte[] {2}).waitForCommitted();
 			Assert.assertEquals(CommitInfo.Effect.VALID, info.effect);
-			commitOffset = info.mutationOffset;
+			commitOffset = info.intentionOffset;
 			Assert.assertEquals(4L, commitOffset);
 			info = client.sendPut(topic, new byte[0], new byte[] {3}).waitForCommitted();
 			Assert.assertEquals(CommitInfo.Effect.VALID, info.effect);
-			commitOffset = info.mutationOffset;
+			commitOffset = info.intentionOffset;
 			Assert.assertEquals(5L, commitOffset);
 		}
 		CaptureListener counting = new CaptureListener(server2Address, topic, 4);
@@ -484,7 +484,7 @@ public class TestClientsAndListeners {
 			for (int i = 0; i < 10; ++i) {
 				CommitInfo info = results[i].waitForCommitted();
 				Assert.assertEquals(CommitInfo.Effect.VALID, info.effect);
-				long mutationOffset = info.mutationOffset;
+				long mutationOffset = info.intentionOffset;
 				// These were sent by one client so commit, in-order.
 				// We need to add a nonce bias to account for the 2 messages to create the topics.
 				Assert.assertEquals(2 + (i + 1), (int)mutationOffset);
@@ -506,8 +506,8 @@ public class TestClientsAndListeners {
 			Assert.assertEquals(bias + (2 * i) + 1, (int)event1.clientNonce);
 			Assert.assertEquals(bias + (2 * i) + 2, (int)event2.clientNonce);
 			
-			Assert.assertEquals(bias + (2 * i) + 1, (int)event1.globalOffset);
-			Assert.assertEquals(bias + (2 * i) + 2, (int)event2.globalOffset);
+			Assert.assertEquals(bias + (2 * i) + 1, (int)event1.intentionOffset);
+			Assert.assertEquals(bias + (2 * i) + 2, (int)event2.intentionOffset);
 			
 			if (i >= 2) {
 				// (these contain the raw TEMP payloads, too).
@@ -586,7 +586,7 @@ public class TestClientsAndListeners {
 			result.waitForReceived();
 			CommitInfo info = result.waitForCommitted();
 			Assert.assertEquals(CommitInfo.Effect.VALID, info.effect);
-			long commitOffset = info.mutationOffset;
+			long commitOffset = info.intentionOffset;
 			Assert.assertEquals(2L, commitOffset);
 			Assert.assertEquals(CommitInfo.Effect.VALID, client.sendDestroyTopic(topic).waitForCommitted().effect);
 		}
@@ -594,16 +594,16 @@ public class TestClientsAndListeners {
 		// Start a listener and verify we see the create and both events from the stutter and the destroy.
 		try (ListenerConnection listener = ListenerConnection.open(address, topic, 0L)) {
 			Consequence createEvent = listener.pollForNextConsequence();
-			Assert.assertEquals(1L, createEvent.globalOffset);
+			Assert.assertEquals(1L, createEvent.intentionOffset);
 			Assert.assertEquals(1L, createEvent.consequenceOffset);
 			Consequence stutter1 = listener.pollForNextConsequence();
-			Assert.assertEquals(2L, stutter1.globalOffset);
+			Assert.assertEquals(2L, stutter1.intentionOffset);
 			Assert.assertEquals(2L, stutter1.consequenceOffset);
 			Consequence stutter2 = listener.pollForNextConsequence();
-			Assert.assertEquals(2L, stutter2.globalOffset);
+			Assert.assertEquals(2L, stutter2.intentionOffset);
 			Assert.assertEquals(3L, stutter2.consequenceOffset);
 			Consequence destroyEvent = listener.pollForNextConsequence();
-			Assert.assertEquals(3L, destroyEvent.globalOffset);
+			Assert.assertEquals(3L, destroyEvent.intentionOffset);
 			Assert.assertEquals(4L, destroyEvent.consequenceOffset);
 		}
 		
@@ -642,7 +642,7 @@ public class TestClientsAndListeners {
 	}
 
 	private void _checkRecord(Consequence event, long offset, Consequence.Type type, byte[] key, byte[] value) {
-		Assert.assertEquals(offset, event.globalOffset);
+		Assert.assertEquals(offset, event.intentionOffset);
 		Assert.assertEquals(type, event.type);
 		if (Consequence.Type.KEY_PUT == type) {
 			Payload_KeyPut payload = (Payload_KeyPut)event.payload;

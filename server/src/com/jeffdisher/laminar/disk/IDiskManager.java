@@ -26,16 +26,16 @@ public interface IDiskManager {
 	void commitConsequence(TopicName topic, Consequence consequence);
 
 	/**
-	 * Request that the given mutation be asynchronously committed.
+	 * Request that the given intention be asynchronously committed.
 	 * 
-	 * @param mutation The mutation to commit.
+	 * @param intention The intention to commit.
 	 */
-	void commitMutation(CommittedMutationRecord mutation);
+	void commitIntention(CommittedIntention intention);
 
 	/**
-	 * Requests that the mutation with the associated global offset be asynchronously fetched.
+	 * Requests that the intention with the associated global offset be asynchronously fetched.
 	 * 
-	 * @param globalOffset The offset of the mutation to load.
+	 * @param globalOffset The offset of the intention to load.
 	 */
-	void fetchMutation(long mutationOffset);
+	void fetchIntention(long intentionOffset);
 }

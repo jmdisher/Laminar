@@ -10,8 +10,8 @@ import com.jeffdisher.laminar.avm.AvmBridge;
 import com.jeffdisher.laminar.avm.TopicContext;
 import com.jeffdisher.laminar.types.CommitInfo;
 import com.jeffdisher.laminar.types.Consequence;
+import com.jeffdisher.laminar.types.Intention;
 import com.jeffdisher.laminar.types.TopicName;
-import com.jeffdisher.laminar.types.mutation.MutationRecord;
 import com.jeffdisher.laminar.types.payload.Payload_TopicCreate;
 import com.jeffdisher.laminar.types.payload.Payload_KeyDelete;
 import com.jeffdisher.laminar.types.payload.Payload_KeyPut;
@@ -19,17 +19,17 @@ import com.jeffdisher.laminar.utils.Assert;
 
 
 /**
- * Executes mutations prior to commit (this typically just means converting them to their corresponding consequence).
+ * Executes intentions prior to commit (this typically just means converting them to their corresponding consequence).
  * This is responsible for managing active topics, any code and object graphs associated with them (if they are
  * programmable), and invoking the AVM when applicable.
  */
-public class MutationExecutor {
+public class IntentionExecutor {
 	private final AvmBridge _bridge;
 	// Note that we need to describe active topics and next consequence by topic separately since topic consequence offsets don't reset when a topic is recreated.
 	private final Map<TopicName, TopicContext> _activeTopics;
 	private final Map<TopicName, Long> _nextConsequenceOffsetByTopic;
 
-	public MutationExecutor() {
+	public IntentionExecutor() {
 		_bridge = new AvmBridge();
 		// Global offsets are 1-indexed so the first one is 1L.
 		_activeTopics = new HashMap<>();
@@ -40,7 +40,7 @@ public class MutationExecutor {
 		_bridge.shutdown();
 	}
 
-	public ExecutionResult execute(MutationRecord mutation) {
+	public ExecutionResult execute(Intention mutation) {
 		boolean isSynthetic = mutation.topic.string.isEmpty();
 		long offsetToPropose = isSynthetic
 				? 0L
@@ -59,12 +59,12 @@ public class MutationExecutor {
 				TopicContext context = new TopicContext();
 				List<Consequence> events;
 				Payload_TopicCreate payload = (Payload_TopicCreate)mutation.payload;
-				Consequence defaultEvent = Consequence.createTopic(mutation.termNumber, mutation.globalOffset, offsetToPropose, mutation.clientId, mutation.clientNonce, payload.code, payload.arguments);
+				Consequence defaultEvent = Consequence.createTopic(mutation.termNumber, mutation.intentionOffset, offsetToPropose, mutation.clientId, mutation.clientNonce, payload.code, payload.arguments);
 				if (payload.code.length > 0) {
 					// Deploy this.
 					long initialLocalOffset = offsetToPropose + 1;
-					List<Consequence> internalEvents = _bridge.runCreate(context, mutation.termNumber, mutation.globalOffset, initialLocalOffset, mutation.clientId, mutation.clientNonce, mutation.topic, payload.code, payload.arguments);
-					// Note that we want to prepend the default mutation as long as this was a success.
+					List<Consequence> internalEvents = _bridge.runCreate(context, mutation.termNumber, mutation.intentionOffset, initialLocalOffset, mutation.clientId, mutation.clientNonce, mutation.topic, payload.code, payload.arguments);
+					// Note that we want to prepend the default intention as long as this was a success.
 					if (null != internalEvents) {
 						events = new LinkedList<>();
 						events.add(defaultEvent);
@@ -91,7 +91,7 @@ public class MutationExecutor {
 			// We want to destroy the topic but should fail with Effect.ERROR if it doesn't exist.
 			if (_activeTopics.containsKey(mutation.topic)) {
 				_activeTopics.remove(mutation.topic);
-				Consequence eventToReturn = Consequence.destroyTopic(mutation.termNumber, mutation.globalOffset, offsetToPropose, mutation.clientId, mutation.clientNonce);
+				Consequence eventToReturn = Consequence.destroyTopic(mutation.termNumber, mutation.intentionOffset, offsetToPropose, mutation.clientId, mutation.clientNonce);
 				result = new ExecutionResult(CommitInfo.Effect.VALID, Collections.singletonList(eventToReturn));
 			} else {
 				result = new ExecutionResult(CommitInfo.Effect.INVALID, Collections.emptyList());
@@ -106,9 +106,9 @@ public class MutationExecutor {
 				Payload_KeyPut payload = (Payload_KeyPut)mutation.payload;
 				// This exists so check if it is programmatic.
 				if (context.transformedCode.length > 0) {
-					events = _bridge.runPut(context, mutation.termNumber, mutation.globalOffset, _nextConsequenceOffsetByTopic.get(mutation.topic), mutation.clientId, mutation.clientNonce, mutation.topic, payload.key, payload.value);
+					events = _bridge.runPut(context, mutation.termNumber, mutation.intentionOffset, _nextConsequenceOffsetByTopic.get(mutation.topic), mutation.clientId, mutation.clientNonce, mutation.topic, payload.key, payload.value);
 				} else {
-					events = Collections.singletonList(Consequence.put(mutation.termNumber, mutation.globalOffset, offsetToPropose, mutation.clientId, mutation.clientNonce, payload.key, payload.value));
+					events = Collections.singletonList(Consequence.put(mutation.termNumber, mutation.intentionOffset, offsetToPropose, mutation.clientId, mutation.clientNonce, payload.key, payload.value));
 				}
 				if (null != events) {
 					result = new ExecutionResult(CommitInfo.Effect.VALID, events);
@@ -129,9 +129,9 @@ public class MutationExecutor {
 				Payload_KeyDelete payload = (Payload_KeyDelete)mutation.payload;
 				// This exists so check if it is programmatic.
 				if (context.transformedCode.length > 0) {
-					events = _bridge.runDelete(context, mutation.termNumber, mutation.globalOffset, _nextConsequenceOffsetByTopic.get(mutation.topic), mutation.clientId, mutation.clientNonce, mutation.topic, payload.key);
+					events = _bridge.runDelete(context, mutation.termNumber, mutation.intentionOffset, _nextConsequenceOffsetByTopic.get(mutation.topic), mutation.clientId, mutation.clientNonce, mutation.topic, payload.key);
 				} else {
-					events = Collections.singletonList(Consequence.delete(mutation.termNumber, mutation.globalOffset, offsetToPropose, mutation.clientId, mutation.clientNonce, payload.key));
+					events = Collections.singletonList(Consequence.delete(mutation.termNumber, mutation.intentionOffset, offsetToPropose, mutation.clientId, mutation.clientNonce, payload.key));
 				}
 				if (null != events) {
 					result = new ExecutionResult(CommitInfo.Effect.VALID, events);
@@ -155,9 +155,9 @@ public class MutationExecutor {
 				// Stutter is a special-case as it produces 2 of the same PUT events.
 				Payload_KeyPut payload = (Payload_KeyPut)mutation.payload;
 				List<Consequence> events = new LinkedList<>();
-				Consequence eventToReturn1 = Consequence.put(mutation.termNumber, mutation.globalOffset, offsetToPropose, mutation.clientId, mutation.clientNonce, payload.key, payload.value);
+				Consequence eventToReturn1 = Consequence.put(mutation.termNumber, mutation.intentionOffset, offsetToPropose, mutation.clientId, mutation.clientNonce, payload.key, payload.value);
 				events.add(eventToReturn1);
-				Consequence eventToReturn2 = Consequence.put(mutation.termNumber, mutation.globalOffset, offsetToPropose + 1, mutation.clientId, mutation.clientNonce, payload.key, payload.value);
+				Consequence eventToReturn2 = Consequence.put(mutation.termNumber, mutation.intentionOffset, offsetToPropose + 1, mutation.clientId, mutation.clientNonce, payload.key, payload.value);
 				events.add(eventToReturn2);
 				result = new ExecutionResult(CommitInfo.Effect.VALID, events);
 			} else {

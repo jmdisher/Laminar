@@ -2,7 +2,7 @@ package com.jeffdisher.laminar.network;
 
 import com.jeffdisher.laminar.state.StateSnapshot;
 import com.jeffdisher.laminar.types.ConfigEntry;
-import com.jeffdisher.laminar.types.mutation.MutationRecord;
+import com.jeffdisher.laminar.types.Intention;
 
 
 /**
@@ -18,29 +18,29 @@ public interface IClusterManager {
 
 	/**
 	 * Called to instruct the receiver that the node has entered the follower state so it should not attempt to sync
-	 * data to any other node.  This means no sending APPEND_MUTATIONS messages or requesting that the callbacks fetch
+	 * data to any other node.  This means no sending APPEND_INTENTIONS messages or requesting that the callbacks fetch
 	 * data for it to send.
 	 */
 	void mainEnterFollowerState();
 
 	/**
-	 * Called by the NodeState when it has committed a mutation to disk.
+	 * Called by the NodeState when it has committed a intention to disk.
 	 * This is just to update the commit offset we will send the peers, next time we send them a message.
 	 * 
-	 * @param mutationOffset The mutation offset of the mutation just committed.
+	 * @param intentionOffset The intention offset of the intention just committed.
 	 */
-	void mainMutationWasCommitted(long mutationOffset);
+	void mainIntentionWasCommitted(long intentionOffset);
 
 	/**
-	 * Called by the NodeState when a mutation was received or made available.  It may be committed or not.
+	 * Called by the NodeState when a intention was received or made available.  It may be committed or not.
 	 * This means it came in directly from a client or was just fetched from disk.
 	 * 
 	 * @param snapshot The state of the node during this invocation.
-	 * @param previousMutationTermNumber The term number of the mutation before this one.
-	 * @param mutation The mutation.
-	 * @return True if a the mutation was sent to any downstream peers, false if none were ready.
+	 * @param previousIntentionTermNumber The term number of the intention before this one.
+	 * @param intention The intention.
+	 * @return True if a the intention was sent to any downstream peers, false if none were ready.
 	 */
-	boolean mainMutationWasReceivedOrFetched(StateSnapshot snapshot, long previousMutationTermNumber, MutationRecord mutation);
+	boolean mainIntentionWasReceivedOrFetched(StateSnapshot snapshot, long previousIntentionTermNumber, Intention intention);
 
 	/**
 	 * Requests that a downstream connection be created to the peer identified by entry.
@@ -72,8 +72,8 @@ public interface IClusterManager {
 	 * vote requests to all downstream peers.
 	 * 
 	 * @param newTermNumber The term number where the election is happening.
-	 * @param previousMutationTerm The term number of the most recently RECEIVED mutation on this node.
-	 * @param previousMuationOffset The mutation offset of the most recently RECEIVED mutation on this node.
+	 * @param previousIntentionTermNumber The term number of the most recently RECEIVED intention on this node.
+	 * @param previousMuationOffset The intention offset of the most recently RECEIVED intention on this node.
 	 */
-	void mainEnterCandidateState(long newTermNumber, long previousMutationTerm, long previousMuationOffset);
+	void mainEnterCandidateState(long newTermNumber, long previousIntentionTermNumber, long previousMuationOffset);
 }

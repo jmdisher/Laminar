@@ -2,7 +2,7 @@ package com.jeffdisher.laminar.state;
 
 import org.junit.Assert;
 
-import com.jeffdisher.laminar.disk.CommittedMutationRecord;
+import com.jeffdisher.laminar.disk.CommittedIntention;
 import com.jeffdisher.laminar.disk.IDiskManager;
 import com.jeffdisher.laminar.types.Consequence;
 import com.jeffdisher.laminar.types.TopicName;
@@ -13,13 +13,13 @@ import com.jeffdisher.laminar.types.TopicName;
  * given.
  */
 public class FutureDiskManager implements IDiskManager {
-	private F<CommittedMutationRecord> f_commitMutation;
+	private F<CommittedIntention> f_commitMutation;
 	private F<Consequence> f_commitEvent;
 
-	public F<CommittedMutationRecord> get_commitMutation() {
-		F<CommittedMutationRecord> future = new F<>();
+	public F<CommittedIntention> get_commitMutation() {
+		F<CommittedIntention> future = new F<>();
 		if (null != f_commitMutation) {
-			F<CommittedMutationRecord> stem = f_commitMutation;
+			F<CommittedIntention> stem = f_commitMutation;
 			while (null != stem.nextLink) {
 				stem = stem.nextLink;
 			}
@@ -37,7 +37,7 @@ public class FutureDiskManager implements IDiskManager {
 	}
 
 	@Override
-	public void fetchMutation(long mutationOffset) {
+	public void fetchIntention(long mutationOffset) {
 		System.out.println("IDiskManager - fetchMutation");
 	}
 	@Override
@@ -45,7 +45,7 @@ public class FutureDiskManager implements IDiskManager {
 		System.out.println("IDiskManager - fetchEvent");
 	}
 	@Override
-	public void commitMutation(CommittedMutationRecord mutation) {
+	public void commitIntention(CommittedIntention mutation) {
 		if (null != f_commitMutation) {
 			f_commitMutation.put(mutation);
 			f_commitMutation = f_commitMutation.nextLink;

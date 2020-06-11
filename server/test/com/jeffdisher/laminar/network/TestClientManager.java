@@ -12,17 +12,17 @@ import org.junit.Assert;
 import org.junit.Test;
 
 import com.jeffdisher.laminar.components.NetworkManager;
-import com.jeffdisher.laminar.disk.CommittedMutationRecord;
+import com.jeffdisher.laminar.disk.CommittedIntention;
 import com.jeffdisher.laminar.state.Helpers;
 import com.jeffdisher.laminar.state.StateSnapshot;
 import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.types.CommitInfo;
 import com.jeffdisher.laminar.types.ConfigEntry;
 import com.jeffdisher.laminar.types.Consequence;
+import com.jeffdisher.laminar.types.Intention;
 import com.jeffdisher.laminar.types.TopicName;
 import com.jeffdisher.laminar.types.message.ClientMessage;
 import com.jeffdisher.laminar.types.message.ClientMessagePayload_KeyPut;
-import com.jeffdisher.laminar.types.mutation.MutationRecord;
 import com.jeffdisher.laminar.types.payload.Payload_KeyPut;
 import com.jeffdisher.laminar.types.response.ClientResponse;
 import com.jeffdisher.laminar.types.response.ClientResponsePayload_ClusterConfig;
@@ -73,7 +73,7 @@ public class TestClientManager {
 			byte[] raw = TestingHelpers.readMessageInFrame(fromServer);
 			ClientResponse ready = ClientResponse.deserialize(raw);
 			Assert.assertEquals(ClientResponseType.CLIENT_READY, ready.type);
-			Assert.assertEquals(0L, ready.lastCommitGlobalOffset);
+			Assert.assertEquals(0L, ready.lastCommitIntentionOffset);
 			Assert.assertEquals(1L, ready.nonce);
 			Assert.assertEquals(1, ((ClientResponsePayload_ClusterConfig)ready.payload).config.entries.length);
 			
@@ -133,7 +133,7 @@ public class TestClientManager {
 			byte[] raw = TestingHelpers.readMessageInFrame(fromServer);
 			ClientResponse ready = ClientResponse.deserialize(raw);
 			Assert.assertEquals(ClientResponseType.CLIENT_READY, ready.type);
-			Assert.assertEquals(0L, ready.lastCommitGlobalOffset);
+			Assert.assertEquals(0L, ready.lastCommitIntentionOffset);
 			Assert.assertEquals(1L, ready.nonce);
 			Assert.assertEquals(1, ((ClientResponsePayload_ClusterConfig)ready.payload).config.entries.length);
 			
@@ -144,19 +144,19 @@ public class TestClientManager {
 			raw = TestingHelpers.readMessageInFrame(fromServer);
 			ClientResponse received = ClientResponse.deserialize(raw);
 			Assert.assertEquals(ClientResponseType.RECEIVED, received.type);
-			Assert.assertEquals(0L, received.lastCommitGlobalOffset);
+			Assert.assertEquals(0L, received.lastCommitIntentionOffset);
 			Assert.assertEquals(1L, received.nonce);
 			// (process writable)
 			readMessage = callbacks.runAndGetNextMessage();
 			Assert.assertNull(readMessage);
 			
 			// Tell the manager we committed it and verify that we see the commit.
-			MutationRecord record = Helpers.convertClientMessageToMutation(message, 1L, clientId, 1L);
-			manager.mainProcessingPendingMessageForRecord(CommittedMutationRecord.create(record, CommitInfo.Effect.VALID));
+			Intention record = Helpers.convertClientMessageToIntention(message, 1L, clientId, 1L);
+			manager.mainProcessingPendingMessageForRecord(CommittedIntention.create(record, CommitInfo.Effect.VALID));
 			raw = TestingHelpers.readMessageInFrame(fromServer);
 			ClientResponse committed = ClientResponse.deserialize(raw);
 			Assert.assertEquals(ClientResponseType.COMMITTED, committed.type);
-			Assert.assertEquals(1L, committed.lastCommitGlobalOffset);
+			Assert.assertEquals(1L, committed.lastCommitIntentionOffset);
 			Assert.assertEquals(1L, committed.nonce);
 		}
 		NetworkManager.NodeToken noNode = callbacks.runRunnableAndGetNewClientNode(manager);
@@ -201,7 +201,7 @@ public class TestClientManager {
 			Assert.assertEquals(serialized.length, raw.length);
 			// Deserialize the buffer.
 			Consequence deserialized = Consequence.deserialize(raw);
-			Assert.assertEquals(record.globalOffset, deserialized.globalOffset);
+			Assert.assertEquals(record.intentionOffset, deserialized.intentionOffset);
 			Assert.assertEquals(record.consequenceOffset, deserialized.consequenceOffset);
 			Assert.assertEquals(record.clientId, deserialized.clientId);
 			Assert.assertArrayEquals(((Payload_KeyPut)record.payload).key, ((Payload_KeyPut)deserialized.payload).key);
@@ -253,7 +253,7 @@ public class TestClientManager {
 			ClientResponse redirect = ClientResponse.deserialize(raw);
 			Assert.assertEquals(ClientResponseType.REDIRECT, redirect.type);
 			Assert.assertEquals(-1L, redirect.nonce);
-			Assert.assertEquals(0L, redirect.lastCommitGlobalOffset);
+			Assert.assertEquals(0L, redirect.lastCommitIntentionOffset);
 			Assert.assertEquals(entry.nodeUuid, ((ClientResponsePayload_ConfigEntry)redirect.payload).entry.nodeUuid);
 		}
 		NetworkManager.NodeToken noNode = callbacks.runRunnableAndGetNewClientNode(manager);
@@ -296,7 +296,7 @@ public class TestClientManager {
 			ClientResponse redirect = ClientResponse.deserialize(raw);
 			Assert.assertEquals(ClientResponseType.REDIRECT, redirect.type);
 			Assert.assertEquals(-1L, redirect.nonce);
-			Assert.assertEquals(0L, redirect.lastCommitGlobalOffset);
+			Assert.assertEquals(0L, redirect.lastCommitIntentionOffset);
 			Assert.assertEquals(entry.nodeUuid, ((ClientResponsePayload_ConfigEntry)redirect.payload).entry.nodeUuid);
 		}
 		NetworkManager.NodeToken noNode = callbacks.runRunnableAndGetNewClientNode(manager);
@@ -349,7 +349,7 @@ public class TestClientManager {
 		}
 
 		@Override
-		public MutationRecord mainClientFetchMutationIfAvailable(long mutationOffset) {
+		public Intention mainClientFetchIntentionIfAvailable(long mutationOffset) {
 			Assert.fail("Not used in test");
 			return null;
 		}

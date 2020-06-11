@@ -6,7 +6,7 @@ import com.jeffdisher.laminar.types.ConfigEntry;
 /**
  * Holds information regarding the sync state of a downstream peer.  Technically, this includes information required for
  * leader sync but also candidate election.
- * The LEADER uses lastMutationOffsetReceived to determine how this downstream peer contributes to cluster consensus.
+ * The LEADER uses lastIntentionOffsetReceived to determine how this downstream peer contributes to cluster consensus.
  * The CANDIDATE uses termOfLastCastVote to determine if this peer is a supporter of the node to become LEADER.
  */
 public class DownstreamPeerSyncState {
@@ -15,9 +15,9 @@ public class DownstreamPeerSyncState {
 	 */
 	public final ConfigEntry configEntry;
 	/**
-	 * The mutation offset this node most recently told us it had received.
+	 * The intention offset this node most recently told us it had received.
 	 */
-	public long lastMutationOffsetReceived = 0L;
+	public long lastIntentionOffsetReceived = 0L;
 
 	/**
 	 * The term number of the last vote this downstream peer sent us.

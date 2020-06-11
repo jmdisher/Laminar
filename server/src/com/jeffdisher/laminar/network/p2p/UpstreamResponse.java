@@ -15,7 +15,7 @@ public class UpstreamResponse {
 	}
 
 	public static UpstreamResponse receivedMutations(long lastReceivedMutationOffset) {
-		return new UpstreamResponse(Type.RECEIVED_MUTATIONS, UpstreamPayload_ReceivedMutations.create(lastReceivedMutationOffset));
+		return new UpstreamResponse(Type.RECEIVED_INTENTIONS, UpstreamPayload_ReceivedIntentions.create(lastReceivedMutationOffset));
 	}
 
 	public static UpstreamResponse castVote(long termNumber) {
@@ -33,8 +33,8 @@ public class UpstreamResponse {
 		case PEER_STATE:
 			payload = UpstreamPayload_PeerState.deserializeFrom(buffer);
 			break;
-		case RECEIVED_MUTATIONS:
-			payload = UpstreamPayload_ReceivedMutations.deserializeFrom(buffer);
+		case RECEIVED_INTENTIONS:
+			payload = UpstreamPayload_ReceivedIntentions.deserializeFrom(buffer);
 			break;
 		case CAST_VOTE:
 			payload = UpstreamPayload_CastVote.deserializeFrom(buffer);
@@ -79,7 +79,7 @@ public class UpstreamResponse {
 	public static enum Type {
 		INVALID,
 		PEER_STATE,
-		RECEIVED_MUTATIONS,
+		RECEIVED_INTENTIONS,
 		CAST_VOTE,
 	}
 }

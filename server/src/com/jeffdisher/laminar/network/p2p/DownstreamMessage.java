@@ -3,7 +3,7 @@ package com.jeffdisher.laminar.network.p2p;
 import java.nio.ByteBuffer;
 
 import com.jeffdisher.laminar.types.ConfigEntry;
-import com.jeffdisher.laminar.types.mutation.MutationRecord;
+import com.jeffdisher.laminar.types.Intention;
 import com.jeffdisher.laminar.utils.Assert;
 
 
@@ -16,12 +16,12 @@ public class DownstreamMessage {
 		return new DownstreamMessage(Type.IDENTITY, DownstreamPayload_Identity.create(self));
 	}
 
-	public static DownstreamMessage appendMutations(long termNumber, long previousMutationTermNumber, MutationRecord mutation, long lastCommittedMutationOffset) {
-		return new DownstreamMessage(Type.APPEND_MUTATIONS, DownstreamPayload_AppendMutations.create(termNumber, previousMutationTermNumber, new MutationRecord[] { mutation }, lastCommittedMutationOffset));
+	public static DownstreamMessage appendIntentions(long termNumber, long previousIntentionTermNumber, Intention intention, long lastCommittedIntentionOffset) {
+		return new DownstreamMessage(Type.APPEND_INTENTIONS, DownstreamPayload_AppendIntentions.create(termNumber, previousIntentionTermNumber, new Intention[] { intention }, lastCommittedIntentionOffset));
 	}
 
 	public static DownstreamMessage heartbeat(long termNumber, long lastCommittedMutationOffset) {
-		return new DownstreamMessage(Type.APPEND_MUTATIONS, DownstreamPayload_AppendMutations.create(termNumber, 0L, new MutationRecord[0], lastCommittedMutationOffset));
+		return new DownstreamMessage(Type.APPEND_INTENTIONS, DownstreamPayload_AppendIntentions.create(termNumber, 0L, new Intention[0], lastCommittedMutationOffset));
 	}
 
 	public static DownstreamMessage requestVotes(long newTermNumber, long previousMutationTerm, long previousMuationOffset) {
@@ -39,8 +39,8 @@ public class DownstreamMessage {
 		case IDENTITY:
 			payload = DownstreamPayload_Identity.deserializeFrom(buffer);
 			break;
-		case APPEND_MUTATIONS:
-			payload = DownstreamPayload_AppendMutations.deserializeFrom(buffer);
+		case APPEND_INTENTIONS:
+			payload = DownstreamPayload_AppendIntentions.deserializeFrom(buffer);
 			break;
 		case REQUEST_VOTES:
 			payload = DownstreamPayload_RequestVotes.deserializeFrom(buffer);
@@ -85,7 +85,7 @@ public class DownstreamMessage {
 	public static enum Type {
 		INVALID,
 		IDENTITY,
-		APPEND_MUTATIONS,
+		APPEND_INTENTIONS,
 		REQUEST_VOTES,
 	}
 }

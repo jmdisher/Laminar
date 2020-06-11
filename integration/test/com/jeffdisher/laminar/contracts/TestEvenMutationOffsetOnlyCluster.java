@@ -44,7 +44,7 @@ public class TestEvenMutationOffsetOnlyCluster {
 		
 		// Create the topic and prepare the deployment.
 		TopicName topic = TopicName.fromString("test");
-		byte[] jar = ContractPackager.createJarForClass(EvenMutationOffsetOnly.class);
+		byte[] jar = ContractPackager.createJarForClass(EvenIntentionOffsetOnly.class);
 		byte[] args = new byte[0];
 		
 		// Deploy the contract, send a PUT, a DELETE, and another PUT.
@@ -108,7 +108,7 @@ public class TestEvenMutationOffsetOnlyCluster {
 	private void _verifyCreateEvent(Consequence eventRecord, long termNumber, long mutationOffset, long eventOffset, byte[] code, byte[] arguments) {
 		Assert.assertEquals(Consequence.Type.TOPIC_CREATE, eventRecord.type);
 		Assert.assertEquals(termNumber, eventRecord.termNumber);
-		Assert.assertEquals(mutationOffset, eventRecord.globalOffset);
+		Assert.assertEquals(mutationOffset, eventRecord.intentionOffset);
 		Assert.assertEquals(eventOffset, eventRecord.consequenceOffset);
 		Assert.assertArrayEquals(code, ((Payload_TopicCreate)eventRecord.payload).code);
 		Assert.assertArrayEquals(arguments, ((Payload_TopicCreate)eventRecord.payload).arguments);
@@ -117,7 +117,7 @@ public class TestEvenMutationOffsetOnlyCluster {
 	private void _verifyPutEvent(Consequence eventRecord, long termNumber, long mutationOffset, long eventOffset, byte[] key, byte[] value) {
 		Assert.assertEquals(Consequence.Type.KEY_PUT, eventRecord.type);
 		Assert.assertEquals(termNumber, eventRecord.termNumber);
-		Assert.assertEquals(mutationOffset, eventRecord.globalOffset);
+		Assert.assertEquals(mutationOffset, eventRecord.intentionOffset);
 		Assert.assertEquals(eventOffset, eventRecord.consequenceOffset);
 		Assert.assertArrayEquals(key, ((Payload_KeyPut)eventRecord.payload).key);
 		Assert.assertArrayEquals(value, ((Payload_KeyPut)eventRecord.payload).value);
@@ -126,7 +126,7 @@ public class TestEvenMutationOffsetOnlyCluster {
 	private void _verifyDeleteEvent(Consequence eventRecord, long termNumber, long mutationOffset, long eventOffset, byte[] key) {
 		Assert.assertEquals(Consequence.Type.KEY_DELETE, eventRecord.type);
 		Assert.assertEquals(termNumber, eventRecord.termNumber);
-		Assert.assertEquals(mutationOffset, eventRecord.globalOffset);
+		Assert.assertEquals(mutationOffset, eventRecord.intentionOffset);
 		Assert.assertEquals(eventOffset, eventRecord.consequenceOffset);
 		Assert.assertArrayEquals(key, ((Payload_KeyDelete)eventRecord.payload).key);
 	}

@@ -17,10 +17,10 @@ import com.jeffdisher.laminar.types.ConfigEntry;
  */
 public class DownstreamPeerState {
 	/**
-	 * We define this sentinel constant for nextMutationOffsetToSend since there was confusion between 0L and -1L and
+	 * We define this sentinel constant for nextIntentionOffsetToSend since there was confusion between 0L and -1L and
 	 * this value is logical, not arithmetic, whenever it is set.
 	 */
-	public static final long NO_NEXT_MUTATION = 0L;
+	public static final long NO_NEXT_INTENTION = 0L;
 
 
 	public final ConfigEntry entry;
@@ -42,16 +42,16 @@ public class DownstreamPeerState {
 	 */
 	public boolean isWritable = false;
 	/**
-	 * The next mutation offset we need to send them.
+	 * The next intention offset we need to send them.
 	 * When a downstream peer is first connected, we base this on the PEER_STATE they send us.  After that, we increment
-	 * it whenever we send them a mutation.  Once the peer becomes writable, we will ask the NodeState to fetch this for
+	 * it whenever we send them a intention.  Once the peer becomes writable, we will ask the NodeState to fetch this for
 	 * us.
-	 * Since this mutation may be returned immediately, may be asynchronously fetched from disk, or may not appear until
-	 * a client produces it, the ClusterManager listens to fetched and new mutations and consults this number to see if
+	 * Since this intention may be returned immediately, may be asynchronously fetched from disk, or may not appear until
+	 * a client produces it, the ClusterManager listens to fetched and new intentions and consults this number to see if
 	 * it should send a copy to the peer.
 	 * This value starts at 0L since we don't know what their state is until we receive a PEER_STATE.
 	 */
-	public long nextMutationOffsetToSend = NO_NEXT_MUTATION;
+	public long nextIntentionOffsetToSend = NO_NEXT_INTENTION;
 	/**
 	 * The millisecond clock the last time we sent a message to this peer.  This is tracked for heartbeat.
 	 */

@@ -4,9 +4,9 @@ import java.util.UUID;
 import java.util.function.Consumer;
 
 import com.jeffdisher.laminar.state.StateSnapshot;
+import com.jeffdisher.laminar.types.Intention;
 import com.jeffdisher.laminar.types.TopicName;
 import com.jeffdisher.laminar.types.message.ClientMessage;
-import com.jeffdisher.laminar.types.mutation.MutationRecord;
 
 
 public interface IClientManagerCallbacks {
@@ -19,21 +19,21 @@ public interface IClientManagerCallbacks {
 	 * 
 	 * @param clientId The UUID of the client which send the message.
 	 * @param incoming The message received.
-	 * @return 0 if this the message was an error or a positive global mutation offset of the message if it should be
-	 * acked normally (the caller will also delay a commit until notified that this mutation offset is durable).
+	 * @return 0 if this the message was an error or a positive global intention offset of the message if it should be
+	 * acked normally (the caller will also delay a commit until notified that this intention offset is durable).
 	 */
 	long mainHandleValidClientMessage(UUID clientId, ClientMessage incoming);
 
 	/**
-	 * Called when the ClientManager wishes to use a mutation in client reconnect and needs it to be loaded.
+	 * Called when the ClientManager wishes to use a intention in client reconnect and needs it to be loaded.
 	 * Note that the receiver can respond to this in 2 different ways:
 	 * 1) return immediately if this is in-memory.
 	 * 2) schedule that it be fetched from disk.
 	 * 
-	 * @param mutationOffset The offset to fetch/return/await.
-	 * @return The mutation, only if it was immediately available, in-memory (typically not committed).
+	 * @param intentionOffset The offset to fetch/return/await.
+	 * @return The intention, only if it was immediately available, in-memory (typically not committed).
 	 */
-	MutationRecord mainClientFetchMutationIfAvailable(long mutationOffset);
+	Intention mainClientFetchIntentionIfAvailable(long intentionOffset);
 
 	void mainRequestConsequenceFetch(TopicName topic, long nextLocalConsequenceToFetch);
 

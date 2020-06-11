@@ -4,7 +4,7 @@ import org.junit.Assert;
 
 import com.jeffdisher.laminar.network.IClusterManager;
 import com.jeffdisher.laminar.types.ConfigEntry;
-import com.jeffdisher.laminar.types.mutation.MutationRecord;
+import com.jeffdisher.laminar.types.Intention;
 
 
 /**
@@ -14,7 +14,7 @@ import com.jeffdisher.laminar.types.mutation.MutationRecord;
 public class FutureClusterManager implements IClusterManager {
 	private F<Void> f_mainEnterFollowerState;
 	private F<Long> f_mainMutationWasCommitted;
-	private F<MutationRecord> f_mainMutationWasReceivedOrFetched;
+	private F<Intention> f_mainMutationWasReceivedOrFetched;
 	private F<ConfigEntry> f_mainOpenDownstreamConnection;
 	private F<ConfigEntry> f_mainCloseDownstreamConnection;
 	private F<Void> f_mainEnterLeaderState;
@@ -32,9 +32,9 @@ public class FutureClusterManager implements IClusterManager {
 		return f_mainMutationWasCommitted;
 	}
 
-	public F<MutationRecord> get_mainMutationWasReceivedOrFetched() {
+	public F<Intention> get_mainMutationWasReceivedOrFetched() {
 		Assert.assertNull(f_mainMutationWasReceivedOrFetched);
-		f_mainMutationWasReceivedOrFetched = new F<MutationRecord>();
+		f_mainMutationWasReceivedOrFetched = new F<Intention>();
 		return f_mainMutationWasReceivedOrFetched;
 	}
 
@@ -92,7 +92,7 @@ public class FutureClusterManager implements IClusterManager {
 		}
 	}
 	@Override
-	public void mainMutationWasCommitted(long globalOffset) {
+	public void mainIntentionWasCommitted(long globalOffset) {
 		if (null != f_mainMutationWasCommitted) {
 			f_mainMutationWasCommitted.put(globalOffset);
 			f_mainMutationWasCommitted = f_mainMutationWasCommitted.nextLink;
@@ -101,7 +101,7 @@ public class FutureClusterManager implements IClusterManager {
 		}
 	}
 	@Override
-	public boolean mainMutationWasReceivedOrFetched(StateSnapshot snapshot, long previousMutationTermNumber, MutationRecord record) {
+	public boolean mainIntentionWasReceivedOrFetched(StateSnapshot snapshot, long previousMutationTermNumber, Intention record) {
 		if (null != f_mainMutationWasReceivedOrFetched) {
 			f_mainMutationWasReceivedOrFetched.put(record);
 			f_mainMutationWasReceivedOrFetched = f_mainMutationWasReceivedOrFetched.nextLink;

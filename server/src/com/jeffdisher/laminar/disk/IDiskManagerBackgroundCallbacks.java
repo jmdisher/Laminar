@@ -14,11 +14,11 @@ public interface IDiskManagerBackgroundCallbacks {
 	void ioEnqueueDiskCommandForMainThread(Consumer<StateSnapshot> command);
 
 	/**
-	 * A previously requested mutation commit operation has completed.
+	 * A previously requested intention commit operation has completed.
 	 * 
 	 * @param completed The record which has now committed.
 	 */
-	void mainMutationWasCommitted(CommittedMutationRecord completed);
+	void mainIntentionWasCommitted(CommittedIntention completed);
 
 	/**
 	 * A previously requested consequence commit operation has completed.
@@ -29,13 +29,13 @@ public interface IDiskManagerBackgroundCallbacks {
 	void mainConsequenceWasCommitted(TopicName topic, Consequence completed);
 
 	/**
-	 * A previously requested mutation record has been fetched.
+	 * A previously requested intention record has been fetched.
 	 * 
 	 * @param snapshot The state created when this event started.
-	 * @param previousMutationTermNumber The term number of the mutation before this one (0 if it is the first mutation).
+	 * @param previousIntentionTermNumber The term number of the intention before this one (0 if it is the first intention).
 	 * @param record The record which was fetched from storage.
 	 */
-	void mainMutationWasFetched(StateSnapshot snapshot, long previousMutationTermNumber, CommittedMutationRecord record);
+	void mainIntentionWasFetched(StateSnapshot snapshot, long previousIntentionTermNumber, CommittedIntention record);
 
 	/**
 	 * A previously requested consequence record has been fetched.

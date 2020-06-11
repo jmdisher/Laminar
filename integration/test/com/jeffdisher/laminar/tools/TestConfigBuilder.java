@@ -54,7 +54,7 @@ public class TestConfigBuilder {
 			ClientResult result = client.sendPut(topic, messageKey, messageValue);
 			CommitInfo info = result.waitForCommitted();
 			// We expect offset three since UPDATE_CONFIG and CREATE_TOPIC came first.
-			Assert.assertEquals(3L, info.mutationOffset);
+			Assert.assertEquals(3L, info.intentionOffset);
 			Assert.assertEquals(CommitInfo.Effect.VALID, info.effect);
 		}
 		
@@ -112,7 +112,7 @@ public class TestConfigBuilder {
 			ClientResult result = client.sendPut(topic, messageKey, messageValue);
 			CommitInfo info = result.waitForCommitted();
 			// We expect offset three since UPDATE_CONFIG, UPDATE_CONFIG, and CREATE_TOPIC came first.
-			Assert.assertEquals(4L, info.mutationOffset);
+			Assert.assertEquals(4L, info.intentionOffset);
 			Assert.assertEquals(CommitInfo.Effect.VALID, info.effect);
 		}
 		

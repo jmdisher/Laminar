@@ -63,7 +63,7 @@ public class TestBalanceValidation {
 		
 		// Transfer to account2.
 		int account2Balance = 50;
-		byte[] transferTo2 = _packagePut(account2, records.get(0).globalOffset, account2Balance, account1Balance, 0);
+		byte[] transferTo2 = _packagePut(account2, records.get(0).intentionOffset, account2Balance, account1Balance, 0);
 		records = server.put(clientId, clientNonce, account1, transferTo2);
 		// We see the send, receive, and transfer.
 		Assert.assertEquals(3, records.size());
@@ -95,7 +95,7 @@ public class TestBalanceValidation {
 		
 		// Transfer to account2.
 		int account2Balance = 90;
-		byte[] transferTo2 = _packagePut(account2, records.get(0).globalOffset, account2Balance, account1Balance, 0);
+		byte[] transferTo2 = _packagePut(account2, records.get(0).intentionOffset, account2Balance, account1Balance, 0);
 		records = server.put(clientId, clientNonce, account1, transferTo2);
 		// We see the send, receive, and transfer.
 		Assert.assertEquals(3, records.size());
@@ -166,7 +166,7 @@ public class TestBalanceValidation {
 		_checkBalance(records.get(0), account1, 1000);
 		_checkTransfer(records.get(1), 1000);
 		clientNonce += 1;
-		long mutationOffsetOfFirstTransfer = records.get(0).globalOffset;
+		long mutationOffsetOfFirstTransfer = records.get(0).intentionOffset;
 		// Cache contents: 1
 		
 		// Transfer 1 to account2.
@@ -179,7 +179,7 @@ public class TestBalanceValidation {
 		_checkBalance(records.get(1), account2, 500);
 		_checkTransfer(records.get(2), 500);
 		clientNonce += 1;
-		long mutationOffset_transfer1To2 = records.get(0).globalOffset;
+		long mutationOffset_transfer1To2 = records.get(0).intentionOffset;
 		// Cache contents: 1,2
 		
 		// Transfer 1 to account3 - done as thought it didn't see transfer1To2.
@@ -192,7 +192,7 @@ public class TestBalanceValidation {
 		_checkBalance(records.get(1), account3, 300);
 		_checkTransfer(records.get(2), 300);
 		clientNonce += 1;
-		long mutationOffset_transfer1To3 = records.get(0).globalOffset;
+		long mutationOffset_transfer1To3 = records.get(0).intentionOffset;
 		// Cache contents: 3,1,2
 		
 		// Transfer 2 to account4 - done as thought it didn't see transfer1To3.
@@ -205,7 +205,7 @@ public class TestBalanceValidation {
 		_checkBalance(records.get(1), account4, 400);
 		_checkTransfer(records.get(2), 400);
 		clientNonce += 1;
-		long mutationOffset_transfer2To4 = records.get(0).globalOffset;
+		long mutationOffset_transfer2To4 = records.get(0).intentionOffset;
 		// Cache contents: 4,2,3
 		
 		// Transfer 1 to account4 - done as thought it didn't see transfer2To4.
@@ -262,7 +262,7 @@ public class TestBalanceValidation {
 		_checkBalance(records.get(0), account1, 1000);
 		_checkTransfer(records.get(1), 1000);
 		clientNonce += 1;
-		long mutationOffsetOfFirstTransfer = records.get(0).globalOffset;
+		long mutationOffsetOfFirstTransfer = records.get(0).intentionOffset;
 		
 		// Transfer 1 to account2.
 		int account2Balance = 500;

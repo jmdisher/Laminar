@@ -22,7 +22,7 @@ public class TestSyncProgress {
 		DownstreamPeerSyncState state = new DownstreamPeerSyncState(null);
 		SyncProgress progress = new SyncProgress(config, Collections.singleton(state));
 		Assert.assertEquals(0L, progress.checkCurrentProgress());
-		state.lastMutationOffsetReceived = 1000L;
+		state.lastIntentionOffsetReceived = 1000L;
 		Assert.assertEquals(1000L, progress.checkCurrentProgress());
 	}
 
@@ -33,9 +33,9 @@ public class TestSyncProgress {
 		DownstreamPeerSyncState state2 = new DownstreamPeerSyncState(null);
 		SyncProgress progress = new SyncProgress(config, new HashSet<>(Arrays.asList(state1, state2)));
 		Assert.assertEquals(0L, progress.checkCurrentProgress());
-		state1.lastMutationOffsetReceived = 1000L;
+		state1.lastIntentionOffsetReceived = 1000L;
 		Assert.assertEquals(0L, progress.checkCurrentProgress());
-		state2.lastMutationOffsetReceived = 5L;
+		state2.lastIntentionOffsetReceived = 5L;
 		Assert.assertEquals(5L, progress.checkCurrentProgress());
 	}
 
@@ -47,11 +47,11 @@ public class TestSyncProgress {
 		DownstreamPeerSyncState state3 = new DownstreamPeerSyncState(null);
 		SyncProgress progress = new SyncProgress(config, new HashSet<>(Arrays.asList(state1, state2, state3)));
 		Assert.assertEquals(0L, progress.checkCurrentProgress());
-		state1.lastMutationOffsetReceived = 1000L;
+		state1.lastIntentionOffsetReceived = 1000L;
 		Assert.assertEquals(0L, progress.checkCurrentProgress());
-		state2.lastMutationOffsetReceived = 5L;
+		state2.lastIntentionOffsetReceived = 5L;
 		Assert.assertEquals(5L, progress.checkCurrentProgress());
-		state3.lastMutationOffsetReceived = 100L;
+		state3.lastIntentionOffsetReceived = 100L;
 		Assert.assertEquals(100L, progress.checkCurrentProgress());
 	}
 

@@ -8,7 +8,7 @@ import com.jeffdisher.laminar.utils.Assert;
 
 
 /**
- * A topic is a logical splitting of the global mutation stream such that many mutations may be submitted to a system
+ * A topic is a logical splitting of the global intention stream such that many intentions may be submitted to a system
  * but a listener will only listen to a single topic.
  * It is an ASCII string of [1..255] characters including numbers, lower-case and capital letters from A-Z, ".", "-",
  * and "-".

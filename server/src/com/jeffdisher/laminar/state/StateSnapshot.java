@@ -10,20 +10,20 @@ import com.jeffdisher.laminar.types.ClusterConfig;
  */
 public class StateSnapshot {
 	public final ClusterConfig currentConfig;
-	public final long lastCommittedMutationOffset;
+	public final long lastCommittedIntentionOffset;
 	/**
-	 * Note that the last RECEIVED mutation is only required for client reconnect where sending the last COMMITTED may
+	 * Note that the last RECEIVED intention is only required for client reconnect where sending the last COMMITTED may
 	 * be further behind and would mean telling the client to re-send things which are between RECEIVED and COMMITED, on
 	 * the server, even though those things WILL be committed (would cause duplications and the nonce is being rebuilt
 	 * so the nonce check won't protect us).
 	 */
-	public final long lastReceivedMutationOffset;
+	public final long lastReceivedIntentionOffset;
 	public final long currentTermNumber;
 
-	public StateSnapshot(ClusterConfig currentConfig, long lastCommittedMutationOffset, long lastReceivedMutationOffset, long currentTermNumber) {
+	public StateSnapshot(ClusterConfig currentConfig, long lastCommittedIntentionOffset, long lastReceivedIntentionOffset, long currentTermNumber) {
 		this.currentConfig = currentConfig;
-		this.lastCommittedMutationOffset = lastCommittedMutationOffset;
-		this.lastReceivedMutationOffset = lastReceivedMutationOffset;
+		this.lastCommittedIntentionOffset = lastCommittedIntentionOffset;
+		this.lastReceivedIntentionOffset = lastReceivedIntentionOffset;
 		this.currentTermNumber = currentTermNumber;
 	}
 }

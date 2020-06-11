@@ -145,7 +145,7 @@ public class TestEmulateStutterCluster {
 	private void _verifyCreateEvent(Consequence eventRecord, long termNumber, long mutationOffset, long eventOffset, byte[] code, byte[] arguments) {
 		Assert.assertEquals(Consequence.Type.TOPIC_CREATE, eventRecord.type);
 		Assert.assertEquals(termNumber, eventRecord.termNumber);
-		Assert.assertEquals(mutationOffset, eventRecord.globalOffset);
+		Assert.assertEquals(mutationOffset, eventRecord.intentionOffset);
 		Assert.assertEquals(eventOffset, eventRecord.consequenceOffset);
 		Assert.assertArrayEquals(code, ((Payload_TopicCreate)eventRecord.payload).code);
 		Assert.assertArrayEquals(arguments, ((Payload_TopicCreate)eventRecord.payload).arguments);
@@ -154,7 +154,7 @@ public class TestEmulateStutterCluster {
 	private void _verifyPutEvent(Consequence eventRecord, long termNumber, long mutationOffset, long eventOffset, byte[] key, byte[] value) {
 		Assert.assertEquals(Consequence.Type.KEY_PUT, eventRecord.type);
 		Assert.assertEquals(termNumber, eventRecord.termNumber);
-		Assert.assertEquals(mutationOffset, eventRecord.globalOffset);
+		Assert.assertEquals(mutationOffset, eventRecord.intentionOffset);
 		Assert.assertEquals(eventOffset, eventRecord.consequenceOffset);
 		Assert.assertArrayEquals(key, ((Payload_KeyPut)eventRecord.payload).key);
 		Assert.assertArrayEquals(value, ((Payload_KeyPut)eventRecord.payload).value);
@@ -163,7 +163,7 @@ public class TestEmulateStutterCluster {
 	private void _verifyDeleteEvent(Consequence eventRecord, long termNumber, long mutationOffset, long eventOffset, byte[] key) {
 		Assert.assertEquals(Consequence.Type.KEY_DELETE, eventRecord.type);
 		Assert.assertEquals(termNumber, eventRecord.termNumber);
-		Assert.assertEquals(mutationOffset, eventRecord.globalOffset);
+		Assert.assertEquals(mutationOffset, eventRecord.intentionOffset);
 		Assert.assertEquals(eventOffset, eventRecord.consequenceOffset);
 		Assert.assertArrayEquals(key, ((Payload_KeyDelete)eventRecord.payload).key);
 	}

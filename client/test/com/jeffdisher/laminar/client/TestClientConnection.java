@@ -374,10 +374,10 @@ public class TestClientConnection {
 				_clientId = reconnect.clientId;
 			}
 			// The last commit we would have told them the same "last commit" in the last few responses.
-			Assert.assertEquals(_mostRecentCommitOffset, reconnect.lastCommitGlobalOffset);
+			Assert.assertEquals(_mostRecentCommitOffset, reconnect.lastCommitIntentionOffset);
 			
 			_clientNextNonce = message.nonce;
-			long globalMutationToLoad = reconnect.lastCommitGlobalOffset + 1L;
+			long globalMutationToLoad = reconnect.lastCommitIntentionOffset + 1L;
 			for (int i = 0; i < commitsToResend; ++i) {
 				ClientMessage oneToSendBack = this.messageByMutationOffset.get(globalMutationToLoad);
 				Assert.assertNotNull(oneToSendBack);
