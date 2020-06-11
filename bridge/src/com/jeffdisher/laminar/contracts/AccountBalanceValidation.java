@@ -15,7 +15,7 @@ import avm.Blockchain;
  * 
  * PUT value argument:
  * -32-byte destination key (all zero if this is burning)
- * -8-byte big-endian long of mutation offset corresponding to last event seen by client
+ * -8-byte big-endian long of mutation offset corresponding to last consequence seen by client
  * -4-byte big-endian int of value to withdraw
  * -4-byte big-endian int of source value at last mutation offset seen by client
  * -4-byte big-endian int of destination value at last mutation offset seen by client
@@ -23,8 +23,8 @@ import avm.Blockchain;
  * The key in the PUT is the source of the transfer (all zero if this is minting).
  * 
  * In order to allow listeners to understand either the final result of the account states or the fact that a
- * transaction was processed (and, more importantly, to provide a "terminator" for the sequence of events in one
- * mutation), we will generate up to 3 events per PUT:
+ * transaction was processed (and, more importantly, to provide a "terminator" for the sequence of consequences in one
+ * mutation), we will generate up to 3 consequences per PUT:
  * -key(source) -> balance(source) - (not present if source was minting)
  * -key(destination) ->  balance(destination) - (not present if destination was burning)
  * -key("transaction") -> value
@@ -67,7 +67,7 @@ public class AccountBalanceValidation {
 			// Make sure the transaction is valid.
 			Blockchain.require(sourceEntry.balance >= valueToMove);
 			
-			// Perform the update and generate the event.
+			// Perform the update and generate the consequence.
 			sourceEntry.balance -= valueToMove;
 			Blockchain.putStorage(key, Coder.allocate(Integer.BYTES).putInt(sourceEntry.balance).array());
 		}
@@ -79,7 +79,7 @@ public class AccountBalanceValidation {
 			// We still need to fail if we can't build a correct picture of the destination so we perform the same operation.
 			destinationEntry = _checkoutOrSynthesizeEntry(destination, knownMutationOffset, knownDestinationBalance, oldestCacheOffset);
 			
-			// Perform the update and generate the event.
+			// Perform the update and generate the consequence.
 			destinationEntry.balance += valueToMove;
 			Blockchain.putStorage(destination, Coder.allocate(Integer.BYTES).putInt(destinationEntry.balance).array());
 		}
@@ -92,7 +92,7 @@ public class AccountBalanceValidation {
 			_checkinCache(destinationEntry);
 		}
 		
-		// If we got this far, the transfer is a success so just generate the terminator transfer event.
+		// If we got this far, the transfer is a success so just generate the terminator transfer consequence.
 		Blockchain.putStorage(TRANSACTION_KEY, Coder.allocate(Integer.BYTES).putInt(valueToMove).array());
 		return new byte[0];
 	}

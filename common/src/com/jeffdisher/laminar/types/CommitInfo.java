@@ -60,18 +60,18 @@ public class CommitInfo {
 		/**
 		 * There was an error in executing the commit.  In non-programmable topics, this typically means trying to write
 		 * to a non-existent topic.
-		 * Such messages CANNOT produce events.
+		 * Such messages CANNOT produce consequences.
 		 */
 		ERROR,
 		/**
 		 * Execution of the commit was valid.
-		 * Such messages CAN produce events.
+		 * Such messages CAN produce consequences.
 		 */
 		VALID,
 		/**
 		 * The commit action was somehow invalid.  In non-programmable topics, this typically means trying to create a
 		 * topic which already existed.
-		 * Such messages CANNOT produce events.
+		 * Such messages CANNOT produce consequences.
 		 */
 		INVALID,
 	}

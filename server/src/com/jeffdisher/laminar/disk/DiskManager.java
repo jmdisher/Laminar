@@ -7,21 +7,16 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 
+import com.jeffdisher.laminar.types.Consequence;
 import com.jeffdisher.laminar.types.TopicName;
-import com.jeffdisher.laminar.types.event.EventRecord;
 import com.jeffdisher.laminar.utils.Assert;
 
 
 /**
- * The disk management is currently based on asynchronously writing events to disk, sending a callback to the
+ * The disk management is currently based on asynchronously writing records to disk, sending a callback to the
  * callbackTarget when they are durable.
  * Note that this is currently highly over-simplified to at least allow the high-level structure of the system to take
- * place.  Current simplifications:
- * -there is only 1 commit stream.  Once topics are introduced, there will be a notion of "global" and "per-topic" event
- *  copies and a complete commit will require writing both
- * -no notion of synthesized events.  Once programmable topics are introduced, the programs will be able to create their
- *  own events, when they are invoked to handle a user-originating event.
- * -everything is currently kept in-memory.  There is not yet the concept of durability or restartability of a node.
+ * place.
  */
 public class DiskManager implements IDiskManager {
 	// Read-only fields setup during construction.
@@ -30,16 +25,16 @@ public class DiskManager implements IDiskManager {
 
 	// These are all accessed under monitor.
 	private boolean _keepRunning;
-	// We track the incoming commits in 2 lists:  one for the "global" mutations and one for the "local" events.
+	// We track the incoming commits in 2 lists:  one for the "global" mutations and one for the "local" consequences.
 	private final List<CommittedMutationRecord> _incomingCommitMutations;
-	private final List<EventCommitTuple> _incomingCommitEvents;
-	// We track fetch requests in 2 lists:  one for the "global" mutations and one for the "local" events.
+	private final List<ConsequenceCommitTuple> _incomingCommitConsequences;
+	// We track fetch requests in 2 lists:  one for the "global" mutations and one for the "local" consequences.
 	private final List<Long> _incomingFetchMutationRequests;
-	private final List<EventFetchTuple> _incomingFetchEventRequests;
+	private final List<ConsequenceFetchTuple> _incomingFetchConsequenceRequests;
 
 	// Only accessed by background thread (current virtual "disk").
 	private final List<CommittedMutationRecord> _committedMutationVirtualDisk;
-	private final Map<TopicName, List<EventRecord>> _committedEventVirtualDisk;
+	private final Map<TopicName, List<Consequence>> _committedConsequenceVirtualDisk;
 
 	public DiskManager(File dataDirectory, IDiskManagerBackgroundCallbacks callbackTarget) {
 		// For now, we ignore the given directory as we are just going to be faking the disk in-memory.
@@ -59,11 +54,11 @@ public class DiskManager implements IDiskManager {
 		
 		_keepRunning = false;
 		_incomingCommitMutations = new LinkedList<>();
-		_incomingCommitEvents = new LinkedList<>();
+		_incomingCommitConsequences = new LinkedList<>();
 		_incomingFetchMutationRequests = new LinkedList<>();
-		_incomingFetchEventRequests = new LinkedList<>();
+		_incomingFetchConsequenceRequests = new LinkedList<>();
 		_committedMutationVirtualDisk = new LinkedList<>();
-		_committedEventVirtualDisk = new HashMap<>();
+		_committedConsequenceVirtualDisk = new HashMap<>();
 		
 		// (we introduce a null to all virtual disk extents since they must be 1-indexed)
 		_committedMutationVirtualDisk.add(null);
@@ -103,10 +98,10 @@ public class DiskManager implements IDiskManager {
 	}
 
 	@Override
-	public synchronized void commitEvent(TopicName topic, EventRecord event) {
+	public synchronized void commitConsequence(TopicName topic, Consequence consequence) {
 		// Make sure this isn't reentrant.
 		Assert.assertTrue(Thread.currentThread() != _background);
-		_incomingCommitEvents.add(new EventCommitTuple(topic, event));
+		_incomingCommitConsequences.add(new ConsequenceCommitTuple(topic, consequence));
 		this.notifyAll();
 	}
 
@@ -119,10 +114,10 @@ public class DiskManager implements IDiskManager {
 	}
 
 	@Override
-	public synchronized void fetchEvent(TopicName topic, long localOffset) {
+	public synchronized void fetchConsequence(TopicName topic, long localOffset) {
 		// Make sure this isn't reentrant.
 		Assert.assertTrue(Thread.currentThread() != _background);
-		_incomingFetchEventRequests.add(new EventFetchTuple(topic, localOffset));
+		_incomingFetchConsequenceRequests.add(new ConsequenceFetchTuple(topic, localOffset));
 		this.notifyAll();
 	}
 
@@ -137,11 +132,11 @@ public class DiskManager implements IDiskManager {
 				CommittedMutationRecord record = work.commitMutation;
 				_callbackTarget.ioEnqueueDiskCommandForMainThread((snapshot) -> _callbackTarget.mainMutationWasCommitted(record));
 			}
-			else if (null != work.commitEvent) {
-				TopicName topic = work.commitEvent.topic;
-				EventRecord record = work.commitEvent.event;
+			else if (null != work.commitConsequence) {
+				TopicName topic = work.commitConsequence.topic;
+				Consequence record = work.commitConsequence.consequence;
 				getOrCreateTopicList(topic).add(record);
-				_callbackTarget.ioEnqueueDiskCommandForMainThread((snapshot) -> _callbackTarget.mainEventWasCommitted(topic, record));
+				_callbackTarget.ioEnqueueDiskCommandForMainThread((snapshot) -> _callbackTarget.mainConsequenceWasCommitted(topic, record));
 			}
 			else if (0L != work.fetchMutation) {
 				// This design might change but we currently "push" the fetched data over the background callback instead
@@ -160,21 +155,21 @@ public class DiskManager implements IDiskManager {
 						: 0L;
 				_callbackTarget.ioEnqueueDiskCommandForMainThread((snapshot) -> _callbackTarget.mainMutationWasFetched(snapshot, previousMutationTermNumber, record));
 			}
-			else if (null != work.fetchEvent) {
-				TopicName topic = work.fetchEvent.topic;
-				int offset = (int) work.fetchEvent.offset;
-				List<EventRecord> topicStore = getOrCreateTopicList(topic);
+			else if (null != work.fetchConsequence) {
+				TopicName topic = work.fetchConsequence.topic;
+				int offset = (int) work.fetchConsequence.offset;
+				List<Consequence> topicStore = getOrCreateTopicList(topic);
 				// These indexing errors should be intercepted at a higher level, before we get to the disk.
 				Assert.assertTrue(offset < topicStore.size());
-				EventRecord record = topicStore.get(offset);
-				_callbackTarget.ioEnqueueDiskCommandForMainThread((snapshot) -> _callbackTarget.mainEventWasFetched(topic, record));
+				Consequence record = topicStore.get(offset);
+				_callbackTarget.ioEnqueueDiskCommandForMainThread((snapshot) -> _callbackTarget.mainConsequenceWasFetched(topic, record));
 			}
 			work = _backgroundWaitForWork();
 		}
 	}
 
 	private synchronized Work _backgroundWaitForWork() {
-		while (_keepRunning && _incomingCommitEvents.isEmpty() && _incomingCommitMutations.isEmpty() && _incomingFetchEventRequests.isEmpty() && _incomingFetchMutationRequests.isEmpty()) {
+		while (_keepRunning && _incomingCommitConsequences.isEmpty() && _incomingCommitMutations.isEmpty() && _incomingFetchConsequenceRequests.isEmpty() && _incomingFetchMutationRequests.isEmpty()) {
 			try {
 				this.wait();
 			} catch (InterruptedException e) {
@@ -184,12 +179,12 @@ public class DiskManager implements IDiskManager {
 		}
 		Work todo = null;
 		if (_keepRunning) {
-			if (!_incomingCommitEvents.isEmpty()) {
-				todo = Work.commitEvent(_incomingCommitEvents.remove(0));
+			if (!_incomingCommitConsequences.isEmpty()) {
+				todo = Work.commitConsequence(_incomingCommitConsequences.remove(0));
 			} else if (!_incomingCommitMutations.isEmpty()) {
 				todo = Work.commitMutation(_incomingCommitMutations.remove(0));
-			} else if (!_incomingFetchEventRequests.isEmpty()) {
-				todo = Work.fetchEvent(_incomingFetchEventRequests.remove(0));
+			} else if (!_incomingFetchConsequenceRequests.isEmpty()) {
+				todo = Work.fetchConsequence(_incomingFetchConsequenceRequests.remove(0));
 			} else if (!_incomingFetchMutationRequests.isEmpty()) {
 				todo = Work.fetchMutation(_incomingFetchMutationRequests.remove(0));
 			}
@@ -197,12 +192,12 @@ public class DiskManager implements IDiskManager {
 		return todo;
 	}
 
-	private List<EventRecord> getOrCreateTopicList(TopicName topic) {
+	private List<Consequence> getOrCreateTopicList(TopicName topic) {
 		// TODO:  Change this when event topics are no longer implicitly created.
-		List<EventRecord> list = _committedEventVirtualDisk.get(topic);
+		List<Consequence> list = _committedConsequenceVirtualDisk.get(topic);
 		if (null == list) {
 			list = new LinkedList<>();
-			_committedEventVirtualDisk.put(topic, list);
+			_committedConsequenceVirtualDisk.put(topic, list);
 			// (we introduce a null to all virtual disk extents since they must be 1-indexed)
 			list.add(null);
 		}
@@ -217,48 +212,48 @@ public class DiskManager implements IDiskManager {
 		public static Work commitMutation(CommittedMutationRecord toCommit) {
 			return new Work(toCommit, null, 0L, null);
 		}
-		public static Work commitEvent(EventCommitTuple toCommit) {
+		public static Work commitConsequence(ConsequenceCommitTuple toCommit) {
 			return new Work(null, toCommit, 0L, null);
 		}
 		public static Work fetchMutation(long toFetch) {
 			return new Work(null, null, toFetch, null);
 		}
-		public static Work fetchEvent(EventFetchTuple toFetch) {
+		public static Work fetchConsequence(ConsequenceFetchTuple toFetch) {
 			return new Work(null, null, 0L, toFetch);
 		}
 		
 		public final CommittedMutationRecord commitMutation;
-		public final EventCommitTuple commitEvent;
+		public final ConsequenceCommitTuple commitConsequence;
 		public final long fetchMutation;
-		public final EventFetchTuple fetchEvent;
+		public final ConsequenceFetchTuple fetchConsequence;
 		
-		private Work(CommittedMutationRecord commitMutation, EventCommitTuple commitEvent, long fetchMutation, EventFetchTuple fetchEvent) {
+		private Work(CommittedMutationRecord commitMutation, ConsequenceCommitTuple commitConsequence, long fetchMutation, ConsequenceFetchTuple fetchConsequence) {
 			this.commitMutation = commitMutation;
-			this.commitEvent = commitEvent;
+			this.commitConsequence = commitConsequence;
 			this.fetchMutation = fetchMutation;
-			this.fetchEvent = fetchEvent;
+			this.fetchConsequence = fetchConsequence;
 		}
 	}
 
 
-	private static class EventFetchTuple {
+	private static class ConsequenceFetchTuple {
 		public final TopicName topic;
 		public final long offset;
 		
-		public EventFetchTuple(TopicName topic, long offset) {
+		public ConsequenceFetchTuple(TopicName topic, long offset) {
 			this.topic = topic;
 			this.offset = offset;
 		}
 	}
 
 
-	private static class EventCommitTuple {
+	private static class ConsequenceCommitTuple {
 		public final TopicName topic;
-		public final EventRecord event;
+		public final Consequence consequence;
 		
-		public EventCommitTuple(TopicName topic, EventRecord event) {
+		public ConsequenceCommitTuple(TopicName topic, Consequence consequence) {
 			this.topic = topic;
-			this.event = event;
+			this.consequence = consequence;
 		}
 	}
 }

@@ -17,9 +17,8 @@ import com.jeffdisher.laminar.client.ListenerConnection;
 import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.types.CommitInfo;
 import com.jeffdisher.laminar.types.ConfigEntry;
+import com.jeffdisher.laminar.types.Consequence;
 import com.jeffdisher.laminar.types.TopicName;
-import com.jeffdisher.laminar.types.event.EventRecord;
-import com.jeffdisher.laminar.types.event.EventRecordType;
 import com.jeffdisher.laminar.types.message.ClientMessage;
 import com.jeffdisher.laminar.types.payload.Payload_KeyPut;
 import com.jeffdisher.laminar.utils.TestingHelpers;
@@ -281,8 +280,8 @@ public class TestCluster {
 			client2_2.waitForCommitted();
 			
 			// Finally, check that the listeners saw all the results.
-			EventRecord[] leaderRecords = leaderListener.waitForTerminate();
-			EventRecord[] followerRecords = followerListener.waitForTerminate();
+			Consequence[] leaderRecords = leaderListener.waitForTerminate();
+			Consequence[] followerRecords = followerListener.waitForTerminate();
 			Assert.assertEquals(leaderRecords[0].globalOffset, followerRecords[0].globalOffset);
 			Assert.assertEquals(leaderRecords[1].globalOffset, followerRecords[1].globalOffset);
 			Assert.assertEquals(leaderRecords[2].globalOffset, followerRecords[2].globalOffset);
@@ -495,8 +494,8 @@ public class TestCluster {
 			result2.waitForCommitted();
 			
 			// Finally, check that the listeners saw all the results.
-			EventRecord[] records1 = listener1.waitForTerminate();
-			EventRecord[] records2 = listener2.waitForTerminate();
+			Consequence[] records1 = listener1.waitForTerminate();
+			Consequence[] records2 = listener2.waitForTerminate();
 			Assert.assertEquals(records1[0].globalOffset, records2[0].globalOffset);
 			Assert.assertEquals(records1[1].globalOffset, records2[1].globalOffset);
 			Assert.assertEquals(records1[1].globalOffset, records2[0].globalOffset + 1);
@@ -606,9 +605,9 @@ public class TestCluster {
 			server3 = null;
 			
 			// Start a listener on each remaining server and verify we see all 41 mutations (but want to skip the first, since it is just the topic creation).
-			EventRecord[] records1 = _listenOnServer(server1Address, topic, client.getClientId(), 41);
-			EventRecord[] records4 = _listenOnServer(server4Address, topic, client.getClientId(), 41);
-			EventRecord[] records5 = _listenOnServer(server5Address, topic, client.getClientId(), 41);
+			Consequence[] records1 = _listenOnServer(server1Address, topic, client.getClientId(), 41);
+			Consequence[] records4 = _listenOnServer(server4Address, topic, client.getClientId(), 41);
+			Consequence[] records5 = _listenOnServer(server5Address, topic, client.getClientId(), 41);
 			for (int i = 0; i < 40; ++i) {
 				// Skip the topic creation.
 				int index = i + 1;
@@ -685,11 +684,11 @@ public class TestCluster {
 			_runBatch(client, topic, 10, 30);
 			
 			// We need to add an extra event and skip over it to account for the creation of the topic.
-			EventRecord[] records1 = _listenOnServer(server1Address, topic, client.getClientId(), 41);
-			EventRecord[] records2 = _listenOnServer(server2Address, topic, client.getClientId(), 41);
-			EventRecord[] records3 = _listenOnServer(server3Address, topic, client.getClientId(), 41);
-			EventRecord[] records4 = _listenOnServer(server4Address, topic, client.getClientId(), 41);
-			EventRecord[] records5 = _listenOnServer(server5Address, topic, client.getClientId(), 41);
+			Consequence[] records1 = _listenOnServer(server1Address, topic, client.getClientId(), 41);
+			Consequence[] records2 = _listenOnServer(server2Address, topic, client.getClientId(), 41);
+			Consequence[] records3 = _listenOnServer(server3Address, topic, client.getClientId(), 41);
+			Consequence[] records4 = _listenOnServer(server4Address, topic, client.getClientId(), 41);
+			Consequence[] records5 = _listenOnServer(server5Address, topic, client.getClientId(), 41);
 			for (int i = 0; i < 40; ++i) {
 				int index = i + 1;
 				
@@ -755,17 +754,17 @@ public class TestCluster {
 			
 			// Now, attach a listener to each server and ensure that we observe all the VALID messages.
 			try (ListenerConnection leaderImplicit = ListenerConnection.open(leaderClientAddress, implicit, 0L)) {
-				Assert.assertEquals(precreate1.message.nonce, leaderImplicit.pollForNextEvent().clientNonce);
-				Assert.assertEquals(result1.message.nonce, leaderImplicit.pollForNextEvent().clientNonce);
-				Assert.assertEquals(result3.message.nonce, leaderImplicit.pollForNextEvent().clientNonce);
-				Assert.assertEquals(precreate2.message.nonce, leaderImplicit.pollForNextEvent().clientNonce);
-				Assert.assertEquals(result5.message.nonce, leaderImplicit.pollForNextEvent().clientNonce);
-				Assert.assertEquals(result7.message.nonce, leaderImplicit.pollForNextEvent().clientNonce);
+				Assert.assertEquals(precreate1.message.nonce, leaderImplicit.pollForNextConsequence().clientNonce);
+				Assert.assertEquals(result1.message.nonce, leaderImplicit.pollForNextConsequence().clientNonce);
+				Assert.assertEquals(result3.message.nonce, leaderImplicit.pollForNextConsequence().clientNonce);
+				Assert.assertEquals(precreate2.message.nonce, leaderImplicit.pollForNextConsequence().clientNonce);
+				Assert.assertEquals(result5.message.nonce, leaderImplicit.pollForNextConsequence().clientNonce);
+				Assert.assertEquals(result7.message.nonce, leaderImplicit.pollForNextConsequence().clientNonce);
 			}
 			try (ListenerConnection followerExplicit = ListenerConnection.open(leaderClientAddress, explicit, 0L)) {
-				Assert.assertEquals(result4.message.nonce, followerExplicit.pollForNextEvent().clientNonce);
-				Assert.assertEquals(result6.message.nonce, followerExplicit.pollForNextEvent().clientNonce);
-				Assert.assertEquals(result8.message.nonce, followerExplicit.pollForNextEvent().clientNonce);
+				Assert.assertEquals(result4.message.nonce, followerExplicit.pollForNextConsequence().clientNonce);
+				Assert.assertEquals(result6.message.nonce, followerExplicit.pollForNextConsequence().clientNonce);
+				Assert.assertEquals(result8.message.nonce, followerExplicit.pollForNextConsequence().clientNonce);
 			}
 		} finally {
 			// Shut down.
@@ -808,9 +807,9 @@ public class TestCluster {
 			
 			// Now, attach a listener the follower and make sure we see the create and the 2 puts.
 			try (ListenerConnection leaderImplicit = ListenerConnection.open(followerClientAddress, topic, 0L)) {
-				Assert.assertEquals(EventRecordType.TOPIC_CREATE, leaderImplicit.pollForNextEvent().type);
-				Assert.assertEquals(EventRecordType.KEY_PUT, leaderImplicit.pollForNextEvent().type);
-				Assert.assertEquals(EventRecordType.KEY_PUT, leaderImplicit.pollForNextEvent().type);
+				Assert.assertEquals(Consequence.Type.TOPIC_CREATE, leaderImplicit.pollForNextConsequence().type);
+				Assert.assertEquals(Consequence.Type.KEY_PUT, leaderImplicit.pollForNextConsequence().type);
+				Assert.assertEquals(Consequence.Type.KEY_PUT, leaderImplicit.pollForNextConsequence().type);
 			}
 		} finally {
 			// Shut down.
@@ -820,7 +819,7 @@ public class TestCluster {
 	}
 
 
-	private EventRecord[] _listenOnServer(InetSocketAddress serverAddress, TopicName topic, UUID clientUuid, int count) throws Throwable {
+	private Consequence[] _listenOnServer(InetSocketAddress serverAddress, TopicName topic, UUID clientUuid, int count) throws Throwable {
 		CaptureListener listener = new CaptureListener(serverAddress, topic, count);
 		listener.skipNonceCheck(clientUuid, 1L);
 		listener.start();

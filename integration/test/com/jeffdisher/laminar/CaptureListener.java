@@ -10,8 +10,8 @@ import org.junit.Assert;
 
 import com.jeffdisher.laminar.client.ListenerConnection;
 import com.jeffdisher.laminar.types.ClusterConfig;
+import com.jeffdisher.laminar.types.Consequence;
 import com.jeffdisher.laminar.types.TopicName;
-import com.jeffdisher.laminar.types.event.EventRecord;
 
 
 /**
@@ -19,14 +19,14 @@ import com.jeffdisher.laminar.types.event.EventRecord;
  */
 public class CaptureListener extends Thread {
 	private final ListenerConnection _listener;
-	private final EventRecord[] _captured;
+	private final Consequence[] _captured;
 	private int _totalEventsConsumed;
 	private UUID _configSender;
 	private long _configNonce;
 	
 	public CaptureListener(InetSocketAddress address, TopicName topic, int messagesToCapture) throws IOException {
 		_listener = ListenerConnection.open(address, topic, 0L);
-		_captured = new EventRecord[messagesToCapture];
+		_captured = new Consequence[messagesToCapture];
 	}
 	
 	/**
@@ -52,7 +52,7 @@ public class CaptureListener extends Thread {
 		return _totalEventsConsumed;
 	}
 	
-	public EventRecord[] waitForTerminate() throws InterruptedException {
+	public Consequence[] waitForTerminate() throws InterruptedException {
 		this.join();
 		return _captured;
 	}
@@ -63,10 +63,10 @@ public class CaptureListener extends Thread {
 			Map<UUID, Long> expectedNonceByClient = new HashMap<>();
 			long expectedTermNumber = 1L;
 			for (int i = 0; i < _captured.length; ++i) {
-				_captured[i] = _listener.pollForNextEvent();
+				_captured[i] = _listener.pollForNextConsequence();
 				Assert.assertTrue(_captured[i].termNumber >= expectedTermNumber);
 				expectedTermNumber = _captured[i].termNumber;
-				Assert.assertEquals(i + 1, _captured[i].localOffset);
+				Assert.assertEquals(i + 1, _captured[i].consequenceOffset);
 				long expectedNonce = 1L;
 				if (expectedNonceByClient.containsKey(_captured[i].clientId)) {
 					expectedNonce = expectedNonceByClient.get(_captured[i].clientId);

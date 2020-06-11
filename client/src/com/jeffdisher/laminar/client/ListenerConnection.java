@@ -7,9 +7,8 @@ import java.net.InetSocketAddress;
 import com.jeffdisher.laminar.components.INetworkManagerBackgroundCallbacks;
 import com.jeffdisher.laminar.components.NetworkManager;
 import com.jeffdisher.laminar.types.ClusterConfig;
+import com.jeffdisher.laminar.types.Consequence;
 import com.jeffdisher.laminar.types.TopicName;
-import com.jeffdisher.laminar.types.event.EventRecord;
-import com.jeffdisher.laminar.types.event.EventRecordType;
 import com.jeffdisher.laminar.types.message.ClientMessage;
 import com.jeffdisher.laminar.types.payload.Payload_ConfigChange;
 import com.jeffdisher.laminar.utils.Assert;
@@ -22,20 +21,20 @@ import com.jeffdisher.laminar.utils.Assert;
  * leader.  Instead, the last read request is just re-sent.
  * The basic logic of the listener is that it connects to a server and sends a LISTEN request, instead of a HANDSHAKE
  * request.
- * The listener never needs to send another message to the server and the server will send back raw EventRecord data
- * as quickly as it can, whenever new matching events are available.  Note that these are not in a message container,
+ * The listener never needs to send another message to the server and the server will send back raw Consequence data
+ * as quickly as it can, whenever new matching consequences are available.  Note that these are not in a message container,
  * only the framing facility of the network layer.
  * This means that the listener is responsible for telling the server the last local offset it received (both global and
- * local offsets are 1-indexed so the initial request passes 0 to request all events) and then it will receive updates
+ * local offsets are 1-indexed so the initial request passes 0 to request all consequences) and then it will receive updates
  * from that point onward.
  * If the user needs to restart the ListenerConnection, at a later time, they will need to provide the localOffset of
- * the last event returned in order to ensure a seamless continuation of events.
- * NOTE:  "Local" offsets are the per-topic offsets while the "global" offsets are the input event offsets.  For a
- * single-topic, non-programmable system, they map 1-to-1.  The input events are split into per-topic events, when
+ * the last consequence returned in order to ensure a seamless continuation of consequences.
+ * NOTE:  "Local" offsets are the per-topic offsets while the "global" offsets are the input mutation offsets.  For a
+ * single-topic, non-programmable system, they map 1-to-1.  The input mutations are split into per-topic consequences, when
  * committed, meaning they are given local offsets.  This, alone, would not be a reason to use this "local" addressing
- * mode.  The ultimate reason is due to programmable topics as they can produce 0 or many events in response to
- * processing an input event.
- * The user directly polls the connection for the next event received.  As the user owns this thread, it can send an
+ * mode.  The ultimate reason is due to programmable topics as they can produce 0 or many consequences in response to
+ * processing an input mutation.
+ * The user directly polls the connection for the next consequence received.  As the user owns this thread, it can send an
  * interrupt to break it out of its poll operation.
  * Note that the only internal thread this creates is to manage the network, not process the incoming data, so no
  * progress will be made while the user's thread isn't polling.
@@ -102,30 +101,30 @@ public class ListenerConnection implements Closeable, INetworkManagerBackgroundC
 	}
 
 	/**
-	 * Block until the next EventRecord is available, then decode and return it.
+	 * Block until the next Consequence is available, then decode and return it.
 	 * Note that this call is interruptible using a thread interrupt.
 	 * 
-	 * @return The next EventRecord or null if the receiver was shut down.
+	 * @return The next Consequence or null if the receiver was shut down.
 	 * @throws InterruptedException If the calling thread received an interrupt.
 	 */
-	public synchronized EventRecord pollForNextEvent() throws InterruptedException {
-		EventRecord record = null;
+	public synchronized Consequence pollForNextConsequence() throws InterruptedException {
+		Consequence record = null;
 		_isPollActive = true;
 		try {
 			boolean tryAgain = true;
 			while (tryAgain) {
 				// We only try again if we keep getting config changes.
 				tryAgain = false;
-				record = _doLockedPollForNextEvent(_previousLocalOffset);
+				record = _doLockedPollForNextConsequence(_previousLocalOffset);
 				// Note that we don't want to progress if we couldn't connect.
 				if (null != record) {
-					// We want to intercept any CONFIG_CHANGE events to update our connection state, instead of returning this to the user (since it is a control message, not data).
-					if (EventRecordType.CONFIG_CHANGE == record.type) {
+					// We want to intercept any CONFIG_CHANGE consequences to update our connection state, instead of returning this to the user (since it is a control message, not data).
+					if (Consequence.Type.CONFIG_CHANGE == record.type) {
 						// We just set this as our config in case we need it for reconnect.
 						_currentClusterConfig = ((Payload_ConfigChange)record.payload).config;
 						tryAgain = true;
 					} else {
-						_previousLocalOffset = record.localOffset;
+						_previousLocalOffset = record.consequenceOffset;
 					}
 				}
 			}
@@ -144,7 +143,7 @@ public class ListenerConnection implements Closeable, INetworkManagerBackgroundC
 	 * This is required since the connection normally tries to reestablish itself, when a connection drops or can't be
 	 * created.
 	 * In some cases of listener misconfiguration, a total cluster failure, or a serious network problem, this may
-	 * result in listeners running silent when they actually should be seeing new events.  This method exists to allow a
+	 * result in listeners running silent when they actually should be seeing new consequences.  This method exists to allow a
 	 * view into that state.
 	 * This method will block until the connection is up or until there is a connection error.
 	 * 
@@ -257,8 +256,8 @@ public class ListenerConnection implements Closeable, INetworkManagerBackgroundC
 	}
 
 
-	private EventRecord _doLockedPollForNextEvent(long previousLocalOffset) throws InterruptedException, AssertionError {
-		EventRecord record = null;
+	private Consequence _doLockedPollForNextConsequence(long previousLocalOffset) throws InterruptedException, AssertionError {
+		Consequence record = null;
 		while (_keepRunning && (null == record)) {
 			// Wait until we are ready to take some action.  Cases to exit:
 			// -told to stop (!_keepRunning)
@@ -304,8 +303,8 @@ public class ListenerConnection implements Closeable, INetworkManagerBackgroundC
 				Assert.assertTrue(null != message);
 				_pendingMessages -= 1;
 				
-				// Currently, we only send a single EventRecord per payload, not in any message container.
-				record = EventRecord.deserialize(message);
+				// Currently, we only send a single Consequence per payload, not in any message container.
+				record = Consequence.deserialize(message);
 			}
 		}
 		return record;

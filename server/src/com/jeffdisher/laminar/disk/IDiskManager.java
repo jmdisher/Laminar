@@ -1,7 +1,7 @@
 package com.jeffdisher.laminar.disk;
 
+import com.jeffdisher.laminar.types.Consequence;
 import com.jeffdisher.laminar.types.TopicName;
-import com.jeffdisher.laminar.types.event.EventRecord;
 
 
 /**
@@ -9,21 +9,21 @@ import com.jeffdisher.laminar.types.event.EventRecord;
  */
 public interface IDiskManager {
 	/**
-	 * Requests that the event with the associated localOffset offset be asynchronously fetched.
+	 * Requests that the consequence with the associated localOffset offset be asynchronously fetched.
 	 * 
 	 * @param topic The topic where to search.
-	 * @param localOffset The offset of the event to load.
+	 * @param localOffset The offset of the consequence to load.
 	 */
-	void fetchEvent(TopicName topic, long localOffset);
+	void fetchConsequence(TopicName topic, long localOffset);
 
 	/**
-	 * Request that the given event be asynchronously committed.
+	 * Request that the given consequence be asynchronously committed.
 	 * NOTE:  This will be changed to per-topic commit, in the future.
 	 * 
-	 * @param topic The topic where the event occurred.
-	 * @param event The event to commit.
+	 * @param topic The topic where the consequence occurred.
+	 * @param consequence The consequence to commit.
 	 */
-	void commitEvent(TopicName topic, EventRecord event);
+	void commitConsequence(TopicName topic, Consequence consequence);
 
 	/**
 	 * Request that the given mutation be asynchronously committed.

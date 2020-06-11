@@ -15,9 +15,9 @@ public class TestListenerManager {
 		ListenerManager manager = new ListenerManager();
 		ListenerState listener = new ListenerState(null, topic, 0L);
 		manager.addWritableListener(listener);
-		Set<ListenerState> matched = manager.eventBecameAvailable(topic, 1L);
+		Set<ListenerState> matched = manager.consequenceBecameAvailable(topic, 1L);
 		Assert.assertEquals(1, matched.size());
-		matched = manager.eventBecameAvailable(topic, 1L);
+		matched = manager.consequenceBecameAvailable(topic, 1L);
 		Assert.assertEquals(0, matched.size());
 	}
 
@@ -25,16 +25,16 @@ public class TestListenerManager {
 	public void testJoinAfterAvailable() throws Throwable {
 		TopicName topic = TopicName.fromString("test");
 		ListenerManager manager = new ListenerManager();
-		Set<ListenerState> matched = manager.eventBecameAvailable(topic, 1L);
+		Set<ListenerState> matched = manager.consequenceBecameAvailable(topic, 1L);
 		Assert.assertEquals(0, matched.size());
-		matched = manager.eventBecameAvailable(topic, 2L);
+		matched = manager.consequenceBecameAvailable(topic, 2L);
 		Assert.assertEquals(0, matched.size());
 		ListenerState listener = new ListenerState(null, topic, 0L);
 		long shouldFetch = manager.addWritableListener(listener);
 		Assert.assertEquals(1L, shouldFetch);
-		matched = manager.eventBecameAvailable(topic, 1L);
+		matched = manager.consequenceBecameAvailable(topic, 1L);
 		Assert.assertEquals(1, matched.size());
-		matched = manager.eventBecameAvailable(topic, 3L);
+		matched = manager.consequenceBecameAvailable(topic, 3L);
 		Assert.assertEquals(0, matched.size());
 	}
 
@@ -43,15 +43,15 @@ public class TestListenerManager {
 		TopicName topic = TopicName.fromString("test");
 		ListenerManager manager = new ListenerManager();
 		ListenerState listener = new ListenerState(null, topic, 0L);
-		Set<ListenerState> matched = manager.eventBecameAvailable(topic, 1L);
+		Set<ListenerState> matched = manager.consequenceBecameAvailable(topic, 1L);
 		Assert.assertEquals(0, matched.size());
-		matched = manager.eventBecameAvailable(topic, 2L);
+		matched = manager.consequenceBecameAvailable(topic, 2L);
 		Assert.assertEquals(0, matched.size());
-		matched = manager.eventBecameAvailable(topic, 3L);
+		matched = manager.consequenceBecameAvailable(topic, 3L);
 		Assert.assertEquals(0, matched.size());
 		long shouldFetch = manager.addWritableListener(listener);
 		Assert.assertEquals(1L, shouldFetch);
-		matched = manager.eventBecameAvailable(topic, 1L);
+		matched = manager.consequenceBecameAvailable(topic, 1L);
 		Assert.assertEquals(1, matched.size());
 		listener.lastSentLocalOffset = 1L;
 		shouldFetch = manager.addWritableListener(listener);

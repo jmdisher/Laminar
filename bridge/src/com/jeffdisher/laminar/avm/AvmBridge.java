@@ -10,8 +10,8 @@ import org.aion.avm.core.ExecutionType;
 import org.aion.avm.core.FutureResult;
 import org.aion.types.Transaction;
 
+import com.jeffdisher.laminar.types.Consequence;
 import com.jeffdisher.laminar.types.TopicName;
-import com.jeffdisher.laminar.types.event.EventRecord;
 import com.jeffdisher.laminar.utils.Assert;
 
 
@@ -31,7 +31,7 @@ public class AvmBridge {
 		_avm = CommonAvmFactory.buildAvmInstanceForConfiguration(_capabilities, config);
 	}
 
-	public List<EventRecord> runCreate(TopicContext context, long termNumber, long globalOffset, long initialLocalOffset, UUID clientId, long clientNonce, TopicName topicName, byte[] code, byte[] arguments) {
+	public List<Consequence> runCreate(TopicContext context, long termNumber, long globalOffset, long initialLocalOffset, UUID clientId, long clientNonce, TopicName topicName, byte[] code, byte[] arguments) {
 		Transaction[] transactions = new Transaction[] {
 				LaminarAvmTranscoder.createTopic(clientId, clientNonce, topicName, code, arguments)
 		};
@@ -41,10 +41,10 @@ public class AvmBridge {
 		LaminarExternalStateAdapter adapter = new LaminarExternalStateAdapter(context, globalOffset, null);
 		FutureResult[] results = _avm.run(adapter, transactions, executionType, commonMainchainBlockNumber);
 		Assert.assertTrue(transactions.length == results.length);
-		return adapter.createOutputEventRecords(results[0], termNumber, initialLocalOffset, clientId, clientNonce);
+		return adapter.createOutputConsequences(results[0], termNumber, initialLocalOffset, clientId, clientNonce);
 	}
 
-	public List<EventRecord> runPut(TopicContext context, long termNumber, long globalOffset, long initialLocalOffset, UUID clientId, long clientNonce, TopicName topicName, byte[] key, byte[] value) {
+	public List<Consequence> runPut(TopicContext context, long termNumber, long globalOffset, long initialLocalOffset, UUID clientId, long clientNonce, TopicName topicName, byte[] key, byte[] value) {
 		Transaction[] transactions = new Transaction[] {
 				LaminarAvmTranscoder.invokeTopic(clientId, clientNonce, topicName, key)
 		};
@@ -56,10 +56,10 @@ public class AvmBridge {
 		LaminarExternalStateAdapter adapter = new LaminarExternalStateAdapter(context, globalOffset, value);
 		FutureResult[] results = _avm.run(adapter, transactions, executionType, commonMainchainBlockNumber);
 		Assert.assertTrue(transactions.length == results.length);
-		return adapter.createOutputEventRecords(results[0], termNumber, initialLocalOffset, clientId, clientNonce);
+		return adapter.createOutputConsequences(results[0], termNumber, initialLocalOffset, clientId, clientNonce);
 	}
 
-	public List<EventRecord> runDelete(TopicContext context, long termNumber, long globalOffset, long initialLocalOffset, UUID clientId, long clientNonce, TopicName topicName, byte[] key) {
+	public List<Consequence> runDelete(TopicContext context, long termNumber, long globalOffset, long initialLocalOffset, UUID clientId, long clientNonce, TopicName topicName, byte[] key) {
 		Transaction[] transactions = new Transaction[] {
 				LaminarAvmTranscoder.invokeTopic(clientId, clientNonce, topicName, key)
 		};
@@ -70,7 +70,7 @@ public class AvmBridge {
 		LaminarExternalStateAdapter adapter = new LaminarExternalStateAdapter(context, globalOffset, null);
 		FutureResult[] results = _avm.run(adapter, transactions, executionType, commonMainchainBlockNumber);
 		Assert.assertTrue(transactions.length == results.length);
-		return adapter.createOutputEventRecords(results[0], termNumber, initialLocalOffset, clientId, clientNonce);
+		return adapter.createOutputConsequences(results[0], termNumber, initialLocalOffset, clientId, clientNonce);
 	}
 
 	public void shutdown() {

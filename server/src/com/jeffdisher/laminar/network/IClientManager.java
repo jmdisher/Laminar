@@ -4,8 +4,8 @@ import com.jeffdisher.laminar.disk.CommittedMutationRecord;
 import com.jeffdisher.laminar.state.StateSnapshot;
 import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.types.ConfigEntry;
+import com.jeffdisher.laminar.types.Consequence;
 import com.jeffdisher.laminar.types.TopicName;
-import com.jeffdisher.laminar.types.event.EventRecord;
 
 
 /**
@@ -46,13 +46,13 @@ public interface IClientManager {
 	void mainBroadcastConfigUpdate(StateSnapshot snapshot, ClusterConfig newConfig);
 
 	/**
-	 * Broadcast the given EventRecord to all attached listeners who were waiting for it.
-	 * This is called when a new EventRecord is committed or fetched from disk.
+	 * Broadcast the given Consequence to all attached listeners who were waiting for it.
+	 * This is called when a new Consequence is committed or fetched from disk.
 	 * 
-	 * @param topic The topic where the event occurred.
-	 * @param record The committed EventRecord.
+	 * @param topic The topic where the consequence occurred.
+	 * @param record The committed Consequence.
 	 */
-	void mainSendRecordToListeners(TopicName topic, EventRecord record);
+	void mainSendRecordToListeners(TopicName topic, Consequence record);
 
 	/**
 	 * Replay the given MutationRecord to any clients which were waiting for it during a reconnect.  Called when a

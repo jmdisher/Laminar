@@ -73,7 +73,7 @@ public class Helpers {
 			break;
 		case CONFIG_CHANGE: {
 			// Eventually, this will kick-off the joint consensus where we change to having 2 active configs until this commits on all nodes and the local disk.
-			// For now, however, we just send the received ack and enqueue this for commit (note that it DOES NOT generate an event - only a mutation).
+			// For now, however, we just send the received ack and enqueue this for commit (note that it DOES NOT generate a consequence - only a mutation).
 			// The more complex operation happens after the commit completes since that is when we will change our state and broadcast the new config to all clients and listeners.
 			ClusterConfig newConfig = ((ClientMessagePayload_ConfigChange)message.payload).config;
 			converted = MutationRecord.updateConfig(termNumber, mutationOffsetToAssign, clientId, message.nonce, newConfig);

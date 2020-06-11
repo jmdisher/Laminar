@@ -18,8 +18,8 @@ import com.jeffdisher.laminar.state.StateSnapshot;
 import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.types.CommitInfo;
 import com.jeffdisher.laminar.types.ConfigEntry;
+import com.jeffdisher.laminar.types.Consequence;
 import com.jeffdisher.laminar.types.TopicName;
-import com.jeffdisher.laminar.types.event.EventRecord;
 import com.jeffdisher.laminar.types.message.ClientMessage;
 import com.jeffdisher.laminar.types.message.ClientMessagePayload_KeyPut;
 import com.jeffdisher.laminar.types.mutation.MutationRecord;
@@ -170,7 +170,7 @@ public class TestClientManager {
 	public void testSendEvent() throws Throwable {
 		// Create an event record.
 		TopicName topic = TopicName.fromString("test");
-		EventRecord record = EventRecord.put(1L, 1L, 1L, UUID.randomUUID(), 1L, new byte[0], new byte[] { 1, 2, 3});
+		Consequence record = Consequence.put(1L, 1L, 1L, UUID.randomUUID(), 1L, new byte[0], new byte[] { 1, 2, 3});
 		// Create a server.
 		int port = PORT_BASE + 3;
 		ConfigEntry self = new ConfigEntry(UUID.randomUUID(), new InetSocketAddress(9999), new InetSocketAddress(port));
@@ -200,9 +200,9 @@ public class TestClientManager {
 			byte[] raw = TestingHelpers.readMessageInFrame(fromServer);
 			Assert.assertEquals(serialized.length, raw.length);
 			// Deserialize the buffer.
-			EventRecord deserialized = EventRecord.deserialize(raw);
+			Consequence deserialized = Consequence.deserialize(raw);
 			Assert.assertEquals(record.globalOffset, deserialized.globalOffset);
-			Assert.assertEquals(record.localOffset, deserialized.localOffset);
+			Assert.assertEquals(record.consequenceOffset, deserialized.consequenceOffset);
 			Assert.assertEquals(record.clientId, deserialized.clientId);
 			Assert.assertArrayEquals(((Payload_KeyPut)record.payload).key, ((Payload_KeyPut)deserialized.payload).key);
 			Assert.assertArrayEquals(((Payload_KeyPut)record.payload).value, ((Payload_KeyPut)deserialized.payload).value);
@@ -355,7 +355,7 @@ public class TestClientManager {
 		}
 
 		@Override
-		public void mainRequestEventFetch(TopicName topic, long nextLocalEventToFetch) {
+		public void mainRequestConsequenceFetch(TopicName topic, long nextLocalEventToFetch) {
 			Assert.fail("Not used in test");
 		}
 

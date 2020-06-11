@@ -1,8 +1,8 @@
 package com.jeffdisher.laminar.network;
 
 import com.jeffdisher.laminar.components.NetworkManager;
+import com.jeffdisher.laminar.types.Consequence;
 import com.jeffdisher.laminar.types.TopicName;
-import com.jeffdisher.laminar.types.event.EventRecord;
 
 
 /**
@@ -15,12 +15,12 @@ public class ListenerState {
 	public final NetworkManager.NodeToken token;
 	public final TopicName topic;
 	public long lastSentLocalOffset;
-	public EventRecord highPriorityMessage;
+	public Consequence highPriorityMessage;
 
 	/**
 	 * Creates a new object for tracking the state of a single connected listener.
 	 * 
-	 * @param topic The topic from which this listener will consume events.
+	 * @param topic The topic from which this listener will consume consequences.
 	 * @param lastSentLocalOffset The last offset the listener has already seen (often 0L if this is a new connection).
 	 */
 	public ListenerState(NetworkManager.NodeToken token, TopicName topic, long lastSentLocalOffset) {

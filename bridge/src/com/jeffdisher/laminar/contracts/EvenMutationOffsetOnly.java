@@ -4,7 +4,7 @@ import avm.Blockchain;
 
 
 /**
- * This contract will pass all PUT and DELETE calls through to events but only when the mutation offset is even.
+ * This contract will pass all PUT and DELETE calls through to consequences but only when the mutation offset is even.
  * Otherwise, it will fail.
  */
 public class EvenMutationOffsetOnly {
@@ -15,12 +15,12 @@ public class EvenMutationOffsetOnly {
 		Blockchain.require(0L == (_previousMutationOffset % 2L));
 		// We capture this here to make sure that the graph doesn't write-back, on failure.
 		_previousMutationOffset = Blockchain.getBlockNumber();
-		// Similarly, create an event which should be dropped on the failure.
+		// Similarly, create an consequence which should be dropped on the failure.
 		if (0L != (Blockchain.getBlockNumber() % 2L)) {
 			// (this should NOT be observable under any circumstances).
 			Blockchain.putStorage(new byte[32], new byte[] {42});
 		}
-		// Post the event (this will work on PUT and DELETE but will be reverted if the final require fails).
+		// Post the consequence (this will work on PUT and DELETE but will be reverted if the final require fails).
 		byte[] key = Blockchain.getData();
 		byte[] value = Blockchain.getStorage(key);
 		Blockchain.putStorage(key, value);

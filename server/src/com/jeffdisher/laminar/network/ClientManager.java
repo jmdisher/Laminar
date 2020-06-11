@@ -21,8 +21,8 @@ import com.jeffdisher.laminar.state.StateSnapshot;
 import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.types.CommitInfo;
 import com.jeffdisher.laminar.types.ConfigEntry;
+import com.jeffdisher.laminar.types.Consequence;
 import com.jeffdisher.laminar.types.TopicName;
-import com.jeffdisher.laminar.types.event.EventRecord;
 import com.jeffdisher.laminar.types.message.ClientMessage;
 import com.jeffdisher.laminar.types.message.ClientMessagePayload_Handshake;
 import com.jeffdisher.laminar.types.message.ClientMessagePayload_Listen;
@@ -53,7 +53,7 @@ public class ClientManager implements IClientManager, INetworkManagerBackgroundC
 	// Note that we track clients in 1 of 3 different states:  new, normal, listener.
 	// -new clients just connected and haven't yet sent a message so we don't know what they are doing.
 	// -normal clients are the kind which send mutative operations and wait for acks
-	// -listener clients are only listen to a stream of EventRecords
+	// -listener clients are only listen to a stream of Consequences
 	// All clients start in "new" and move to "normal" or "listener" after their first message.
 	private final Set<NetworkManager.NodeToken> _newClients;
 	private final Map<NetworkManager.NodeToken, ClientState> _normalClientsByToken;
@@ -140,11 +140,11 @@ public class ClientManager implements IClientManager, INetworkManagerBackgroundC
 			ClientResponse update = ClientResponse.updateConfig(snapshot.lastCommittedMutationOffset, newConfig);
 			_mainEnqueueMessageToClient(clientId, update);
 		}
-		// For listeners, we either need to send this directly (if they are already waiting for the next event)
+		// For listeners, we either need to send this directly (if they are already waiting for the next consequence)
 		// or set their high-priority slot to preempt the next enqueue operation (since those ones are currently
 		// waiting on an in-progress disk fetch).
 		// We use the high-priority slot because it doesn't have a message queue and they don't need every update, just the most recent.
-		EventRecord updateConfigPseudoRecord = EventRecord.synthesizeRecordForConfig(newConfig);
+		Consequence updateConfigPseudoRecord = Consequence.synthesizeRecordForConfig(newConfig);
 		// Set this in all the connected listeners, writable or not.
 		for (ListenerState listenerState : _listenerClients.values()) {
 			listenerState.highPriorityMessage = updateConfigPseudoRecord;
@@ -158,7 +158,7 @@ public class ClientManager implements IClientManager, INetworkManagerBackgroundC
 			Assert.assertTrue(updateConfigPseudoRecord == listener.highPriorityMessage);
 			
 			// Send this and clear it.
-			_sendEventToListener(listener.token, listener.highPriorityMessage);
+			_sendConsequenceToListener(listener.token, listener.highPriorityMessage);
 			Assert.assertTrue(updateConfigPseudoRecord == listener.highPriorityMessage);
 			listener.highPriorityMessage = null;
 		}
@@ -193,7 +193,7 @@ public class ClientManager implements IClientManager, INetworkManagerBackgroundC
 	}
 
 	@Override
-	public void mainSendRecordToListeners(TopicName topic, EventRecord record) {
+	public void mainSendRecordToListeners(TopicName topic, Consequence record) {
 		// Called on main thread.
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		_mainSendRecordToListeners(topic, record);
@@ -342,13 +342,13 @@ public class ClientManager implements IClientManager, INetworkManagerBackgroundC
 					// The socket is now writable so first check if there is a high-priority message waiting.
 					if (null != listenerState.highPriorityMessage) {
 						// Send the high-priority message and we will proceed to sync when we get the next writable callback.
-						_sendEventToListener(node, listenerState.highPriorityMessage);
+						_sendConsequenceToListener(node, listenerState.highPriorityMessage);
 						listenerState.highPriorityMessage = null;
 					} else {
 						// Normal syncing operation so either load or wait for the next event for this listener.
 						long nextLocalEventToFetch = _listenerManager.addWritableListener(listenerState);
 						if (-1 != nextLocalEventToFetch) {
-							_callbacks.mainRequestEventFetch(listenerState.topic, nextLocalEventToFetch);
+							_callbacks.mainRequestConsequenceFetch(listenerState.topic, nextLocalEventToFetch);
 						}
 					}
 				} else if (isClosing) {
@@ -456,7 +456,7 @@ public class ClientManager implements IClientManager, INetworkManagerBackgroundC
 		}
 		case LISTEN: {
 			// This is the first message a client sends when they want to register as a listener.
-			// In this case, they won't send any other messages to us and just expect a constant stream of raw EventRecords to be sent to them.
+			// In this case, they won't send any other messages to us and just expect a constant stream of raw Consequences to be sent to them.
 			ClientMessagePayload_Listen listen = (ClientMessagePayload_Listen)incoming.payload;
 			
 			// Note that this message overloads the nonce as the last received local offset.
@@ -471,15 +471,15 @@ public class ClientManager implements IClientManager, INetworkManagerBackgroundC
 			Assert.assertTrue(didRemove);
 			_listenerClients.put(client, state);
 			
-			// In this case, we will synthesize the current config as an EventRecord (we have a special type for config
+			// In this case, we will synthesize the current config as an Consequence (we have a special type for config
 			// changes), send them that message, and then we will wait for the socket to become writable, again, where
-			// we will begin streaming EventRecords to them.
-			EventRecord initialConfig = EventRecord.synthesizeRecordForConfig(currentConfig);
+			// we will begin streaming Consequences to them.
+			Consequence initialConfig = Consequence.synthesizeRecordForConfig(currentConfig);
 			// This is the only message we send on this socket which isn't specifically related to the
 			// "fetch+send+repeat" cycle so we will send it directly, waiting for the writable callback from the socket
 			// to start the initial fetch.
 			// If we weren't sending a message here, we would start the cycle by calling _backgroundSetupListenerForNextEvent(), given that the socket starts writable.
-			_sendEventToListener(client, initialConfig);
+			_sendConsequenceToListener(client, initialConfig);
 			break;
 		}
 		case FORCE_LEADER: {
@@ -525,14 +525,14 @@ public class ClientManager implements IClientManager, INetworkManagerBackgroundC
 		}
 	}
 
-	private void _mainSendRecordToListeners(TopicName topic, EventRecord record) {
+	private void _mainSendRecordToListeners(TopicName topic, Consequence record) {
 		// Main thread helper.
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
-		Set<ListenerState> listeners = _listenerManager.eventBecameAvailable(topic, record.localOffset);
+		Set<ListenerState> listeners = _listenerManager.consequenceBecameAvailable(topic, record.consequenceOffset);
 		for (ListenerState listenerState : listeners) {
-			_sendEventToListener(listenerState.token, record);
+			_sendConsequenceToListener(listenerState.token, record);
 			// Update the state to be the offset of this event.
-			listenerState.lastSentLocalOffset = record.localOffset;
+			listenerState.lastSentLocalOffset = record.consequenceOffset;
 		}
 	}
 
@@ -543,7 +543,7 @@ public class ClientManager implements IClientManager, INetworkManagerBackgroundC
 		Assert.assertTrue(didSend);
 	}
 
-	private void _sendEventToListener(NetworkManager.NodeToken client, EventRecord toSend) {
+	private void _sendConsequenceToListener(NetworkManager.NodeToken client, Consequence toSend) {
 		byte[] serialized = toSend.serialize();
 		boolean didSend = _networkManager.trySendMessage(client, serialized);
 		// We only send when ready.

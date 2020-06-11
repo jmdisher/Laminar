@@ -22,9 +22,8 @@ import com.jeffdisher.laminar.client.ListenerConnection;
 import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.types.CommitInfo;
 import com.jeffdisher.laminar.types.ConfigEntry;
+import com.jeffdisher.laminar.types.Consequence;
 import com.jeffdisher.laminar.types.TopicName;
-import com.jeffdisher.laminar.types.event.EventRecord;
-import com.jeffdisher.laminar.types.event.EventRecordType;
 import com.jeffdisher.laminar.types.message.ClientMessage;
 import com.jeffdisher.laminar.types.payload.Payload_KeyDelete;
 import com.jeffdisher.laminar.types.payload.Payload_KeyPut;
@@ -311,8 +310,8 @@ public class TestClientsAndListeners {
 		afterListener.start();
 		
 		// Wait for the listeners to stop and then verify what they found is correct.
-		EventRecord[] beforeEvents = beforeListener.waitForTerminate();
-		EventRecord[] afterEvents = afterListener.waitForTerminate();
+		Consequence[] beforeEvents = beforeListener.waitForTerminate();
+		Consequence[] afterEvents = afterListener.waitForTerminate();
 		for (int i = 0; i < beforeEvents.length-1; ++i) {
 			// Add a bias to skip the topic creation.
 			int index = i + 1;
@@ -494,14 +493,14 @@ public class TestClientsAndListeners {
 		ListenerConnection listener1 = ListenerConnection.open(serverAddress, topic1, 0L);
 		ListenerConnection listener2 = ListenerConnection.open(serverAddress, topic2, 0L);
 		// Consume the first message in each topic to skip over the creation.
-		Assert.assertEquals(1L, listener1.pollForNextEvent().clientNonce);
-		Assert.assertEquals(2L, listener2.pollForNextEvent().clientNonce);
+		Assert.assertEquals(1L, listener1.pollForNextConsequence().clientNonce);
+		Assert.assertEquals(2L, listener2.pollForNextConsequence().clientNonce);
 		for (int i = 0; i < 5; ++i) {
 			// We need to add a nonce bias to account for the 2 messages to create the topics.
 			int bias = 2;
 			
-			EventRecord event1 = listener1.pollForNextEvent();
-			EventRecord event2 = listener2.pollForNextEvent();
+			Consequence event1 = listener1.pollForNextConsequence();
+			Consequence event2 = listener2.pollForNextConsequence();
 			
 			// Test that we see everything interleaved for these 2, corresponding to how we posted.
 			Assert.assertEquals(bias + (2 * i) + 1, (int)event1.clientNonce);
@@ -556,13 +555,13 @@ public class TestClientsAndListeners {
 			Assert.assertEquals(CommitInfo.Effect.VALID, put4.waitForCommitted().effect);
 		}
 		ListenerConnection listener = ListenerConnection.open(serverAddress, topic, 0L);
-		_checkRecord(listener.pollForNextEvent(), 1L, EventRecordType.TOPIC_CREATE, null, null);
-		_checkRecord(listener.pollForNextEvent(), 2L, EventRecordType.KEY_DELETE, key1, null);
-		_checkRecord(listener.pollForNextEvent(), 3L, EventRecordType.KEY_PUT, key2, "One".getBytes(StandardCharsets.UTF_8));
-		_checkRecord(listener.pollForNextEvent(), 4L, EventRecordType.KEY_PUT, key2, "Two".getBytes(StandardCharsets.UTF_8));
-		_checkRecord(listener.pollForNextEvent(), 5L, EventRecordType.KEY_PUT, key1, "Back".getBytes(StandardCharsets.UTF_8));
-		_checkRecord(listener.pollForNextEvent(), 6L, EventRecordType.KEY_DELETE, key2, null);
-		_checkRecord(listener.pollForNextEvent(), 7L, EventRecordType.KEY_PUT, key2, "Three".getBytes(StandardCharsets.UTF_8));
+		_checkRecord(listener.pollForNextConsequence(), 1L, Consequence.Type.TOPIC_CREATE, null, null);
+		_checkRecord(listener.pollForNextConsequence(), 2L, Consequence.Type.KEY_DELETE, key1, null);
+		_checkRecord(listener.pollForNextConsequence(), 3L, Consequence.Type.KEY_PUT, key2, "One".getBytes(StandardCharsets.UTF_8));
+		_checkRecord(listener.pollForNextConsequence(), 4L, Consequence.Type.KEY_PUT, key2, "Two".getBytes(StandardCharsets.UTF_8));
+		_checkRecord(listener.pollForNextConsequence(), 5L, Consequence.Type.KEY_PUT, key1, "Back".getBytes(StandardCharsets.UTF_8));
+		_checkRecord(listener.pollForNextConsequence(), 6L, Consequence.Type.KEY_DELETE, key2, null);
+		_checkRecord(listener.pollForNextConsequence(), 7L, Consequence.Type.KEY_PUT, key2, "Three".getBytes(StandardCharsets.UTF_8));
 		listener.close();
 		
 		// Shut down.
@@ -594,18 +593,18 @@ public class TestClientsAndListeners {
 		
 		// Start a listener and verify we see the create and both events from the stutter and the destroy.
 		try (ListenerConnection listener = ListenerConnection.open(address, topic, 0L)) {
-			EventRecord createEvent = listener.pollForNextEvent();
+			Consequence createEvent = listener.pollForNextConsequence();
 			Assert.assertEquals(1L, createEvent.globalOffset);
-			Assert.assertEquals(1L, createEvent.localOffset);
-			EventRecord stutter1 = listener.pollForNextEvent();
+			Assert.assertEquals(1L, createEvent.consequenceOffset);
+			Consequence stutter1 = listener.pollForNextConsequence();
 			Assert.assertEquals(2L, stutter1.globalOffset);
-			Assert.assertEquals(2L, stutter1.localOffset);
-			EventRecord stutter2 = listener.pollForNextEvent();
+			Assert.assertEquals(2L, stutter1.consequenceOffset);
+			Consequence stutter2 = listener.pollForNextConsequence();
 			Assert.assertEquals(2L, stutter2.globalOffset);
-			Assert.assertEquals(3L, stutter2.localOffset);
-			EventRecord destroyEvent = listener.pollForNextEvent();
+			Assert.assertEquals(3L, stutter2.consequenceOffset);
+			Consequence destroyEvent = listener.pollForNextConsequence();
 			Assert.assertEquals(3L, destroyEvent.globalOffset);
-			Assert.assertEquals(4L, destroyEvent.localOffset);
+			Assert.assertEquals(4L, destroyEvent.consequenceOffset);
 		}
 		
 		// Shut down.
@@ -642,14 +641,14 @@ public class TestClientsAndListeners {
 		return buffer.array();
 	}
 
-	private void _checkRecord(EventRecord event, long offset, EventRecordType type, byte[] key, byte[] value) {
+	private void _checkRecord(Consequence event, long offset, Consequence.Type type, byte[] key, byte[] value) {
 		Assert.assertEquals(offset, event.globalOffset);
 		Assert.assertEquals(type, event.type);
-		if (EventRecordType.KEY_PUT == type) {
+		if (Consequence.Type.KEY_PUT == type) {
 			Payload_KeyPut payload = (Payload_KeyPut)event.payload;
 			Assert.assertArrayEquals(key, payload.key);
 			Assert.assertArrayEquals(value, payload.value);
-		} else if (EventRecordType.KEY_DELETE == type) {
+		} else if (Consequence.Type.KEY_DELETE == type) {
 			Payload_KeyDelete payload = (Payload_KeyDelete)event.payload;
 			Assert.assertArrayEquals(key, payload.key);
 		}
@@ -673,13 +672,13 @@ public class TestClientsAndListeners {
 		@Override
 		public void run() {
 			try {
-				EventRecord record = this.listener.pollForNextEvent();
+				Consequence record = this.listener.pollForNextConsequence();
 				if (null == _message) {
 					// We expected failure.
 					Assert.assertNull(record);
 				} else {
 					// We only expect the one.
-					Assert.assertEquals(2L, record.localOffset);
+					Assert.assertEquals(2L, record.consequenceOffset);
 					Assert.assertArrayEquals(_message, ((Payload_KeyPut)record.payload).value);
 				}
 				_latch.countDown();

@@ -19,9 +19,8 @@ import com.jeffdisher.laminar.avm.ContractPackager;
 import com.jeffdisher.laminar.client.ClientConnection;
 import com.jeffdisher.laminar.client.ListenerConnection;
 import com.jeffdisher.laminar.types.CommitInfo;
+import com.jeffdisher.laminar.types.Consequence;
 import com.jeffdisher.laminar.types.TopicName;
-import com.jeffdisher.laminar.types.event.EventRecord;
-import com.jeffdisher.laminar.types.event.EventRecordType;
 import com.jeffdisher.laminar.types.payload.Payload_KeyPut;
 
 
@@ -168,8 +167,8 @@ public class TestWorkUnitManagerCluster {
 				try (ListenerConnection listener = ListenerConnection.open(server, topic, 0L)) {
 					int lastUnitObserved = 0;
 					while (lastUnitObserved < TOTAL_WORK) {
-						EventRecord record = listener.pollForNextEvent();
-						if (EventRecordType.KEY_PUT == record.type) {
+						Consequence record = listener.pollForNextConsequence();
+						if (Consequence.Type.KEY_PUT == record.type) {
 							lastUnitObserved = ByteBuffer.wrap(((Payload_KeyPut) record.payload).value).getInt();
 							// Set the next unit to be the one after what we just observed.
 							putNextUnit(lastUnitObserved + 1);

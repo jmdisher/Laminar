@@ -15,9 +15,8 @@ import com.jeffdisher.laminar.avm.ContractPackager;
 import com.jeffdisher.laminar.client.ClientConnection;
 import com.jeffdisher.laminar.client.ListenerConnection;
 import com.jeffdisher.laminar.types.CommitInfo;
+import com.jeffdisher.laminar.types.Consequence;
 import com.jeffdisher.laminar.types.TopicName;
-import com.jeffdisher.laminar.types.event.EventRecord;
-import com.jeffdisher.laminar.types.event.EventRecordType;
 import com.jeffdisher.laminar.types.payload.Payload_KeyPut;
 import com.jeffdisher.laminar.types.payload.Payload_TopicCreate;
 
@@ -55,10 +54,10 @@ public class TestSimpleDeploymentCluster {
 		}
 		
 		// Poll for events on both the leader and follower and see the programmable creation and the other event it writes.
-		EventRecord[] leaderEvent = _pollEvents(leaderAddress, topic, 2);
+		Consequence[] leaderEvent = _pollEvents(leaderAddress, topic, 2);
 		_verifyCreateEvent(leaderEvent[0], 1L, 2L, 1L, jar, args);
 		_verifyPutEvent(leaderEvent[1], 1L, 2L, 2L, args, new byte[] {0});
-		EventRecord[] followerEvent = _pollEvents(followerAddress, topic, 2);
+		Consequence[] followerEvent = _pollEvents(followerAddress, topic, 2);
 		_verifyCreateEvent(followerEvent[0], 1L, 2L, 1L, jar, args);
 		_verifyPutEvent(followerEvent[1], 1L, 2L, 2L, args, new byte[] {0});
 		
@@ -97,12 +96,12 @@ public class TestSimpleDeploymentCluster {
 		}
 		
 		// Poll for events on both the leader and follower and see the programmable creation and the other event it writes.
-		EventRecord[] leaderEvent = _pollEvents(leaderAddress, topic, 4);
+		Consequence[] leaderEvent = _pollEvents(leaderAddress, topic, 4);
 		_verifyCreateEvent(leaderEvent[0], 1L, 2L, 1L, jar, args);
 		_verifyPutEvent(leaderEvent[1], 1L, 2L, 2L, args, new byte[] {0});
 		_verifyPutEvent(leaderEvent[2], 1L, 3L, 3L, args, new byte[] {1});
 		_verifyPutEvent(leaderEvent[3], 1L, 4L, 4L, args, new byte[] {2});
-		EventRecord[] followerEvent = _pollEvents(followerAddress, topic, 4);
+		Consequence[] followerEvent = _pollEvents(followerAddress, topic, 4);
 		_verifyCreateEvent(followerEvent[0], 1L, 2L, 1L, jar, args);
 		_verifyPutEvent(followerEvent[1], 1L, 2L, 2L, args, new byte[] {0});
 		_verifyPutEvent(followerEvent[2], 1L, 3L, 3L, args, new byte[] {1});
@@ -114,11 +113,11 @@ public class TestSimpleDeploymentCluster {
 	}
 
 
-	private static EventRecord[] _pollEvents(InetSocketAddress serverAddress, TopicName topicName, int count) throws Throwable {
-		EventRecord[] events = new EventRecord[count];
+	private static Consequence[] _pollEvents(InetSocketAddress serverAddress, TopicName topicName, int count) throws Throwable {
+		Consequence[] events = new Consequence[count];
 		try (ListenerConnection listener = ListenerConnection.open(serverAddress, topicName, 0L)) {
 			for (int i = 0; i < count; ++i) {
-				events[i] = listener.pollForNextEvent();
+				events[i] = listener.pollForNextConsequence();
 			}
 		}
 		return events;
@@ -140,20 +139,20 @@ public class TestSimpleDeploymentCluster {
 		Assert.assertEquals(0, process.waitForTermination());
 	}
 
-	private void _verifyCreateEvent(EventRecord eventRecord, long termNumber, long mutationOffset, long eventOffset, byte[] code, byte[] arguments) {
-		Assert.assertEquals(EventRecordType.TOPIC_CREATE, eventRecord.type);
+	private void _verifyCreateEvent(Consequence eventRecord, long termNumber, long mutationOffset, long eventOffset, byte[] code, byte[] arguments) {
+		Assert.assertEquals(Consequence.Type.TOPIC_CREATE, eventRecord.type);
 		Assert.assertEquals(termNumber, eventRecord.termNumber);
 		Assert.assertEquals(mutationOffset, eventRecord.globalOffset);
-		Assert.assertEquals(eventOffset, eventRecord.localOffset);
+		Assert.assertEquals(eventOffset, eventRecord.consequenceOffset);
 		Assert.assertArrayEquals(code, ((Payload_TopicCreate)eventRecord.payload).code);
 		Assert.assertArrayEquals(arguments, ((Payload_TopicCreate)eventRecord.payload).arguments);
 	}
 
-	private void _verifyPutEvent(EventRecord eventRecord, long termNumber, long mutationOffset, long eventOffset, byte[] key, byte[] value) {
-		Assert.assertEquals(EventRecordType.KEY_PUT, eventRecord.type);
+	private void _verifyPutEvent(Consequence eventRecord, long termNumber, long mutationOffset, long eventOffset, byte[] key, byte[] value) {
+		Assert.assertEquals(Consequence.Type.KEY_PUT, eventRecord.type);
 		Assert.assertEquals(termNumber, eventRecord.termNumber);
 		Assert.assertEquals(mutationOffset, eventRecord.globalOffset);
-		Assert.assertEquals(eventOffset, eventRecord.localOffset);
+		Assert.assertEquals(eventOffset, eventRecord.consequenceOffset);
 		Assert.assertArrayEquals(key, ((Payload_KeyPut)eventRecord.payload).key);
 		Assert.assertArrayEquals(value, ((Payload_KeyPut)eventRecord.payload).value);
 	}

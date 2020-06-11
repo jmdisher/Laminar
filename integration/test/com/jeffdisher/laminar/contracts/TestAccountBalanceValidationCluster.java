@@ -20,9 +20,8 @@ import com.jeffdisher.laminar.avm.ContractPackager;
 import com.jeffdisher.laminar.client.ClientConnection;
 import com.jeffdisher.laminar.client.ListenerConnection;
 import com.jeffdisher.laminar.types.CommitInfo;
+import com.jeffdisher.laminar.types.Consequence;
 import com.jeffdisher.laminar.types.TopicName;
-import com.jeffdisher.laminar.types.event.EventRecord;
-import com.jeffdisher.laminar.types.event.EventRecordType;
 import com.jeffdisher.laminar.types.payload.Payload_KeyPut;
 
 
@@ -242,11 +241,11 @@ public class TestAccountBalanceValidationCluster {
 		@Override
 		public void run() {
 			try {
-				EventRecord record = _listener.pollForNextEvent();
+				Consequence record = _listener.pollForNextConsequence();
 				while(null != record) {
 					// If this is a PUT, decode it and update our projection.
 					synchronized (this) {
-						if (EventRecordType.KEY_PUT == record.type) {
+						if (Consequence.Type.KEY_PUT == record.type) {
 							byte[] accountKey = ((Payload_KeyPut)record.payload).key;
 							byte index = accountKey[0];
 							if (0 != index) {
@@ -261,7 +260,7 @@ public class TestAccountBalanceValidationCluster {
 							}
 						}
 					}
-					record = _listener.pollForNextEvent();
+					record = _listener.pollForNextConsequence();
 				}
 			} catch (InterruptedException e) {
 				Assert.fail(e.getMessage());

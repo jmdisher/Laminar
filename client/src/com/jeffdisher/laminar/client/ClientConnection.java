@@ -33,7 +33,7 @@ import com.jeffdisher.laminar.utils.UninterruptibleQueue;
  * -when a new client connects, it sends a CONNECT message, with a version number
  * -the server response with CONNECT_OK, and provides its current committed offset
  * -the client sends (SEND) messages with its self-assigned UUID and a monotonically increasing nonce (1-indexed)
- * -the server will respond (ACK) with the nonce, the corresponding global event offset of this message, and its current
+ * -the server will respond (ACK) with the nonce, the corresponding global mutation offset of this message, and its current
  *  committed offset
  * -once the server has decided to commit the message and run it, it will send a COMMIT with the nonce, corresponding
  *  result state (always SUCCESS except in the case of AVM execution which may be FAILED or EXCEPTION), and its current
@@ -44,9 +44,9 @@ import com.jeffdisher.laminar.utils.UninterruptibleQueue;
  * 
  * -when an existing client reconnects, it sends a RECONNECT message, with a version number, its existing UUID, and the
  *  last known commit offset from the server
- * -the server responds with a sequence of DURABLE messages with the nonce, corresponding global event offset, and
+ * -the server responds with a sequence of DURABLE messages with the nonce, corresponding global mutation offset, and
  *  result state of any committed messages which occur after the given commit offset (sent in-order)
- * -the server then sends a sequence of PENDING message with the nonce, and corresponding global event offset for any
+ * -the server then sends a sequence of PENDING message with the nonce, and corresponding global mutation offset for any
  *  messages after that which are still not yet committed (they will be communicated using normal COMMIT messages,
  *  later)
  * -once these streams have been sent, the server will send a RECONNECT_DONE message, providing its current committed

@@ -8,7 +8,7 @@ import avm.Blockchain;
  * individual clients.
  * Ignores the given key and looks only at the value, interpreting it as a big- endian 32-bit integer.
  * If this number is the next one expected (starts at 1), then it increments the next expected value, generates an
- * event, and returns success.  Otherwise, returns failure.
+ * consequence, and returns success.  Otherwise, returns failure.
  */
 public class WorkUnitManager {
 	private static int _nextWorkUnit = 1;
@@ -18,7 +18,7 @@ public class WorkUnitManager {
 		Blockchain.require(Integer.BYTES == value.length);
 		int proposedValue = _readInt(value);
 		
-		// Check if this was expected, generate the event (with the current value), and increment the counter.
+		// Check if this was expected, generate the consequence (with the current value), and increment the counter.
 		Blockchain.require(_nextWorkUnit == proposedValue);
 		Blockchain.putStorage(new byte[32], value);
 		_nextWorkUnit += 1;

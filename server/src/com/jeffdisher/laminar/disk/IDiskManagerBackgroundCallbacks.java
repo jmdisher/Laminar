@@ -3,8 +3,8 @@ package com.jeffdisher.laminar.disk;
 import java.util.function.Consumer;
 
 import com.jeffdisher.laminar.state.StateSnapshot;
+import com.jeffdisher.laminar.types.Consequence;
 import com.jeffdisher.laminar.types.TopicName;
-import com.jeffdisher.laminar.types.event.EventRecord;
 
 
 /**
@@ -21,12 +21,12 @@ public interface IDiskManagerBackgroundCallbacks {
 	void mainMutationWasCommitted(CommittedMutationRecord completed);
 
 	/**
-	 * A previously requested event commit operation has completed.
+	 * A previously requested consequence commit operation has completed.
 	 * 
-	 * @param topic The topic to which the event was committed.
+	 * @param topic The topic to which the consequence was committed.
 	 * @param completed The record which has now committed.
 	 */
-	void mainEventWasCommitted(TopicName topic, EventRecord completed);
+	void mainConsequenceWasCommitted(TopicName topic, Consequence completed);
 
 	/**
 	 * A previously requested mutation record has been fetched.
@@ -38,10 +38,10 @@ public interface IDiskManagerBackgroundCallbacks {
 	void mainMutationWasFetched(StateSnapshot snapshot, long previousMutationTermNumber, CommittedMutationRecord record);
 
 	/**
-	 * A previously requested event record has been fetched.
+	 * A previously requested consequence record has been fetched.
 	 * 
-	 * @param topic The topic from which the event was fetched.
+	 * @param topic The topic from which the consequence was fetched.
 	 * @param record The record which was fetched from storage.
 	 */
-	void mainEventWasFetched(TopicName topic, EventRecord record);
+	void mainConsequenceWasFetched(TopicName topic, Consequence record);
 }

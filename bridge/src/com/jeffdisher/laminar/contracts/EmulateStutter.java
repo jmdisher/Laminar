@@ -5,8 +5,8 @@ import avm.Blockchain;
 
 /**
  * A test contract which emulates the behaviour of the "STUTTER" test message when receiving a normal PUT:  generates
- * two of the same events.
- * Handles DELETE messages just as a single DELETE event.
+ * two of the same consequences.
+ * Handles DELETE messages just as a single DELETE consequence.
  */
 public class EmulateStutter {
 	public static byte[] main() {
@@ -15,7 +15,7 @@ public class EmulateStutter {
 		// (AVM requires that we use a 32-byte key).
 		byte[] value = Blockchain.getStorage(new byte[32]);
 		if (null != value) {
-			// This is a PUT so generate the 2 events.
+			// This is a PUT so generate the 2 consequences.
 			Blockchain.putStorage(key, value);
 			Blockchain.putStorage(key, value);
 		} else {

@@ -15,9 +15,8 @@ import com.jeffdisher.laminar.avm.ContractPackager;
 import com.jeffdisher.laminar.client.ClientConnection;
 import com.jeffdisher.laminar.client.ListenerConnection;
 import com.jeffdisher.laminar.types.CommitInfo;
+import com.jeffdisher.laminar.types.Consequence;
 import com.jeffdisher.laminar.types.TopicName;
-import com.jeffdisher.laminar.types.event.EventRecord;
-import com.jeffdisher.laminar.types.event.EventRecordType;
 import com.jeffdisher.laminar.types.payload.Payload_TopicCreate;
 
 
@@ -56,9 +55,9 @@ public class TestDoNothingCluster {
 		}
 		
 		// Poll for events on both the leader and follower and see the programmable creation.
-		EventRecord[] leaderEvent = _pollEvents(leaderAddress, topic, 1);
+		Consequence[] leaderEvent = _pollEvents(leaderAddress, topic, 1);
 		_verifyCreateEvent(leaderEvent[0], 1L, 2L, 1L, jar, args);
-		EventRecord[] followerEvent = _pollEvents(followerAddress, topic, 1);
+		Consequence[] followerEvent = _pollEvents(followerAddress, topic, 1);
 		_verifyCreateEvent(followerEvent[0], 1L, 2L, 1L, jar, args);
 		
 		// Shut down.
@@ -67,11 +66,11 @@ public class TestDoNothingCluster {
 	}
 
 
-	private static EventRecord[] _pollEvents(InetSocketAddress serverAddress, TopicName topicName, int count) throws Throwable {
-		EventRecord[] events = new EventRecord[count];
+	private static Consequence[] _pollEvents(InetSocketAddress serverAddress, TopicName topicName, int count) throws Throwable {
+		Consequence[] events = new Consequence[count];
 		try (ListenerConnection listener = ListenerConnection.open(serverAddress, topicName, 0L)) {
 			for (int i = 0; i < count; ++i) {
-				events[i] = listener.pollForNextEvent();
+				events[i] = listener.pollForNextConsequence();
 			}
 		}
 		return events;
@@ -93,11 +92,11 @@ public class TestDoNothingCluster {
 		Assert.assertEquals(0, process.waitForTermination());
 	}
 
-	private void _verifyCreateEvent(EventRecord eventRecord, long termNumber, long mutationOffset, long eventOffset, byte[] code, byte[] arguments) {
-		Assert.assertEquals(EventRecordType.TOPIC_CREATE, eventRecord.type);
+	private void _verifyCreateEvent(Consequence eventRecord, long termNumber, long mutationOffset, long eventOffset, byte[] code, byte[] arguments) {
+		Assert.assertEquals(Consequence.Type.TOPIC_CREATE, eventRecord.type);
 		Assert.assertEquals(termNumber, eventRecord.termNumber);
 		Assert.assertEquals(mutationOffset, eventRecord.globalOffset);
-		Assert.assertEquals(eventOffset, eventRecord.localOffset);
+		Assert.assertEquals(eventOffset, eventRecord.consequenceOffset);
 		Assert.assertArrayEquals(code, ((Payload_TopicCreate)eventRecord.payload).code);
 		Assert.assertArrayEquals(arguments, ((Payload_TopicCreate)eventRecord.payload).arguments);
 	}

@@ -11,9 +11,8 @@ import org.junit.Test;
 import com.jeffdisher.laminar.avm.AvmBridge;
 import com.jeffdisher.laminar.avm.ContractPackager;
 import com.jeffdisher.laminar.avm.TopicContext;
+import com.jeffdisher.laminar.types.Consequence;
 import com.jeffdisher.laminar.types.TopicName;
-import com.jeffdisher.laminar.types.event.EventRecord;
-import com.jeffdisher.laminar.types.event.EventRecordType;
 import com.jeffdisher.laminar.types.payload.Payload_KeyPut;
 
 
@@ -33,7 +32,7 @@ public class TestBalanceValidation {
 		AvmBridge bridge = new AvmBridge();
 		
 		TopicContext context = new TopicContext();
-		List<EventRecord> records = bridge.runCreate(context, termNumber, globalOffset, initialLocalOffset, clientId, clientNonce, topic, code, arguments);
+		List<Consequence> records = bridge.runCreate(context, termNumber, globalOffset, initialLocalOffset, clientId, clientNonce, topic, code, arguments);
 		Assert.assertEquals(0, records.size());
 		Assert.assertNotNull(context.transformedCode);
 		Assert.assertNotNull(context.objectGraph);
@@ -57,8 +56,8 @@ public class TestBalanceValidation {
 		// Create the mint for account1.
 		int account1Balance = 100;
 		byte[] mintAccount1 = _packagePut(account1, 0L, account1Balance, 0, 0);
-		List<EventRecord> records = server.put(clientId, clientNonce, bank, mintAccount1);
-		// We don't see the bank send the money - just the account receive it and the transfer event.
+		List<Consequence> records = server.put(clientId, clientNonce, bank, mintAccount1);
+		// We don't see the bank send the money - just the account receive it and the transfer consequence.
 		Assert.assertEquals(2, records.size());
 		clientNonce += 1;
 		
@@ -89,8 +88,8 @@ public class TestBalanceValidation {
 		// Create the mint for account1.
 		int account1Balance = 100;
 		byte[] mintAccount1 = _packagePut(account1, 0L, account1Balance, 0, 0);
-		List<EventRecord> records = server.put(clientId, clientNonce, bank, mintAccount1);
-		// We don't see the bank send the money - just the account receive it and the transfer event.
+		List<Consequence> records = server.put(clientId, clientNonce, bank, mintAccount1);
+		// We don't see the bank send the money - just the account receive it and the transfer consequence.
 		Assert.assertEquals(2, records.size());
 		clientNonce += 1;
 		
@@ -127,7 +126,7 @@ public class TestBalanceValidation {
 		AvmBridge bridge = new AvmBridge();
 		
 		TopicContext context = new TopicContext();
-		List<EventRecord> records = bridge.runCreate(context, termNumber, globalOffset, initialLocalOffset, clientId, clientNonce, topic, code, arguments);
+		List<Consequence> records = bridge.runCreate(context, termNumber, globalOffset, initialLocalOffset, clientId, clientNonce, topic, code, arguments);
 		Assert.assertEquals(0, records.size());
 		Assert.assertNotNull(context.transformedCode);
 		Assert.assertNotNull(context.objectGraph);
@@ -161,8 +160,8 @@ public class TestBalanceValidation {
 		// Create the mint for account1.
 		int account1Balance = 1000;
 		byte[] mintAccount1 = _packagePut(account1, 0L, account1Balance, 0, 0);
-		List<EventRecord> records = server.put(clientId, clientNonce, bank, mintAccount1);
-		// We don't see the bank send the money - just the account receive it and the transfer event.
+		List<Consequence> records = server.put(clientId, clientNonce, bank, mintAccount1);
+		// We don't see the bank send the money - just the account receive it and the transfer consequence.
 		Assert.assertEquals(2, records.size());
 		_checkBalance(records.get(0), account1, 1000);
 		_checkTransfer(records.get(1), 1000);
@@ -257,8 +256,8 @@ public class TestBalanceValidation {
 		// Create the mint for account1.
 		int account1Balance = 1000;
 		byte[] mintAccount1 = _packagePut(account1, 0L, account1Balance, 0, 0);
-		List<EventRecord> records = server.put(clientId, clientNonce, bank, mintAccount1);
-		// We don't see the bank send the money - just the account receive it and the transfer event.
+		List<Consequence> records = server.put(clientId, clientNonce, bank, mintAccount1);
+		// We don't see the bank send the money - just the account receive it and the transfer consequence.
 		Assert.assertEquals(2, records.size());
 		_checkBalance(records.get(0), account1, 1000);
 		_checkTransfer(records.get(1), 1000);
@@ -318,14 +317,14 @@ public class TestBalanceValidation {
 		return key;
 	}
 
-	private void _checkBalance(EventRecord eventRecord, byte[] account, int balance) {
-		Assert.assertEquals(EventRecordType.KEY_PUT, eventRecord.type);
+	private void _checkBalance(Consequence eventRecord, byte[] account, int balance) {
+		Assert.assertEquals(Consequence.Type.KEY_PUT, eventRecord.type);
 		Assert.assertArrayEquals(account, ((Payload_KeyPut)eventRecord.payload).key);
 		Assert.assertArrayEquals(ByteBuffer.allocate(Integer.BYTES).putInt(balance).array(), ((Payload_KeyPut)eventRecord.payload).value);
 	}
 
-	private void _checkTransfer(EventRecord eventRecord, int balance) {
-		Assert.assertEquals(EventRecordType.KEY_PUT, eventRecord.type);
+	private void _checkTransfer(Consequence eventRecord, int balance) {
+		Assert.assertEquals(Consequence.Type.KEY_PUT, eventRecord.type);
 		Assert.assertArrayEquals(new byte[32], ((Payload_KeyPut)eventRecord.payload).key);
 		Assert.assertArrayEquals(ByteBuffer.allocate(Integer.BYTES).putInt(balance).array(), ((Payload_KeyPut)eventRecord.payload).value);
 	}
@@ -352,7 +351,7 @@ public class TestBalanceValidation {
 			
 			byte[] code = ContractPackager.createJarForClass(AccountBalanceValidation.class);
 			byte[] arguments = ByteBuffer.allocate(Short.BYTES).putShort(CACHE_SIZE).array();
-			List<EventRecord> records = _bridge.runCreate(_context, TERM_NUMBER, _nextGlobalOffset, _nextLocalOffset, clientId, clientNonce, _topic, code, arguments);
+			List<Consequence> records = _bridge.runCreate(_context, TERM_NUMBER, _nextGlobalOffset, _nextLocalOffset, clientId, clientNonce, _topic, code, arguments);
 			Assert.assertEquals(0, records.size());
 			Assert.assertNotNull(_context.transformedCode);
 			Assert.assertNotNull(_context.objectGraph);
@@ -360,8 +359,8 @@ public class TestBalanceValidation {
 			_nextLocalOffset += records.size();
 		}
 		
-		public List<EventRecord> put(UUID clientId, long clientNonce, byte[] senderKey, byte[] payload) {
-			List<EventRecord> records = _bridge.runPut(_context, TERM_NUMBER, _nextGlobalOffset, _nextLocalOffset, clientId, clientNonce, _topic, senderKey, payload);
+		public List<Consequence> put(UUID clientId, long clientNonce, byte[] senderKey, byte[] payload) {
+			List<Consequence> records = _bridge.runPut(_context, TERM_NUMBER, _nextGlobalOffset, _nextLocalOffset, clientId, clientNonce, _topic, senderKey, payload);
 			_nextGlobalOffset += 1;
 			_nextLocalOffset += (null != records)
 					? records.size()

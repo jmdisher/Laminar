@@ -30,7 +30,7 @@ public enum MutationRecordType {
 	 */
 	CONFIG_CHANGE,
 	/**
-	 * The payload for this is the same as PUT.  The unique thing about this is that executing it creates 2 PUT events.
+	 * The payload for this is the same as PUT.  The unique thing about this is that executing it creates 2 PUT consequences.
 	 */
 	STUTTER,
 }

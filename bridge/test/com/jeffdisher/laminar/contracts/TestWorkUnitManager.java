@@ -11,8 +11,8 @@ import org.junit.Test;
 import com.jeffdisher.laminar.avm.AvmBridge;
 import com.jeffdisher.laminar.avm.ContractPackager;
 import com.jeffdisher.laminar.avm.TopicContext;
+import com.jeffdisher.laminar.types.Consequence;
 import com.jeffdisher.laminar.types.TopicName;
-import com.jeffdisher.laminar.types.event.EventRecord;
 import com.jeffdisher.laminar.types.payload.Payload_KeyPut;
 
 
@@ -31,7 +31,7 @@ public class TestWorkUnitManager {
 		AvmBridge bridge = new AvmBridge();
 		
 		TopicContext context = new TopicContext();
-		List<EventRecord> records = bridge.runCreate(context, termNumber, globalOffset, initialLocalOffset, clientId, clientNonce, topic, code, new byte[0]);
+		List<Consequence> records = bridge.runCreate(context, termNumber, globalOffset, initialLocalOffset, clientId, clientNonce, topic, code, new byte[0]);
 		Assert.assertEquals(0, records.size());
 		Assert.assertNotNull(context.transformedCode);
 		Assert.assertNotNull(context.objectGraph);
@@ -48,7 +48,7 @@ public class TestWorkUnitManager {
 		clientNonce += 1;
 		
 		// Show a failure for 0 or 2 since 1 is expected.
-		List<EventRecord> records = server.count(clientId, clientNonce, 0);
+		List<Consequence> records = server.count(clientId, clientNonce, 0);
 		Assert.assertNull(records);
 		records = server.count(clientId, clientNonce, 2);
 		Assert.assertNull(records);
@@ -84,7 +84,7 @@ public class TestWorkUnitManager {
 			_nextLocalOffset = 1;
 			
 			byte[] code = ContractPackager.createJarForClass(WorkUnitManager.class);
-			List<EventRecord> records = _bridge.runCreate(_context, TERM_NUMBER, _nextGlobalOffset, _nextLocalOffset, clientId, clientNonce, _topic, code, new byte[0]);
+			List<Consequence> records = _bridge.runCreate(_context, TERM_NUMBER, _nextGlobalOffset, _nextLocalOffset, clientId, clientNonce, _topic, code, new byte[0]);
 			Assert.assertEquals(0, records.size());
 			Assert.assertNotNull(_context.transformedCode);
 			Assert.assertNotNull(_context.objectGraph);
@@ -92,8 +92,8 @@ public class TestWorkUnitManager {
 			_nextLocalOffset += records.size();
 		}
 		
-		public List<EventRecord> count(UUID clientId, long clientNonce, int numberToRequest) {
-			List<EventRecord> records = _bridge.runPut(_context, TERM_NUMBER, _nextGlobalOffset, _nextLocalOffset, clientId, clientNonce, _topic, new byte[32], ByteBuffer.allocate(Integer.BYTES).putInt(numberToRequest).array());
+		public List<Consequence> count(UUID clientId, long clientNonce, int numberToRequest) {
+			List<Consequence> records = _bridge.runPut(_context, TERM_NUMBER, _nextGlobalOffset, _nextLocalOffset, clientId, clientNonce, _topic, new byte[32], ByteBuffer.allocate(Integer.BYTES).putInt(numberToRequest).array());
 			_nextGlobalOffset += 1;
 			_nextLocalOffset += (null != records)
 					? records.size()

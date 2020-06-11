@@ -15,9 +15,8 @@ import com.jeffdisher.laminar.avm.ContractPackager;
 import com.jeffdisher.laminar.client.ClientConnection;
 import com.jeffdisher.laminar.client.ListenerConnection;
 import com.jeffdisher.laminar.types.CommitInfo;
+import com.jeffdisher.laminar.types.Consequence;
 import com.jeffdisher.laminar.types.TopicName;
-import com.jeffdisher.laminar.types.event.EventRecord;
-import com.jeffdisher.laminar.types.event.EventRecordType;
 import com.jeffdisher.laminar.types.payload.Payload_KeyDelete;
 import com.jeffdisher.laminar.types.payload.Payload_KeyPut;
 import com.jeffdisher.laminar.types.payload.Payload_TopicCreate;
@@ -65,11 +64,11 @@ public class TestEvenMutationOffsetOnlyCluster {
 		}
 		
 		// Poll for events on both the leader and follower:  creation, DELETE, PUT.
-		EventRecord[] leaderEvents = _pollEvents(leaderAddress, topic, 3);
+		Consequence[] leaderEvents = _pollEvents(leaderAddress, topic, 3);
 		_verifyCreateEvent(leaderEvents[0], 1L, 2L, 1L, jar, args);
 		_verifyDeleteEvent(leaderEvents[1], 1L, 4L, 2L, key);
 		_verifyPutEvent(leaderEvents[2], 1L, 6L, 3L, key, value1);
-		EventRecord[] followerEvents = _pollEvents(followerAddress, topic, 3);
+		Consequence[] followerEvents = _pollEvents(followerAddress, topic, 3);
 		_verifyCreateEvent(followerEvents[0], 1L, 2L, 1L, jar, args);
 		_verifyDeleteEvent(followerEvents[1], 1L, 4L, 2L, key);
 		_verifyPutEvent(followerEvents[2], 1L, 6L, 3L, key, value1);
@@ -80,11 +79,11 @@ public class TestEvenMutationOffsetOnlyCluster {
 	}
 
 
-	private static EventRecord[] _pollEvents(InetSocketAddress serverAddress, TopicName topicName, int count) throws Throwable {
-		EventRecord[] events = new EventRecord[count];
+	private static Consequence[] _pollEvents(InetSocketAddress serverAddress, TopicName topicName, int count) throws Throwable {
+		Consequence[] events = new Consequence[count];
 		try (ListenerConnection listener = ListenerConnection.open(serverAddress, topicName, 0L)) {
 			for (int i = 0; i < count; ++i) {
-				events[i] = listener.pollForNextEvent();
+				events[i] = listener.pollForNextConsequence();
 			}
 		}
 		return events;
@@ -106,29 +105,29 @@ public class TestEvenMutationOffsetOnlyCluster {
 		Assert.assertEquals(0, process.waitForTermination());
 	}
 
-	private void _verifyCreateEvent(EventRecord eventRecord, long termNumber, long mutationOffset, long eventOffset, byte[] code, byte[] arguments) {
-		Assert.assertEquals(EventRecordType.TOPIC_CREATE, eventRecord.type);
+	private void _verifyCreateEvent(Consequence eventRecord, long termNumber, long mutationOffset, long eventOffset, byte[] code, byte[] arguments) {
+		Assert.assertEquals(Consequence.Type.TOPIC_CREATE, eventRecord.type);
 		Assert.assertEquals(termNumber, eventRecord.termNumber);
 		Assert.assertEquals(mutationOffset, eventRecord.globalOffset);
-		Assert.assertEquals(eventOffset, eventRecord.localOffset);
+		Assert.assertEquals(eventOffset, eventRecord.consequenceOffset);
 		Assert.assertArrayEquals(code, ((Payload_TopicCreate)eventRecord.payload).code);
 		Assert.assertArrayEquals(arguments, ((Payload_TopicCreate)eventRecord.payload).arguments);
 	}
 
-	private void _verifyPutEvent(EventRecord eventRecord, long termNumber, long mutationOffset, long eventOffset, byte[] key, byte[] value) {
-		Assert.assertEquals(EventRecordType.KEY_PUT, eventRecord.type);
+	private void _verifyPutEvent(Consequence eventRecord, long termNumber, long mutationOffset, long eventOffset, byte[] key, byte[] value) {
+		Assert.assertEquals(Consequence.Type.KEY_PUT, eventRecord.type);
 		Assert.assertEquals(termNumber, eventRecord.termNumber);
 		Assert.assertEquals(mutationOffset, eventRecord.globalOffset);
-		Assert.assertEquals(eventOffset, eventRecord.localOffset);
+		Assert.assertEquals(eventOffset, eventRecord.consequenceOffset);
 		Assert.assertArrayEquals(key, ((Payload_KeyPut)eventRecord.payload).key);
 		Assert.assertArrayEquals(value, ((Payload_KeyPut)eventRecord.payload).value);
 	}
 
-	private void _verifyDeleteEvent(EventRecord eventRecord, long termNumber, long mutationOffset, long eventOffset, byte[] key) {
-		Assert.assertEquals(EventRecordType.KEY_DELETE, eventRecord.type);
+	private void _verifyDeleteEvent(Consequence eventRecord, long termNumber, long mutationOffset, long eventOffset, byte[] key) {
+		Assert.assertEquals(Consequence.Type.KEY_DELETE, eventRecord.type);
 		Assert.assertEquals(termNumber, eventRecord.termNumber);
 		Assert.assertEquals(mutationOffset, eventRecord.globalOffset);
-		Assert.assertEquals(eventOffset, eventRecord.localOffset);
+		Assert.assertEquals(eventOffset, eventRecord.consequenceOffset);
 		Assert.assertArrayEquals(key, ((Payload_KeyDelete)eventRecord.payload).key);
 	}
 }

@@ -49,7 +49,7 @@ public class ListenerManager {
 		long offsetToFetch = -1L;
 		if (shouldFetch) {
 			if (_lastCommittedOffsetsByTopic.getOrDefault(listener.topic, 0L) >= nextLocalOffset) {
-				// This event does exist on disk so we can fetch it.
+				// This consequence does exist on disk so we can fetch it.
 				offsetToFetch = nextLocalOffset;
 			}
 		}
@@ -75,13 +75,13 @@ public class ListenerManager {
 	}
 
 	/**
-	 * Removes all writable listeners waiting on this event to become available and returns them.
+	 * Removes all writable listeners waiting on this consequence to become available and returns them.
 	 * 
-	 * @param topic The topic where the event was posted.
-	 * @param localOffset The offset of the event within that topic.
-	 * @return The set of all listeners who are ready to receive the event.
+	 * @param topic The topic where the consequence was posted.
+	 * @param localOffset The offset of the consequence within that topic.
+	 * @return The set of all listeners who are ready to receive the consequence.
 	 */
-	public Set<ListenerState> eventBecameAvailable(TopicName topic, long localOffset) {
+	public Set<ListenerState> consequenceBecameAvailable(TopicName topic, long localOffset) {
 		if (_lastCommittedOffsetsByTopic.getOrDefault(topic, 0L) < localOffset) {
 			_lastCommittedOffsetsByTopic.put(topic, localOffset);
 		}

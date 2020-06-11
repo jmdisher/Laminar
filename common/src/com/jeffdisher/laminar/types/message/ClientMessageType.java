@@ -56,8 +56,8 @@ public enum ClientMessageType {
 	 */
 	POISON,
 	/**
-	 * This message is just to test mapping a mutation to multiple events.  It is converted into a STUTTER mutation but
-	 * that converts to 2 PUT events.
+	 * This message is just to test mapping a mutation to multiple consequences.  It is converted into a STUTTER mutation but
+	 * that converts to 2 PUT consequences.
 	 */
 	STUTTER,
 	/**

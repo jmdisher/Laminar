@@ -22,8 +22,8 @@ import com.jeffdisher.laminar.network.IClusterManagerCallbacks;
 import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.types.CommitInfo;
 import com.jeffdisher.laminar.types.ConfigEntry;
+import com.jeffdisher.laminar.types.Consequence;
 import com.jeffdisher.laminar.types.TopicName;
-import com.jeffdisher.laminar.types.event.EventRecord;
 import com.jeffdisher.laminar.types.message.ClientMessage;
 import com.jeffdisher.laminar.types.message.ClientMessageType;
 import com.jeffdisher.laminar.types.mutation.MutationRecord;
@@ -73,7 +73,6 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 	private long _lastTermNumberRemovedFromInFlight;
 
 	// Tracking of in-flight mutations ready to be committed when the cluster agrees.
-	// (note that the Events are synthesized from these mutations at the point of commit and _nextLocalEventOffset is updated then)
 	private InFlightMutations _inFlightMutations;
 
 	// Information related to the state of the main execution thread.
@@ -222,14 +221,14 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 	}
 
 	@Override
-	public void mainRequestEventFetch(TopicName topic, long nextLocalEventToFetch) {
+	public void mainRequestConsequenceFetch(TopicName topic, long nextLocalEventToFetch) {
 		// Called on main thread.
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		// This should not be a synthetic event (they are never stored).
 		Assert.assertTrue(topic.string.length() > 0);
 		// Events are 1-indexed, within a topic.
 		Assert.assertTrue(nextLocalEventToFetch > 0L);
-		_diskManager.fetchEvent(topic, nextLocalEventToFetch);
+		_diskManager.fetchConsequence(topic, nextLocalEventToFetch);
 	}
 
 	@Override
@@ -420,7 +419,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 	}
 
 	@Override
-	public void mainEventWasCommitted(TopicName topic, EventRecord completed) {
+	public void mainConsequenceWasCommitted(TopicName topic, Consequence completed) {
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		// See if any listeners want this.
 		_clientManager.mainSendRecordToListeners(topic, completed);
@@ -438,7 +437,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 	}
 
 	@Override
-	public void mainEventWasFetched(TopicName topic, EventRecord record) {
+	public void mainConsequenceWasFetched(TopicName topic, Consequence record) {
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		// See what listeners requested this.
 		_clientManager.mainSendRecordToListeners(topic, record);
@@ -562,10 +561,10 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		return _selfState.lastMutationOffsetReceived;
 	}
 
-	private void _commit(MutationRecord mutation, CommitInfo.Effect effect, TopicName topic, List<EventRecord> events) {
+	private void _commit(MutationRecord mutation, CommitInfo.Effect effect, TopicName topic, List<Consequence> events) {
 		// (note that the event is null for certain meta-messages like UPDATE_CONFIG).
-		for (EventRecord event : events) {
-			_diskManager.commitEvent(topic, event);
+		for (Consequence event : events) {
+			_diskManager.commitConsequence(topic, event);
 		}
 		CommittedMutationRecord committedMutationRecord = CommittedMutationRecord.create(mutation, effect);
 		// TODO:  We probably want to lock-step the mutation on the event commit since we will be able to detect the broken data, that way, and replay it.
@@ -780,6 +779,6 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 	private void _executeAndCommit(MutationRecord mutation) {
 		TopicName topic = mutation.topic;
 		MutationExecutor.ExecutionResult result = _mutationExecutor.execute(mutation);
-		_commit(mutation, result.effect, topic, result.events);
+		_commit(mutation, result.effect, topic, result.consequences);
 	}
 }

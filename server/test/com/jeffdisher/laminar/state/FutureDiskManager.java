@@ -4,8 +4,8 @@ import org.junit.Assert;
 
 import com.jeffdisher.laminar.disk.CommittedMutationRecord;
 import com.jeffdisher.laminar.disk.IDiskManager;
+import com.jeffdisher.laminar.types.Consequence;
 import com.jeffdisher.laminar.types.TopicName;
-import com.jeffdisher.laminar.types.event.EventRecord;
 
 
 /**
@@ -14,7 +14,7 @@ import com.jeffdisher.laminar.types.event.EventRecord;
  */
 public class FutureDiskManager implements IDiskManager {
 	private F<CommittedMutationRecord> f_commitMutation;
-	private F<EventRecord> f_commitEvent;
+	private F<Consequence> f_commitEvent;
 
 	public F<CommittedMutationRecord> get_commitMutation() {
 		F<CommittedMutationRecord> future = new F<>();
@@ -30,9 +30,9 @@ public class FutureDiskManager implements IDiskManager {
 		return future;
 	}
 
-	public F<EventRecord> get_commitEvent() {
+	public F<Consequence> get_commitEvent() {
 		Assert.assertNull(f_commitEvent);
-		f_commitEvent = new F<EventRecord>();
+		f_commitEvent = new F<Consequence>();
 		return f_commitEvent;
 	}
 
@@ -41,7 +41,7 @@ public class FutureDiskManager implements IDiskManager {
 		System.out.println("IDiskManager - fetchMutation");
 	}
 	@Override
-	public void fetchEvent(TopicName topic, long eventToFetch) {
+	public void fetchConsequence(TopicName topic, long eventToFetch) {
 		System.out.println("IDiskManager - fetchEvent");
 	}
 	@Override
@@ -54,7 +54,7 @@ public class FutureDiskManager implements IDiskManager {
 		}
 	}
 	@Override
-	public void commitEvent(TopicName topic, EventRecord event) {
+	public void commitConsequence(TopicName topic, Consequence event) {
 		if (null != f_commitEvent) {
 			f_commitEvent.put(event);
 			f_commitEvent = f_commitEvent.nextLink;

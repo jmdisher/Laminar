@@ -14,8 +14,8 @@ import com.jeffdisher.laminar.network.IClusterManagerCallbacks;
 import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.types.CommitInfo;
 import com.jeffdisher.laminar.types.ConfigEntry;
+import com.jeffdisher.laminar.types.Consequence;
 import com.jeffdisher.laminar.types.TopicName;
-import com.jeffdisher.laminar.types.event.EventRecord;
 import com.jeffdisher.laminar.types.message.ClientMessage;
 import com.jeffdisher.laminar.types.mutation.MutationRecord;
 import com.jeffdisher.laminar.types.payload.Payload_KeyPut;
@@ -58,7 +58,7 @@ public class TestNodeState {
 		
 		// Send the ClientMessage.
 		F<CommittedMutationRecord> mutation = test.diskManager.get_commitMutation();
-		F<EventRecord> event = test.diskManager.get_commitEvent();
+		F<Consequence> event = test.diskManager.get_commitEvent();
 		mutationNumber = runner.run((snapshot) -> test.nodeState.mainHandleValidClientMessage(UUID.randomUUID(), ClientMessage.put(2L, topic, new byte[0], new byte[] {1})));
 		Assert.assertEquals(2L, mutationNumber);
 		Assert.assertEquals(mutationNumber, mutation.get().record.globalOffset);

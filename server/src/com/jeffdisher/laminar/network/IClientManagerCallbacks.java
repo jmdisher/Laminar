@@ -35,7 +35,7 @@ public interface IClientManagerCallbacks {
 	 */
 	MutationRecord mainClientFetchMutationIfAvailable(long mutationOffset);
 
-	void mainRequestEventFetch(TopicName topic, long nextLocalEventToFetch);
+	void mainRequestConsequenceFetch(TopicName topic, long nextLocalConsequenceToFetch);
 
 	/**
 	 * A testing method to force the node to start an election in response to a testing message.
