@@ -54,13 +54,18 @@ public class TestUninterruptibleQueue {
 	@Test
 	public void testPriority() throws Throwable {
 		Throwable[] error = new Throwable[1];
-		CountDownLatch latch = new CountDownLatch(1);
+		// We use these latches to ensure that the threads interact with the queue at predictable times.
+		CountDownLatch latch1 = new CountDownLatch(1);
+		CountDownLatch latch2 = new CountDownLatch(1);
 		UninterruptibleQueue<Integer> queue = new UninterruptibleQueue<>();
 		Thread thread = new Thread(() -> {
 			try {
 				queue.blockingGet().accept(0);
+				// This will unblock main to enqueue the high-priority.
+				latch1.countDown();
 				try {
-					latch.await();
+					// Wait until the main enqueues the high-priority.
+					latch2.await();
 				} catch (InterruptedException e) {
 					org.junit.Assert.fail();
 				}
@@ -73,8 +78,11 @@ public class TestUninterruptibleQueue {
 		thread.start();
 		queue.put((i) -> org.junit.Assert.assertEquals(0, i.intValue()));
 		queue.put((i) -> org.junit.Assert.assertEquals(2, i.intValue()));
+		// We can't enqueue the high-priority until the background has consumed the first element.
+		latch1.await();
 		queue.putPriority((i) -> org.junit.Assert.assertEquals(1, i.intValue()), 0L);
-		latch.countDown();
+		// Now that we have added the high-priority, unblock the background so they can reliably consume it.
+		latch2.countDown();
 		thread.join();
 		org.junit.Assert.assertNull(error[0]);
 	}
