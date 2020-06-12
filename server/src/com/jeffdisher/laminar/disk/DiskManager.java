@@ -182,7 +182,8 @@ public class DiskManager implements IDiskManager {
 			else if (null != work.commitConsequence) {
 				TopicName topic = work.commitConsequence.topic;
 				Consequence record = work.commitConsequence.consequence;
-				getOrCreateTopicList(topic).add(record);
+				boolean shouldTryCreate = (Consequence.Type.TOPIC_CREATE == record.type);
+				getOrCreateTopicList(topic, shouldTryCreate).add(record);
 				_callbackTarget.ioEnqueueDiskCommandForMainThread((snapshot) -> _callbackTarget.mainConsequenceWasCommitted(topic, record));
 			}
 			else if (0L != work.fetchIntention) {
@@ -205,7 +206,7 @@ public class DiskManager implements IDiskManager {
 			else if (null != work.fetchConsequence) {
 				TopicName topic = work.fetchConsequence.topic;
 				int offset = (int) work.fetchConsequence.offset;
-				List<Consequence> topicStore = getOrCreateTopicList(topic);
+				List<Consequence> topicStore = getOrCreateTopicList(topic, false);
 				// These indexing errors should be intercepted at a higher level, before we get to the disk.
 				Assert.assertTrue(offset < topicStore.size());
 				Consequence record = topicStore.get(offset);
@@ -239,10 +240,10 @@ public class DiskManager implements IDiskManager {
 		return todo;
 	}
 
-	private List<Consequence> getOrCreateTopicList(TopicName topic) {
-		// TODO:  Change this when event topics are no longer implicitly created.
+	private List<Consequence> getOrCreateTopicList(TopicName topic, boolean tryCreate) {
+		// Note that topics aren't removed from disk when destroyed so the create may be recreating something already there.
 		List<Consequence> list = _committedConsequenceVirtualDisk.get(topic);
-		if (null == list) {
+		if ((null == list) && tryCreate) {
 			list = new LinkedList<>();
 			_committedConsequenceVirtualDisk.put(topic, list);
 			// (we introduce a null to all virtual disk extents since they must be 1-indexed)

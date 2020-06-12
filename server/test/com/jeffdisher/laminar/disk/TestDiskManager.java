@@ -36,7 +36,7 @@ public class TestDiskManager {
 	@Test
 	public void testSimpleWriteAndFetch() throws Throwable {
 		TopicName topic = TopicName.fromString("fake");
-		Consequence event1 = Consequence.put(1L, 1L, 1L, UUID.randomUUID(), 1L, new byte[0], new byte[] {1});
+		Consequence event1 = Consequence.createTopic(1L, 1L, 1L, UUID.randomUUID(), 1L, new byte[0], new byte[] {1});
 		Consequence event2 = Consequence.put(1L, 2L, 2L, UUID.randomUUID(), 2L, new byte[0], new byte[] {1});
 		LatchedCallbacks callbacks = new LatchedCallbacks();
 		DiskManager manager = new DiskManager(_folder.newFolder(), callbacks);
@@ -61,7 +61,7 @@ public class TestDiskManager {
 		TopicName topic = TopicName.fromString("fake");
 		Intention mutation1 = Intention.put(1L, 1L, topic, UUID.randomUUID(), 1L, new byte[0], new byte[] {1});
 		Intention mutation2 = Intention.put(1L, 2L, topic, UUID.randomUUID(), 2L, new byte[0], new byte[] {1});
-		Consequence event1 = Consequence.put(1L, 1L, 1L, UUID.randomUUID(), 1L, new byte[0], new byte[] {1});
+		Consequence event1 = Consequence.createTopic(1L, 1L, 1L, UUID.randomUUID(), 1L, new byte[0], new byte[] {1});
 		Consequence event2 = Consequence.put(1L, 2L, 2L, UUID.randomUUID(), 2L, new byte[0], new byte[] {1});
 		
 		LatchedCallbacks callbacks = new LatchedCallbacks();
