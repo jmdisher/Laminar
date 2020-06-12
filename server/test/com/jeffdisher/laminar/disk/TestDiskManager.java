@@ -135,6 +135,51 @@ public class TestDiskManager {
 		}
 	}
 
+	/**
+	 * Write a few consequences and verify that they look correct on-disk.
+	 */
+	@Test
+	public void testWritingConsequences() throws Throwable {
+		File directory = _folder.newFolder();
+		TopicName topic = TopicName.fromString("fake");
+		Consequence consequence1 = Consequence.createTopic(1L, 1L, 1L, UUID.randomUUID(), 1L, new byte[0], new byte[] {1});
+		Consequence consequence2 = Consequence.put(1L, 2L, 2L, UUID.randomUUID(), 2L, new byte[0], new byte[] {1});
+		
+		LatchedCallbacks callbacks = new LatchedCallbacks();
+		DiskManager manager = new DiskManager(directory, callbacks);
+		manager.startAndWaitForReady();
+		
+		manager.commitConsequence(topic, consequence1);
+		while (callbacks.commitEventCount < 1) { callbacks.runOneCommand(); }
+		manager.commitConsequence(topic, consequence2);
+		while (callbacks.commitEventCount < 2) { callbacks.runOneCommand(); }
+		manager.stopAndWaitForTermination();
+		
+		byte[] serialized1 = consequence1.serialize();
+		byte[] serialized2 = consequence2.serialize();
+		File logFile = new File(new File(new File(directory, DiskManager.CONSEQUENCE_TOPICS_DIRECTORY_NAME), topic.string), DiskManager.LOG_FILE_NAME);
+		long fileLength = logFile.length();
+		Assert.assertEquals((2 * Short.BYTES) + serialized1.length + serialized2.length, (int)fileLength);
+		try (FileInputStream stream = new FileInputStream(logFile)) {
+			ByteBuffer buffer = ByteBuffer.allocate((int)fileLength);
+			int read = stream.getChannel().read(buffer);
+			Assert.assertEquals((int)fileLength, read);
+			buffer.flip();
+			
+			short size = buffer.getShort();
+			Assert.assertEquals(Short.toUnsignedInt(size), serialized1.length);
+			byte[] temp = new byte[(int)size];
+			buffer.get(temp);
+			Assert.assertArrayEquals(serialized1, temp);
+			
+			size = buffer.getShort();
+			Assert.assertEquals(Short.toUnsignedInt(size), serialized2.length);
+			temp = new byte[(int)size];
+			buffer.get(temp);
+			Assert.assertArrayEquals(serialized2, temp);
+		}
+	}
+
 
 	/**
 	 * Used for simple cases where the external test only wants to verify that a call was made when expected.

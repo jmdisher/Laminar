@@ -43,6 +43,8 @@ public class DiskManager implements IDiskManager {
 	private final List<CommittedIntention> _committedIntentionVirtualDisk;
 	private final Map<TopicName, List<Consequence>> _committedConsequenceVirtualDisk;
 	private final FileOutputStream _intentionOutputStream;
+	private final File _consequenceTopLevelDirectory;
+	private final Map<TopicName, FileOutputStream> _consequenceOutputStreams;
 
 	public DiskManager(File dataDirectory, IDiskManagerBackgroundCallbacks callbackTarget) {
 		// For now, we ignore the given directory as we are just going to be faking the disk in-memory.
@@ -77,10 +79,10 @@ public class DiskManager implements IDiskManager {
 		if (!didCreate) {
 			throw new IllegalStateException("Failed to create intention directory: " + intentionDirectory);
 		}
-		File consequenceTopicDirectory = new File(dataDirectory, CONSEQUENCE_TOPICS_DIRECTORY_NAME);
-		didCreate = consequenceTopicDirectory.mkdirs();
+		_consequenceTopLevelDirectory = new File(dataDirectory, CONSEQUENCE_TOPICS_DIRECTORY_NAME);
+		didCreate = _consequenceTopLevelDirectory.mkdirs();
 		if (!didCreate) {
-			throw new IllegalStateException("Failed to create consequence topics directory: " + consequenceTopicDirectory);
+			throw new IllegalStateException("Failed to create consequence topics directory: " + _consequenceTopLevelDirectory);
 		}
 		
 		// Create the common output stream for intentions.
@@ -90,6 +92,8 @@ public class DiskManager implements IDiskManager {
 		} catch (FileNotFoundException e) {
 			throw new IllegalStateException("Failed to open initial intention log file: " + intentionLogFile);
 		}
+		// TODO:  We need to properly lifecycle these consequence output streams once we have completely shifted away from the virtual storage mechanism.
+		_consequenceOutputStreams = new HashMap<>();
 	}
 
 	/**
@@ -117,6 +121,9 @@ public class DiskManager implements IDiskManager {
 		}
 		try {
 			_intentionOutputStream.close();
+			for (FileOutputStream stream : _consequenceOutputStreams.values()) {
+				stream.close();
+			}
 		} catch (IOException e) {
 			// We aren't expecting a failure to close.
 			throw Assert.unexpected(e);
@@ -182,8 +189,7 @@ public class DiskManager implements IDiskManager {
 			else if (null != work.commitConsequence) {
 				TopicName topic = work.commitConsequence.topic;
 				Consequence record = work.commitConsequence.consequence;
-				boolean shouldTryCreate = (Consequence.Type.TOPIC_CREATE == record.type);
-				getOrCreateTopicList(topic, shouldTryCreate).add(record);
+				writeConsequenceToTopic(topic, record);
 				_callbackTarget.ioEnqueueDiskCommandForMainThread((snapshot) -> _callbackTarget.mainConsequenceWasCommitted(topic, record));
 			}
 			else if (0L != work.fetchIntention) {
@@ -206,7 +212,7 @@ public class DiskManager implements IDiskManager {
 			else if (null != work.fetchConsequence) {
 				TopicName topic = work.fetchConsequence.topic;
 				int offset = (int) work.fetchConsequence.offset;
-				List<Consequence> topicStore = getOrCreateTopicList(topic, false);
+				List<Consequence> topicStore = _committedConsequenceVirtualDisk.get(topic);
 				// These indexing errors should be intercepted at a higher level, before we get to the disk.
 				Assert.assertTrue(offset < topicStore.size());
 				Consequence record = topicStore.get(offset);
@@ -240,16 +246,52 @@ public class DiskManager implements IDiskManager {
 		return todo;
 	}
 
-	private List<Consequence> getOrCreateTopicList(TopicName topic, boolean tryCreate) {
+	private void writeConsequenceToTopic(TopicName topic, Consequence record) {
 		// Note that topics aren't removed from disk when destroyed so the create may be recreating something already there.
-		List<Consequence> list = _committedConsequenceVirtualDisk.get(topic);
-		if ((null == list) && tryCreate) {
-			list = new LinkedList<>();
-			_committedConsequenceVirtualDisk.put(topic, list);
-			// (we introduce a null to all virtual disk extents since they must be 1-indexed)
-			list.add(null);
+		if (Consequence.Type.TOPIC_CREATE == record.type) {
+			// Create the directory and log file.
+			File topicDirectory = new File(_consequenceTopLevelDirectory, topic.string);
+			if (!topicDirectory.isDirectory()) {
+				boolean didCreate = topicDirectory.mkdir();
+				if (!didCreate) {
+					throw new IllegalStateException("Failed to create topic storage directory: " + topicDirectory);
+				}
+				File logFile = new File(topicDirectory, LOG_FILE_NAME);
+				try {
+					_consequenceOutputStreams.put(topic, new FileOutputStream(logFile, true));
+				} catch (FileNotFoundException e) {
+					// We explicitly managed this creation so it can't fail.
+					throw Assert.unexpected(e);
+				}
+			}
+			
+			// Create the virtual disk entry.
+			if (!_committedConsequenceVirtualDisk.containsKey(topic)) {
+				List<Consequence> list = new LinkedList<>();
+				_committedConsequenceVirtualDisk.put(topic, list);
+				// (we introduce a null to all virtual disk extents since they must be 1-indexed)
+				list.add(null);
+			}
 		}
-		return list;
+		
+		// Write to the log.
+		byte[] serialized = record.serialize();
+		ByteBuffer buffer = ByteBuffer.allocate(Short.BYTES + serialized.length);
+		Assert.assertTrue(serialized.length <= 0x0000FFFF);
+		buffer.putShort((short)serialized.length);
+		buffer.put(serialized);
+		try {
+			FileOutputStream stream = _consequenceOutputStreams.get(topic);
+			stream.write(buffer.array());
+			// We won't force the write to become durable until we start batching the writes differently but we will at least flush.
+			stream.flush();
+		} catch (IOException e) {
+			// TODO:  Make a way to gracefully shutdown when this happens.
+			throw Assert.unimplemented(e.getLocalizedMessage());
+		}
+		
+		// Write to the virtual disk.
+		_committedConsequenceVirtualDisk.get(topic).add(record);
 	}
 
 
