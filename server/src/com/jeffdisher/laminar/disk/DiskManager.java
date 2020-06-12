@@ -1,7 +1,10 @@
 package com.jeffdisher.laminar.disk;
 
 import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
@@ -19,6 +22,10 @@ import com.jeffdisher.laminar.utils.Assert;
  * place.
  */
 public class DiskManager implements IDiskManager {
+	public static final String INTENTION_DIRECTORY_NAME = "intentions";
+	public static final String CONSEQUENCE_TOPICS_DIRECTORY_NAME = "consequence_topics";
+	public static final String LOG_FILE_NAME = "logs.0";
+
 	// Read-only fields setup during construction.
 	private final IDiskManagerBackgroundCallbacks _callbackTarget;
 	private final Thread _background;
@@ -35,6 +42,7 @@ public class DiskManager implements IDiskManager {
 	// Only accessed by background thread (current virtual "disk").
 	private final List<CommittedIntention> _committedIntentionVirtualDisk;
 	private final Map<TopicName, List<Consequence>> _committedConsequenceVirtualDisk;
+	private final FileOutputStream _intentionOutputStream;
 
 	public DiskManager(File dataDirectory, IDiskManagerBackgroundCallbacks callbackTarget) {
 		// For now, we ignore the given directory as we are just going to be faking the disk in-memory.
@@ -62,6 +70,26 @@ public class DiskManager implements IDiskManager {
 		
 		// (we introduce a null to all virtual disk extents since they must be 1-indexed)
 		_committedIntentionVirtualDisk.add(null);
+		
+		// Create the directories we know about.
+		File intentionDirectory = new File(dataDirectory, INTENTION_DIRECTORY_NAME);
+		boolean didCreate = intentionDirectory.mkdirs();
+		if (!didCreate) {
+			throw new IllegalStateException("Failed to create intention directory: " + intentionDirectory);
+		}
+		File consequenceTopicDirectory = new File(dataDirectory, CONSEQUENCE_TOPICS_DIRECTORY_NAME);
+		didCreate = consequenceTopicDirectory.mkdirs();
+		if (!didCreate) {
+			throw new IllegalStateException("Failed to create consequence topics directory: " + consequenceTopicDirectory);
+		}
+		
+		// Create the common output stream for intentions.
+		File intentionLogFile = new File(intentionDirectory, LOG_FILE_NAME);
+		try {
+			_intentionOutputStream = new FileOutputStream(intentionLogFile, true);
+		} catch (FileNotFoundException e) {
+			throw new IllegalStateException("Failed to open initial intention log file: " + intentionLogFile);
+		}
 	}
 
 	/**
@@ -86,6 +114,12 @@ public class DiskManager implements IDiskManager {
 		} catch (InterruptedException e) {
 			// We don't use interruption.
 			Assert.unexpected(e);
+		}
+		try {
+			_intentionOutputStream.close();
+		} catch (IOException e) {
+			// We aren't expecting a failure to close.
+			throw Assert.unexpected(e);
 		}
 	}
 
@@ -128,6 +162,19 @@ public class DiskManager implements IDiskManager {
 		Work work = _backgroundWaitForWork();
 		while (null != work) {
 			if (null != work.commitIntention) {
+				// Serialize the intention and store it in the log file.
+				// NOTE:  The maximum serialized size of an Intention is 2^16-1 but we also need to store the effect so we can't consider that part of the size.
+				int serializedSize = work.commitIntention.record.serializedSize();
+				Assert.assertTrue(serializedSize <= 0x0000FFFF);
+				ByteBuffer buffer = ByteBuffer.allocate(Short.BYTES + Byte.BYTES + serializedSize);
+				buffer.putShort((short)serializedSize);
+				buffer.put((byte)work.commitIntention.effect.ordinal());
+				work.commitIntention.record.serializeInto(buffer);
+				_intentionOutputStream.write(buffer.array());
+				// We won't force the write to become durable until we start batching the writes differently but we will at least flush.
+				_intentionOutputStream.flush();
+				
+				// For now, we also maintain it in the virtual disk until the read path is complete.
 				_committedIntentionVirtualDisk.add(work.commitIntention);
 				CommittedIntention record = work.commitIntention;
 				_callbackTarget.ioEnqueueDiskCommandForMainThread((snapshot) -> _callbackTarget.mainIntentionWasCommitted(record));

@@ -1,5 +1,8 @@
 package com.jeffdisher.laminar.disk;
 
+import java.io.File;
+import java.io.FileInputStream;
+import java.nio.ByteBuffer;
 import java.util.UUID;
 import java.util.function.Consumer;
 
@@ -83,6 +86,53 @@ public class TestDiskManager {
 		while (callbacks.fetchEventCount < 1) { callbacks.runOneCommand(); }
 		
 		manager.stopAndWaitForTermination();
+	}
+
+	/**
+	 * Write a few intentions and verify that they look correct on-disk.
+	 */
+	@Test
+	public void testWritingIntentions() throws Throwable {
+		File directory = _folder.newFolder();
+		TopicName topic = TopicName.fromString("fake");
+		Intention intention1 = Intention.put(1L, 1L, topic, UUID.randomUUID(), 1L, new byte[0], new byte[] {1});
+		Intention intention2 = Intention.put(1L, 2L, topic, UUID.randomUUID(), 2L, new byte[0], new byte[] {1});
+		
+		LatchedCallbacks callbacks = new LatchedCallbacks();
+		DiskManager manager = new DiskManager(directory, callbacks);
+		manager.startAndWaitForReady();
+		
+		manager.commitIntention(CommittedIntention.create(intention1, CommitInfo.Effect.VALID));
+		while (callbacks.commitMutationCount < 1) { callbacks.runOneCommand(); }
+		manager.commitIntention(CommittedIntention.create(intention2, CommitInfo.Effect.VALID));
+		while (callbacks.commitMutationCount < 2) { callbacks.runOneCommand(); }
+		manager.stopAndWaitForTermination();
+		
+		int intention1Size = intention1.serializedSize();
+		int intention2Size = intention2.serializedSize();
+		File logFile = new File(new File(directory, DiskManager.INTENTION_DIRECTORY_NAME), DiskManager.LOG_FILE_NAME);
+		long fileLength = logFile.length();
+		Assert.assertEquals((2 * Short.BYTES) + (2 * Byte.BYTES) + intention1Size + intention2Size, (int)fileLength);
+		try (FileInputStream stream = new FileInputStream(logFile)) {
+			ByteBuffer buffer = ByteBuffer.allocate((int)fileLength);
+			int read = stream.getChannel().read(buffer);
+			Assert.assertEquals((int)fileLength, read);
+			buffer.flip();
+			
+			short size = buffer.getShort();
+			Assert.assertEquals(Short.toUnsignedInt(size), intention1Size);
+			Assert.assertEquals(CommitInfo.Effect.VALID, CommitInfo.Effect.values()[(int)buffer.get()]);
+			byte[] temp = new byte[(int)size];
+			buffer.get(temp);
+			Assert.assertArrayEquals(intention1.serialize(), temp);
+			
+			size = buffer.getShort();
+			Assert.assertEquals(Short.toUnsignedInt(size), intention2Size);
+			Assert.assertEquals(CommitInfo.Effect.VALID, CommitInfo.Effect.values()[(int)buffer.get()]);
+			temp = new byte[(int)size];
+			buffer.get(temp);
+			Assert.assertArrayEquals(intention2.serialize(), temp);
+		}
 	}
 
 
