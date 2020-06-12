@@ -53,7 +53,7 @@ public class IntentionExecutor {
 		case TOPIC_CREATE: {
 			// We want to create the topic but should fail with Effect.INVALID if it is already there.
 			if (_activeTopics.containsKey(mutation.topic)) {
-				result = new ExecutionResult(CommitInfo.Effect.INVALID, Collections.emptyList());
+				result = ExecutionResult.invalid();
 			} else {
 				// See if there is any code.
 				TopicContext context = new TopicContext();
@@ -79,10 +79,10 @@ public class IntentionExecutor {
 				}
 				if (null != events) {
 					_activeTopics.put(mutation.topic, context);
-					result = new ExecutionResult(CommitInfo.Effect.VALID, events);
+					result = ExecutionResult.valid(events);
 				} else {
 					// Error in deployment will be an error.
-					result = new ExecutionResult(CommitInfo.Effect.ERROR, Collections.emptyList());
+					result = ExecutionResult.error();
 				}
 			}
 		}
@@ -92,9 +92,9 @@ public class IntentionExecutor {
 			if (_activeTopics.containsKey(mutation.topic)) {
 				_activeTopics.remove(mutation.topic);
 				Consequence eventToReturn = Consequence.destroyTopic(mutation.termNumber, mutation.intentionOffset, offsetToPropose, mutation.clientId, mutation.clientNonce);
-				result = new ExecutionResult(CommitInfo.Effect.VALID, Collections.singletonList(eventToReturn));
+				result = ExecutionResult.valid(Collections.singletonList(eventToReturn));
 			} else {
-				result = new ExecutionResult(CommitInfo.Effect.INVALID, Collections.emptyList());
+				result = ExecutionResult.invalid();
 			}
 		}
 			break;
@@ -111,13 +111,13 @@ public class IntentionExecutor {
 					events = Collections.singletonList(Consequence.put(mutation.termNumber, mutation.intentionOffset, offsetToPropose, mutation.clientId, mutation.clientNonce, payload.key, payload.value));
 				}
 				if (null != events) {
-					result = new ExecutionResult(CommitInfo.Effect.VALID, events);
+					result = ExecutionResult.valid(events);
 				} else {
 					// Error in PUT will be an error.
-					result = new ExecutionResult(CommitInfo.Effect.ERROR, Collections.emptyList());
+					result = ExecutionResult.error();
 				}
 			} else {
-				result = new ExecutionResult(CommitInfo.Effect.ERROR, Collections.emptyList());
+				result = ExecutionResult.error();
 			}
 		}
 			break;
@@ -134,19 +134,19 @@ public class IntentionExecutor {
 					events = Collections.singletonList(Consequence.delete(mutation.termNumber, mutation.intentionOffset, offsetToPropose, mutation.clientId, mutation.clientNonce, payload.key));
 				}
 				if (null != events) {
-					result = new ExecutionResult(CommitInfo.Effect.VALID, events);
+					result = ExecutionResult.valid(events);
 				} else {
 					// Error in DELETE will be an error.
-					result = new ExecutionResult(CommitInfo.Effect.ERROR, Collections.emptyList());
+					result = ExecutionResult.error();
 				}
 			} else {
-				result = new ExecutionResult(CommitInfo.Effect.ERROR, Collections.emptyList());
+				result = ExecutionResult.error();
 			}
 		}
 			break;
 		case CONFIG_CHANGE: {
 			// We always just apply configs.
-			result = new ExecutionResult(CommitInfo.Effect.VALID, Collections.emptyList());
+			result = ExecutionResult.valid(Collections.emptyList());
 		}
 			break;
 		case STUTTER: {
@@ -159,9 +159,9 @@ public class IntentionExecutor {
 				events.add(eventToReturn1);
 				Consequence eventToReturn2 = Consequence.put(mutation.termNumber, mutation.intentionOffset, offsetToPropose + 1, mutation.clientId, mutation.clientNonce, payload.key, payload.value);
 				events.add(eventToReturn2);
-				result = new ExecutionResult(CommitInfo.Effect.VALID, events);
+				result = ExecutionResult.valid(events);
 			} else {
-				result = new ExecutionResult(CommitInfo.Effect.ERROR, Collections.emptyList());
+				result = ExecutionResult.error();
 			}
 		}
 			break;
@@ -181,10 +181,23 @@ public class IntentionExecutor {
 
 
 	public static class ExecutionResult {
+		public static ExecutionResult valid(List<Consequence> consequences) {
+			return new ExecutionResult(CommitInfo.Effect.VALID, consequences);
+		}
+		
+		public static ExecutionResult invalid() {
+			return new ExecutionResult(CommitInfo.Effect.INVALID, null);
+		}
+		
+		public static ExecutionResult error() {
+			return new ExecutionResult(CommitInfo.Effect.ERROR, null);
+		}
+		
+		
 		public final CommitInfo.Effect effect;
 		public final List<Consequence> consequences;
 		
-		public ExecutionResult(CommitInfo.Effect effect, List<Consequence> consequences) {
+		private ExecutionResult(CommitInfo.Effect effect, List<Consequence> consequences) {
 			this.effect = effect;
 			this.consequences = consequences;
 		}

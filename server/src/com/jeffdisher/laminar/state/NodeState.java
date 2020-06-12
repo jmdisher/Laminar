@@ -565,13 +565,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 	}
 
 	private void _commit(Intention mutation, CommitInfo.Effect effect, TopicName topic, List<Consequence> events) {
-		// (note that the event is null for certain meta-messages like UPDATE_CONFIG).
-		for (Consequence event : events) {
-			_diskManager.commitConsequence(topic, event);
-		}
-		CommittedIntention committedIntention = CommittedIntention.create(mutation, effect);
-		// TODO:  We probably want to lock-step the mutation on the event commit since we will be able to detect the broken data, that way, and replay it.
-		_diskManager.commitIntention(committedIntention);
+		_diskManager.commit(mutation, effect, events);
 		_lastTermNumberRemovedFromInFlight = mutation.termNumber;
 		_lastIntentionOffsetSentToDisk = mutation.intentionOffset;
 	}

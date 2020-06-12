@@ -3,6 +3,7 @@ package com.jeffdisher.laminar.disk;
 import java.io.File;
 import java.io.FileInputStream;
 import java.nio.ByteBuffer;
+import java.util.Collections;
 import java.util.UUID;
 import java.util.function.Consumer;
 
@@ -36,15 +37,18 @@ public class TestDiskManager {
 	@Test
 	public void testSimpleWriteAndFetch() throws Throwable {
 		TopicName topic = TopicName.fromString("fake");
+		// Create these intentions just to call the helper correctly.
+		Intention ignored1 = Intention.put(1L, 1L, topic, UUID.randomUUID(), 1L, new byte[0], new byte[] {1});
+		Intention ignored2 = Intention.put(1L, 2L, topic, UUID.randomUUID(), 2L, new byte[0], new byte[] {1});
 		Consequence event1 = Consequence.createTopic(1L, 1L, 1L, UUID.randomUUID(), 1L, new byte[0], new byte[] {1});
 		Consequence event2 = Consequence.put(1L, 2L, 2L, UUID.randomUUID(), 2L, new byte[0], new byte[] {1});
 		LatchedCallbacks callbacks = new LatchedCallbacks();
 		DiskManager manager = new DiskManager(_folder.newFolder(), callbacks);
 		manager.startAndWaitForReady();
 		
-		manager.commitConsequence(topic, event1);
+		manager.commit(ignored1, CommitInfo.Effect.VALID, Collections.singletonList(event1));
 		while (callbacks.commitEventCount < 1) { callbacks.runOneCommand(); }
-		manager.commitConsequence(topic, event2);
+		manager.commit(ignored2, CommitInfo.Effect.VALID, Collections.singletonList(event2));
 		while (callbacks.commitEventCount < 2) { callbacks.runOneCommand(); }
 		callbacks.expectedEvent = event2;
 		manager.fetchConsequence(topic, 2L);
@@ -68,14 +72,10 @@ public class TestDiskManager {
 		DiskManager manager = new DiskManager(_folder.newFolder(), callbacks);
 		manager.startAndWaitForReady();
 		
-		manager.commitIntention(CommittedIntention.create(mutation1, CommitInfo.Effect.VALID));
+		manager.commit(mutation1, CommitInfo.Effect.VALID, Collections.singletonList(event1));
 		while (callbacks.commitMutationCount < 1) { callbacks.runOneCommand(); }
-		manager.commitIntention(CommittedIntention.create(mutation2, CommitInfo.Effect.VALID));
+		manager.commit(mutation2, CommitInfo.Effect.VALID, Collections.singletonList(event2));
 		while (callbacks.commitMutationCount < 2) { callbacks.runOneCommand(); }
-		manager.commitConsequence(topic, event1);
-		while (callbacks.commitEventCount < 1) { callbacks.runOneCommand(); }
-		manager.commitConsequence(topic, event2);
-		while (callbacks.commitEventCount < 2) { callbacks.runOneCommand(); }
 		
 		callbacks.expectedMutation = mutation1;
 		callbacks.expectedEvent = event2;
@@ -102,9 +102,9 @@ public class TestDiskManager {
 		DiskManager manager = new DiskManager(directory, callbacks);
 		manager.startAndWaitForReady();
 		
-		manager.commitIntention(CommittedIntention.create(intention1, CommitInfo.Effect.VALID));
+		manager.commit(intention1, CommitInfo.Effect.VALID, Collections.emptyList());
 		while (callbacks.commitMutationCount < 1) { callbacks.runOneCommand(); }
-		manager.commitIntention(CommittedIntention.create(intention2, CommitInfo.Effect.VALID));
+		manager.commit(intention2, CommitInfo.Effect.VALID, Collections.emptyList());
 		while (callbacks.commitMutationCount < 2) { callbacks.runOneCommand(); }
 		manager.stopAndWaitForTermination();
 		
@@ -142,6 +142,9 @@ public class TestDiskManager {
 	public void testWritingConsequences() throws Throwable {
 		File directory = _folder.newFolder();
 		TopicName topic = TopicName.fromString("fake");
+		// Create these intentions just to call the helper correctly.
+		Intention ignored1 = Intention.put(1L, 1L, topic, UUID.randomUUID(), 1L, new byte[0], new byte[] {1});
+		Intention ignored2 = Intention.put(1L, 2L, topic, UUID.randomUUID(), 2L, new byte[0], new byte[] {1});
 		Consequence consequence1 = Consequence.createTopic(1L, 1L, 1L, UUID.randomUUID(), 1L, new byte[0], new byte[] {1});
 		Consequence consequence2 = Consequence.put(1L, 2L, 2L, UUID.randomUUID(), 2L, new byte[0], new byte[] {1});
 		
@@ -149,9 +152,9 @@ public class TestDiskManager {
 		DiskManager manager = new DiskManager(directory, callbacks);
 		manager.startAndWaitForReady();
 		
-		manager.commitConsequence(topic, consequence1);
+		manager.commit(ignored1, CommitInfo.Effect.VALID, Collections.singletonList(consequence1));
 		while (callbacks.commitEventCount < 1) { callbacks.runOneCommand(); }
-		manager.commitConsequence(topic, consequence2);
+		manager.commit(ignored2, CommitInfo.Effect.VALID, Collections.singletonList(consequence2));
 		while (callbacks.commitEventCount < 2) { callbacks.runOneCommand(); }
 		manager.stopAndWaitForTermination();
 		

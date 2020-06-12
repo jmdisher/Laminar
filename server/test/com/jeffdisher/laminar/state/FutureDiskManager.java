@@ -1,10 +1,14 @@
 package com.jeffdisher.laminar.state;
 
+import java.util.List;
+
 import org.junit.Assert;
 
 import com.jeffdisher.laminar.disk.CommittedIntention;
 import com.jeffdisher.laminar.disk.IDiskManager;
+import com.jeffdisher.laminar.types.CommitInfo.Effect;
 import com.jeffdisher.laminar.types.Consequence;
+import com.jeffdisher.laminar.types.Intention;
 import com.jeffdisher.laminar.types.TopicName;
 
 
@@ -45,21 +49,22 @@ public class FutureDiskManager implements IDiskManager {
 		System.out.println("IDiskManager - fetchEvent");
 	}
 	@Override
-	public void commitIntention(CommittedIntention mutation) {
+	public void commit(Intention intention, Effect effect, List<Consequence> consequences) {
 		if (null != f_commitMutation) {
-			f_commitMutation.put(mutation);
+			f_commitMutation.put(CommittedIntention.create(intention, effect));
 			f_commitMutation = f_commitMutation.nextLink;
 		} else {
-			System.out.println("IDiskManager - commitMutation");
+			System.out.println("IDiskManager - commit(intention)");
 		}
-	}
-	@Override
-	public void commitConsequence(TopicName topic, Consequence event) {
-		if (null != f_commitEvent) {
-			f_commitEvent.put(event);
-			f_commitEvent = f_commitEvent.nextLink;
-		} else {
-			System.out.println("IDiskManager - commitEvent");
+		if (null != consequences) {
+			for (Consequence consequence : consequences) {
+				if (null != f_commitEvent) {
+					f_commitEvent.put(consequence);
+					f_commitEvent = f_commitEvent.nextLink;
+				} else {
+					System.out.println("IDiskManager - commit(consequence)");
+				}
+			}
 		}
 	}
 }

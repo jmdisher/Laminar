@@ -10,7 +10,9 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 
+import com.jeffdisher.laminar.types.CommitInfo;
 import com.jeffdisher.laminar.types.Consequence;
+import com.jeffdisher.laminar.types.Intention;
 import com.jeffdisher.laminar.types.TopicName;
 import com.jeffdisher.laminar.utils.Assert;
 
@@ -131,22 +133,6 @@ public class DiskManager implements IDiskManager {
 	}
 
 	@Override
-	public synchronized void commitIntention(CommittedIntention mutation) {
-		// Make sure this isn't reentrant.
-		Assert.assertTrue(Thread.currentThread() != _background);
-		_incomingCommitIntentions.add(mutation);
-		this.notifyAll();
-	}
-
-	@Override
-	public synchronized void commitConsequence(TopicName topic, Consequence consequence) {
-		// Make sure this isn't reentrant.
-		Assert.assertTrue(Thread.currentThread() != _background);
-		_incomingCommitConsequences.add(new ConsequenceCommitTuple(topic, consequence));
-		this.notifyAll();
-	}
-
-	@Override
 	public synchronized void fetchIntention(long globalOffset) {
 		// Make sure this isn't reentrant.
 		Assert.assertTrue(Thread.currentThread() != _background);
@@ -162,6 +148,21 @@ public class DiskManager implements IDiskManager {
 		this.notifyAll();
 	}
 
+	@Override
+	public synchronized void commit(Intention intention, CommitInfo.Effect effect, List<Consequence> consequences) {
+		// Make sure this isn't reentrant.
+		Assert.assertTrue(Thread.currentThread() != _background);
+		// Make sure that the effect is consistent.
+		Assert.assertTrue((CommitInfo.Effect.VALID == effect) == (null != consequences));
+		
+		_incomingCommitIntentions.add(CommittedIntention.create(intention, effect));
+		if (null != consequences) {
+			for (Consequence consequence : consequences) {
+				_incomingCommitConsequences.add(new ConsequenceCommitTuple(intention.topic, consequence));
+			}
+		}
+		this.notifyAll();
+	}
 
 	private void _backgroundThreadMain() throws IOException {
 		// TODO:  This design should probably be changed to UninterruptibleQueue in order to maintain commit order.
