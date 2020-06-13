@@ -34,12 +34,9 @@ public class DiskManager implements IDiskManager {
 
 	// These are all accessed under monitor.
 	private boolean _keepRunning;
-	// We track the incoming commits in 2 lists:  one for the "global" intentions and one for the "local" consequences.
-	private final List<CommittedIntention> _incomingCommitIntentions;
-	private final List<ConsequenceCommitTuple> _incomingCommitConsequences;
-	// We track fetch requests in 2 lists:  one for the "global" intentions and one for the "local" consequences.
-	private final List<Long> _incomingFetchIntentionRequests;
-	private final List<ConsequenceFetchTuple> _incomingFetchConsequenceRequests;
+	// We want to track incoming requests as "generations" so we don't starve or re-order operations:  The DiskManager finishes all of the found work before it looks again.
+	// (this is still preferable to a simple queue as it allows natural batching back-pressure while working)
+	private RequestGeneration _pendingWorkUnit;
 
 	// Only accessed by background thread (current virtual "disk").
 	private final List<CommittedIntention> _committedIntentionVirtualDisk;
@@ -65,10 +62,8 @@ public class DiskManager implements IDiskManager {
 		};
 		
 		_keepRunning = false;
-		_incomingCommitIntentions = new LinkedList<>();
-		_incomingCommitConsequences = new LinkedList<>();
-		_incomingFetchIntentionRequests = new LinkedList<>();
-		_incomingFetchConsequenceRequests = new LinkedList<>();
+		_pendingWorkUnit = new RequestGeneration();
+		
 		_committedIntentionVirtualDisk = new LinkedList<>();
 		_committedConsequenceVirtualDisk = new HashMap<>();
 		
@@ -136,7 +131,7 @@ public class DiskManager implements IDiskManager {
 	public synchronized void fetchIntention(long globalOffset) {
 		// Make sure this isn't reentrant.
 		Assert.assertTrue(Thread.currentThread() != _background);
-		_incomingFetchIntentionRequests.add(globalOffset);
+		_pendingWorkUnit.incomingFetchIntentionRequests.add(globalOffset);
 		this.notifyAll();
 	}
 
@@ -144,7 +139,7 @@ public class DiskManager implements IDiskManager {
 	public synchronized void fetchConsequence(TopicName topic, long localOffset) {
 		// Make sure this isn't reentrant.
 		Assert.assertTrue(Thread.currentThread() != _background);
-		_incomingFetchConsequenceRequests.add(new ConsequenceFetchTuple(topic, localOffset));
+		_pendingWorkUnit.incomingFetchConsequenceRequests.add(new ConsequenceFetchTuple(topic, localOffset));
 		this.notifyAll();
 	}
 
@@ -155,45 +150,23 @@ public class DiskManager implements IDiskManager {
 		// Make sure that the effect is consistent.
 		Assert.assertTrue((CommitInfo.Effect.VALID == effect) == (null != consequences));
 		
-		_incomingCommitIntentions.add(CommittedIntention.create(intention, effect));
+		_pendingWorkUnit.incomingCommitIntentions.add(CommittedIntention.create(intention, effect));
 		if (null != consequences) {
 			for (Consequence consequence : consequences) {
-				_incomingCommitConsequences.add(new ConsequenceCommitTuple(intention.topic, consequence));
+				_pendingWorkUnit.incomingCommitConsequences.add(new ConsequenceCommitTuple(intention.topic, consequence));
 			}
 		}
 		this.notifyAll();
 	}
 
 	private void _backgroundThreadMain() throws IOException {
-		// TODO:  This design should probably be changed to UninterruptibleQueue in order to maintain commit order.
-		// (this would also avoiding needing multiple intermediary containers and structures)
-		Work work = _backgroundWaitForWork();
+		RequestGeneration work = _backgroundWaitForWork();
 		while (null != work) {
-			if (null != work.commitIntention) {
-				// Serialize the intention and store it in the log file.
-				// NOTE:  The maximum serialized size of an Intention is 2^16-1 but we also need to store the effect so we can't consider that part of the size.
-				int serializedSize = work.commitIntention.record.serializedSize();
-				Assert.assertTrue(serializedSize <= 0x0000FFFF);
-				ByteBuffer buffer = ByteBuffer.allocate(Short.BYTES + Byte.BYTES + serializedSize);
-				buffer.putShort((short)serializedSize);
-				buffer.put((byte)work.commitIntention.effect.ordinal());
-				work.commitIntention.record.serializeInto(buffer);
-				_intentionOutputStream.write(buffer.array());
-				// We won't force the write to become durable until we start batching the writes differently but we will at least flush.
-				_intentionOutputStream.flush();
-				
-				// For now, we also maintain it in the virtual disk until the read path is complete.
-				_committedIntentionVirtualDisk.add(work.commitIntention);
-				CommittedIntention record = work.commitIntention;
-				_callbackTarget.ioEnqueueDiskCommandForMainThread((snapshot) -> _callbackTarget.mainIntentionWasCommitted(record));
-			}
-			else if (null != work.commitConsequence) {
-				TopicName topic = work.commitConsequence.topic;
-				Consequence record = work.commitConsequence.consequence;
-				writeConsequenceToTopic(topic, record);
-				_callbackTarget.ioEnqueueDiskCommandForMainThread((snapshot) -> _callbackTarget.mainConsequenceWasCommitted(topic, record));
-			}
-			else if (0L != work.fetchIntention) {
+			// Process any commits.
+			_backgroundCommitsInWork(work);
+			
+			// Process any intention requests.
+			for (long intentionOffset : work.incomingFetchIntentionRequests) {
 				// This design might change but we currently "push" the fetched data over the background callback instead
 				// of telling the caller that it is available and that they must request it.
 				// The reason for this is that keeping it here would represent a sort of logical cache which the DiskManager
@@ -202,17 +175,19 @@ public class DiskManager implements IDiskManager {
 				// In the future, this layer almost definitely will have a cache but it will be an LRU physical cache which
 				// is not required to satisfy all requests.
 				// These indexing errors should be intercepted at a higher level, before we get to the disk.
-				Assert.assertTrue((int)work.fetchIntention < _committedIntentionVirtualDisk.size());
-				CommittedIntention record = _committedIntentionVirtualDisk.get((int)work.fetchIntention);
+				Assert.assertTrue((int)intentionOffset < _committedIntentionVirtualDisk.size());
+				CommittedIntention record = _committedIntentionVirtualDisk.get((int)intentionOffset);
 				// See if we can get the previous term number.
-				long previousMutationTermNumber = (work.fetchIntention > 1)
-						? _committedIntentionVirtualDisk.get((int)work.fetchIntention - 1).record.termNumber
+				long previousMutationTermNumber = (intentionOffset > 1)
+						? _committedIntentionVirtualDisk.get((int)intentionOffset - 1).record.termNumber
 						: 0L;
 				_callbackTarget.ioEnqueueDiskCommandForMainThread((snapshot) -> _callbackTarget.mainIntentionWasFetched(snapshot, previousMutationTermNumber, record));
 			}
-			else if (null != work.fetchConsequence) {
-				TopicName topic = work.fetchConsequence.topic;
-				int offset = (int) work.fetchConsequence.offset;
+			
+			// Process any consequence requests.
+			for (ConsequenceFetchTuple tuple : work.incomingFetchConsequenceRequests) {
+				TopicName topic = tuple.topic;
+				int offset = (int) tuple.offset;
 				List<Consequence> topicStore = _committedConsequenceVirtualDisk.get(topic);
 				// These indexing errors should be intercepted at a higher level, before we get to the disk.
 				Assert.assertTrue(offset < topicStore.size());
@@ -223,8 +198,37 @@ public class DiskManager implements IDiskManager {
 		}
 	}
 
-	private synchronized Work _backgroundWaitForWork() {
-		while (_keepRunning && _incomingCommitConsequences.isEmpty() && _incomingCommitIntentions.isEmpty() && _incomingFetchConsequenceRequests.isEmpty() && _incomingFetchIntentionRequests.isEmpty()) {
+	private void _backgroundCommitsInWork(RequestGeneration work) throws IOException {
+		// Commit all intentions.
+		for (CommittedIntention intention : work.incomingCommitIntentions) {
+			// Serialize the intention and store it in the log file.
+			// NOTE:  The maximum serialized size of an Intention is 2^16-1 but we also need to store the effect so we can't consider that part of the size.
+			int serializedSize = intention.record.serializedSize();
+			Assert.assertTrue(serializedSize <= 0x0000FFFF);
+			ByteBuffer buffer = ByteBuffer.allocate(Short.BYTES + Byte.BYTES + serializedSize);
+			buffer.putShort((short)serializedSize);
+			buffer.put((byte)intention.effect.ordinal());
+			intention.record.serializeInto(buffer);
+			_intentionOutputStream.write(buffer.array());
+			// We won't force the write to become durable until we start batching the writes differently but we will at least flush.
+			_intentionOutputStream.flush();
+			
+			// For now, we also maintain it in the virtual disk until the read path is complete.
+			_committedIntentionVirtualDisk.add(intention);
+			_callbackTarget.ioEnqueueDiskCommandForMainThread((snapshot) -> _callbackTarget.mainIntentionWasCommitted(intention));
+		}
+		
+		// Commit all consequences.
+		for (ConsequenceCommitTuple tuple : work.incomingCommitConsequences) {
+			TopicName topic = tuple.topic;
+			Consequence record = tuple.consequence;
+			writeConsequenceToTopic(topic, record);
+			_callbackTarget.ioEnqueueDiskCommandForMainThread((snapshot) -> _callbackTarget.mainConsequenceWasCommitted(topic, record));
+		}
+	}
+
+	private synchronized RequestGeneration _backgroundWaitForWork() {
+		while (_keepRunning && _pendingWorkUnit.hasWork()) {
 			try {
 				this.wait();
 			} catch (InterruptedException e) {
@@ -232,17 +236,11 @@ public class DiskManager implements IDiskManager {
 				Assert.unexpected(e);
 			}
 		}
-		Work todo = null;
+		RequestGeneration todo = null;
 		if (_keepRunning) {
-			if (!_incomingCommitConsequences.isEmpty()) {
-				todo = Work.commitConsequence(_incomingCommitConsequences.remove(0));
-			} else if (!_incomingCommitIntentions.isEmpty()) {
-				todo = Work.commitIntention(_incomingCommitIntentions.remove(0));
-			} else if (!_incomingFetchConsequenceRequests.isEmpty()) {
-				todo = Work.fetchConsequence(_incomingFetchConsequenceRequests.remove(0));
-			} else if (!_incomingFetchIntentionRequests.isEmpty()) {
-				todo = Work.fetchIntention(_incomingFetchIntentionRequests.remove(0));
-			}
+			// Just replace the RequestGeneration and return the one which has work.
+			todo = _pendingWorkUnit;
+			_pendingWorkUnit = new RequestGeneration();
 		}
 		return todo;
 	}
@@ -296,37 +294,6 @@ public class DiskManager implements IDiskManager {
 	}
 
 
-	/**
-	 * A simple tuple used to pass back work from the synchronized wait loop.
-	 */
-	private static class Work {
-		public static Work commitIntention(CommittedIntention toCommit) {
-			return new Work(toCommit, null, 0L, null);
-		}
-		public static Work commitConsequence(ConsequenceCommitTuple toCommit) {
-			return new Work(null, toCommit, 0L, null);
-		}
-		public static Work fetchIntention(long toFetch) {
-			return new Work(null, null, toFetch, null);
-		}
-		public static Work fetchConsequence(ConsequenceFetchTuple toFetch) {
-			return new Work(null, null, 0L, toFetch);
-		}
-		
-		public final CommittedIntention commitIntention;
-		public final ConsequenceCommitTuple commitConsequence;
-		public final long fetchIntention;
-		public final ConsequenceFetchTuple fetchConsequence;
-		
-		private Work(CommittedIntention commitIntention, ConsequenceCommitTuple commitConsequence, long fetchIntention, ConsequenceFetchTuple fetchConsequence) {
-			this.commitIntention = commitIntention;
-			this.commitConsequence = commitConsequence;
-			this.fetchIntention = fetchIntention;
-			this.fetchConsequence = fetchConsequence;
-		}
-	}
-
-
 	private static class ConsequenceFetchTuple {
 		public final TopicName topic;
 		public final long offset;
@@ -345,6 +312,30 @@ public class DiskManager implements IDiskManager {
 		public ConsequenceCommitTuple(TopicName topic, Consequence consequence) {
 			this.topic = topic;
 			this.consequence = consequence;
+		}
+	}
+
+
+	/**
+	 * Incoming work is handled in "generations".  This allows collected commits requests to naturally batch and also
+	 * avoids any need to favour a specific kind of operation.  All requests (for commit or fetch) accumulated within a
+	 * generation are serviced before the next generation is examined.  This means that the IO operations are completely
+	 * fair, there is no possibility for starvation or barging based on the scheduling, and all IO operations are
+	 * completed in mostly the same order they are requested.
+	 * The only additional ordering constraint which should be honoured is that writes should happen before reads, since
+	 * reads which were issued in a generation may depend on writes from within that same generation, as long as they
+	 * were requested in the logical order, from the perspective of the caller.  Writes cannot depend on reads.
+	 */
+	private static class RequestGeneration {
+		// We track the incoming commits in 2 lists:  one for the "global" intentions and one for the "local" consequences.
+		private final List<CommittedIntention> incomingCommitIntentions = new LinkedList<>();
+		private final List<ConsequenceCommitTuple> incomingCommitConsequences = new LinkedList<>();
+		// We track fetch requests in 2 lists:  one for the "global" intentions and one for the "local" consequences.
+		private final List<Long> incomingFetchIntentionRequests = new LinkedList<>();
+		private final List<ConsequenceFetchTuple> incomingFetchConsequenceRequests = new LinkedList<>();
+		
+		public boolean hasWork() {
+			return this.incomingCommitConsequences.isEmpty() && this.incomingCommitIntentions.isEmpty() && this.incomingFetchConsequenceRequests.isEmpty() && this.incomingFetchIntentionRequests.isEmpty();
 		}
 	}
 }
