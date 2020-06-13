@@ -342,8 +342,22 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 			} else if (newTermNumber > _currentTermNumber) {
 				// Even if we don't want to vote for someone, the fact that an election started means we need to participate.
 				// Otherwise, it is possible for this rogue server to never sync back up with the cluster.
-				System.out.println("CANDIDATE(stale peer request): " + newTermNumber);
-				_mainStartElection(newTermNumber);
+				// In cases where the cluster is highly out of sync while new nodes join, it is possible that a majority
+				// can be established without any of the nodes which were at the front of the pack in a previous term:
+				//             TERM N ---- TERM N+1
+				// Node A       L(32)  --- offline
+				// Node B       F(32)  --- F(32)
+				// Node C       F(32)  --- F(32)
+				// Node D       F(7)   --- L(7)
+				// Node E       F(5)   --- F(5)
+				// Node F      offline --- F(0)
+				// In the above example, Node D could become a leader, even though it was incredibly out of date, because
+				// another server started when the fail-over happened.
+				// In order to defeat this backward majority, Node B or C must also start an election but they need to start
+				// one for the next term, in order to overrule what they can prove is an illegitimate leader.
+				long overruleTermNumber = newTermNumber + 1;
+				System.out.println("CANDIDATE(stale peer request): " + overruleTermNumber);
+				_mainStartElection(overruleTermNumber);
 			}
 		}
 		return shouldVote;

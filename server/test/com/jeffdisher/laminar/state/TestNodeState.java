@@ -237,10 +237,10 @@ public class TestNodeState {
 		runner.runVoid((snapshot) -> test.nodeState.mainReceivedAckFromDownstream(upstreamEntry1, 1L));
 		Assert.assertEquals(1L, commit.get().record.globalOffset);
 		
-		// Synthesize a call for an election from a peer behind us and verify that this causes us to start an election.
+		// Synthesize a call for an election from a peer behind us and verify that this causes us to start an election in the next term.
 		F<Long> startElection = test.clusterManager.get_mainEnterCandidateState();
 		runner.runVoid((snapshot) -> nodeState.mainReceivedRequestForVotes(upstreamEntry1, 2L, 0L, 0L));
-		Assert.assertEquals(2L, startElection.get().longValue());
+		Assert.assertEquals(3L, startElection.get().longValue());
 		
 		// Stop.
 		runner.runVoid((snapshot) -> test.nodeState.mainHandleStopCommand());
