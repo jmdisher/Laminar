@@ -199,7 +199,17 @@ public class DiskManager implements IDiskManager {
 	}
 
 	private void _backgroundCommitsInWork(RequestGeneration work) throws IOException {
-		// Commit all intentions.
+		// We will write all the consequences before the intentions.  This is so that we can eventually use this pattern to make the intention file update into the atomic operation.
+		// We need to keep track of all the streams to sync as durable, after we write.
+		Map<TopicName, FileOutputStream> toFlush = new HashMap<>();
+		for (ConsequenceCommitTuple tuple : work.incomingCommitConsequences) {
+			writeConsequenceToTopic(tuple.topic, tuple.consequence);
+			if (!toFlush.containsKey(tuple.topic)) {
+				toFlush.put(tuple.topic, _consequenceOutputStreams.get(tuple.topic));
+			}
+		}
+		
+		boolean shouldFlushIntentions = false;
 		for (CommittedIntention intention : work.incomingCommitIntentions) {
 			// Serialize the intention and store it in the log file.
 			// NOTE:  The maximum serialized size of an Intention is 2^16-1 but we also need to store the effect so we can't consider that part of the size.
@@ -210,20 +220,26 @@ public class DiskManager implements IDiskManager {
 			buffer.put((byte)intention.effect.ordinal());
 			intention.record.serializeInto(buffer);
 			_intentionOutputStream.write(buffer.array());
-			// We won't force the write to become durable until we start batching the writes differently but we will at least flush.
-			_intentionOutputStream.flush();
+			shouldFlushIntentions = true;
 			
 			// For now, we also maintain it in the virtual disk until the read path is complete.
 			_committedIntentionVirtualDisk.add(intention);
-			_callbackTarget.ioEnqueueDiskCommandForMainThread((snapshot) -> _callbackTarget.mainIntentionWasCommitted(intention));
 		}
 		
-		// Commit all consequences.
+		// Now, Force everything to sync.
+		for (FileOutputStream stream : toFlush.values()) {
+			stream.getChannel().force(true);
+		}
+		if (shouldFlushIntentions) {
+			_intentionOutputStream.getChannel().force(true);
+		}
+		
+		// Finally, send the callbacks.
 		for (ConsequenceCommitTuple tuple : work.incomingCommitConsequences) {
-			TopicName topic = tuple.topic;
-			Consequence record = tuple.consequence;
-			writeConsequenceToTopic(topic, record);
-			_callbackTarget.ioEnqueueDiskCommandForMainThread((snapshot) -> _callbackTarget.mainConsequenceWasCommitted(topic, record));
+			_callbackTarget.ioEnqueueDiskCommandForMainThread((snapshot) -> _callbackTarget.mainConsequenceWasCommitted(tuple.topic, tuple.consequence));
+		}
+		for (CommittedIntention intention : work.incomingCommitIntentions) {
+			_callbackTarget.ioEnqueueDiskCommandForMainThread((snapshot) -> _callbackTarget.mainIntentionWasCommitted(intention));
 		}
 	}
 
@@ -282,8 +298,6 @@ public class DiskManager implements IDiskManager {
 		try {
 			FileOutputStream stream = _consequenceOutputStreams.get(topic);
 			stream.write(buffer.array());
-			// We won't force the write to become durable until we start batching the writes differently but we will at least flush.
-			stream.flush();
 		} catch (IOException e) {
 			// TODO:  Make a way to gracefully shutdown when this happens.
 			throw Assert.unimplemented(e.getLocalizedMessage());
