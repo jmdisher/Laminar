@@ -36,6 +36,10 @@ public interface IDiskManager {
 	 * @param effect The effect of the execution of this intention.
 	 * @param consequences The list of consequences associated with the execution of the intention (null iff effect was
 	 * not VALID).
+	 * @param newTransformedCode Non-null for TOPIC_CREATE, contains the transformed code (empty array if
+	 * non-programmable).
+	 * @param objectGraph The serialized object graph after executing the intention (null if the topic was
+	 * non-programmable or the intention does cause execution).
 	 */
-	void commit(Intention intention, CommitInfo.Effect effect, List<Consequence> consequences);
+	void commit(Intention intention, CommitInfo.Effect effect, List<Consequence> consequences, byte[] newTransformedCode, byte[] objectGraph);
 }

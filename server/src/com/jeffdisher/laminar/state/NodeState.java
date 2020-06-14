@@ -564,8 +564,8 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		return _selfState.lastIntentionOffsetReceived;
 	}
 
-	private void _commit(Intention mutation, CommitInfo.Effect effect, TopicName topic, List<Consequence> events) {
-		_diskManager.commit(mutation, effect, events);
+	private void _commit(Intention mutation, CommitInfo.Effect effect, TopicName topic, List<Consequence> events, byte[] newTransformedCode, byte[] objectGraph) {
+		_diskManager.commit(mutation, effect, events, newTransformedCode, objectGraph);
 		_lastTermNumberRemovedFromInFlight = mutation.termNumber;
 		_lastIntentionOffsetSentToDisk = mutation.intentionOffset;
 	}
@@ -777,6 +777,6 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 	private void _executeAndCommit(Intention mutation) {
 		TopicName topic = mutation.topic;
 		IntentionExecutor.ExecutionResult result = _mutationExecutor.execute(mutation);
-		_commit(mutation, result.effect, topic, result.consequences);
+		_commit(mutation, result.effect, topic, result.consequences, result.newTransformedCode, result.objectGraph);
 	}
 }

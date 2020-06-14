@@ -79,7 +79,7 @@ public class IntentionExecutor {
 				}
 				if (null != events) {
 					_activeTopics.put(mutation.topic, context);
-					result = ExecutionResult.valid(events);
+					result = ExecutionResult.valid(events, context.transformedCode, context.objectGraph);
 				} else {
 					// Error in deployment will be an error.
 					result = ExecutionResult.error();
@@ -92,7 +92,7 @@ public class IntentionExecutor {
 			if (_activeTopics.containsKey(mutation.topic)) {
 				_activeTopics.remove(mutation.topic);
 				Consequence eventToReturn = Consequence.destroyTopic(mutation.termNumber, mutation.intentionOffset, offsetToPropose, mutation.clientId, mutation.clientNonce);
-				result = ExecutionResult.valid(Collections.singletonList(eventToReturn));
+				result = ExecutionResult.valid(Collections.singletonList(eventToReturn), null, null);
 			} else {
 				result = ExecutionResult.invalid();
 			}
@@ -111,7 +111,7 @@ public class IntentionExecutor {
 					events = Collections.singletonList(Consequence.put(mutation.termNumber, mutation.intentionOffset, offsetToPropose, mutation.clientId, mutation.clientNonce, payload.key, payload.value));
 				}
 				if (null != events) {
-					result = ExecutionResult.valid(events);
+					result = ExecutionResult.valid(events, null, context.objectGraph);
 				} else {
 					// Error in PUT will be an error.
 					result = ExecutionResult.error();
@@ -134,7 +134,7 @@ public class IntentionExecutor {
 					events = Collections.singletonList(Consequence.delete(mutation.termNumber, mutation.intentionOffset, offsetToPropose, mutation.clientId, mutation.clientNonce, payload.key));
 				}
 				if (null != events) {
-					result = ExecutionResult.valid(events);
+					result = ExecutionResult.valid(events, null, context.objectGraph);
 				} else {
 					// Error in DELETE will be an error.
 					result = ExecutionResult.error();
@@ -146,7 +146,7 @@ public class IntentionExecutor {
 			break;
 		case CONFIG_CHANGE: {
 			// We always just apply configs.
-			result = ExecutionResult.valid(Collections.emptyList());
+			result = ExecutionResult.valid(Collections.emptyList(), null, null);
 		}
 			break;
 		case STUTTER: {
@@ -159,7 +159,7 @@ public class IntentionExecutor {
 				events.add(eventToReturn1);
 				Consequence eventToReturn2 = Consequence.put(mutation.termNumber, mutation.intentionOffset, offsetToPropose + 1, mutation.clientId, mutation.clientNonce, payload.key, payload.value);
 				events.add(eventToReturn2);
-				result = ExecutionResult.valid(events);
+				result = ExecutionResult.valid(events, null, null);
 			} else {
 				result = ExecutionResult.error();
 			}
@@ -181,25 +181,29 @@ public class IntentionExecutor {
 
 
 	public static class ExecutionResult {
-		public static ExecutionResult valid(List<Consequence> consequences) {
-			return new ExecutionResult(CommitInfo.Effect.VALID, consequences);
+		public static ExecutionResult valid(List<Consequence> consequences, byte[] newTransformedCode, byte[] objectGraph) {
+			return new ExecutionResult(CommitInfo.Effect.VALID, consequences, newTransformedCode, objectGraph);
 		}
 		
 		public static ExecutionResult invalid() {
-			return new ExecutionResult(CommitInfo.Effect.INVALID, null);
+			return new ExecutionResult(CommitInfo.Effect.INVALID, null, null, null);
 		}
 		
 		public static ExecutionResult error() {
-			return new ExecutionResult(CommitInfo.Effect.ERROR, null);
+			return new ExecutionResult(CommitInfo.Effect.ERROR, null, null, null);
 		}
 		
 		
 		public final CommitInfo.Effect effect;
 		public final List<Consequence> consequences;
+		public final byte[] newTransformedCode;
+		public final byte[] objectGraph;
 		
-		private ExecutionResult(CommitInfo.Effect effect, List<Consequence> consequences) {
+		private ExecutionResult(CommitInfo.Effect effect, List<Consequence> consequences, byte[] newTransformedCode, byte[] objectGraph) {
 			this.effect = effect;
 			this.consequences = consequences;
+			this.newTransformedCode = newTransformedCode;
+			this.objectGraph = objectGraph;
 		}
 	}
 }

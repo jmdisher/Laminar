@@ -20,6 +20,8 @@ import com.jeffdisher.laminar.utils.Assert;
 public class LogFileDomain implements Closeable {
 	public static final String LOG_FILE_NAME = "logs.0";
 	public static final String INDEX_FILE_NAME = "index.0";
+	public static final String CODE_NAME_PREFIX = "code.";
+	public static final String GRAPH_NAME_PREFIX = "graph.";
 
 	public static LogFileDomain openFromDirectory(File directory) throws IOException {
 		File logFile = new File(directory, LOG_FILE_NAME);
@@ -43,17 +45,19 @@ public class LogFileDomain implements Closeable {
 		long logFileSize = logFile.length();
 		// We want to keep these log files small - in the future, we will split them, but we just add this assertion, now.
 		Assert.assertTrue(logFileSize < Integer.MAX_VALUE);
-		return new LogFileDomain(logOutputStream, logInputChannel, indexOutputStream, indexInputStream, (int)logFileSize);
+		return new LogFileDomain(directory, logOutputStream, logInputChannel, indexOutputStream, indexInputStream, (int)logFileSize);
 	}
 
 
+	private final File _directory;
 	private final FileOutputStream _writeLogFile;
 	private final FileChannel _readLogFile;
 	private final FileOutputStream _writeIndexFile;
 	private final FileChannel _readIndexFile;
 	private int _logFileSize;
 
-	private LogFileDomain(FileOutputStream logFile, FileChannel readLogFile, FileOutputStream indexFile, FileChannel readIndexFile, int logFileSize) {
+	private LogFileDomain(File directory, FileOutputStream logFile, FileChannel readLogFile, FileOutputStream indexFile, FileChannel readIndexFile, int logFileSize) {
+		_directory = directory;
 		_writeLogFile = logFile;
 		_readLogFile = readLogFile;
 		_writeIndexFile = indexFile;
@@ -107,6 +111,66 @@ public class LogFileDomain implements Closeable {
 		total.flip();
 		Assert.assertTrue(readSize == (endOfRead - entry.fileOffset));
 		return total;
+	}
+
+	/**
+	 * Writes the given transformedCode as the code for the given finalIntentionOffset, and forces it to sync to disk.
+	 * 
+	 * @param finalIntentionOffset The offset of the final intention in the current set of changes being written.
+	 * @param transformedCode The transformed code for a new topic (empty if non-programmable).
+	 * @throws IOException Something went wrong when opening, writing, or synchronizing the file.
+	 */
+	public void writeCode(long finalIntentionOffset, byte[] transformedCode) throws IOException {
+		File codeFile = new File(_directory, CODE_NAME_PREFIX + finalIntentionOffset);
+		try (FileOutputStream codeOutputStream = new FileOutputStream(codeFile, true)) {
+			codeOutputStream.write(transformedCode);
+			codeOutputStream.getChannel().force(true);
+		}
+	}
+
+	/**
+	 * Writes the given objectGraph as the object graph for the given finalIntentionOffset, and forces it to sync to disk.
+	 * 
+	 * @param finalIntentionOffset The offset of the final intention in the current set of changes being written.
+	 * @param objectGraph The object graph for this topic at the end of this set of changes.
+	 * @throws IOException Something went wrong when opening, writing, or synchronizing the file.
+	 */
+	public void writeObjectGraph(long finalIntentionOffset, byte[] objectGraph) throws IOException {
+		File graphFile = new File(_directory, GRAPH_NAME_PREFIX + finalIntentionOffset);
+		try (FileOutputStream graphOutputStream = new FileOutputStream(graphFile, true)) {
+			graphOutputStream.write(objectGraph);
+			graphOutputStream.getChannel().force(true);
+		}
+	}
+
+	/**
+	 * Deletes any transformed code written to the topic for any write attempt other than the one for finalIntentionOffset.
+	 * 
+	 * @param finalIntentionOffset The offset of the final intention in the current set of changes being written.
+	 */
+	public void purgeStaleCode(long finalIntentionOffset) {
+		String latestFile = CODE_NAME_PREFIX + finalIntentionOffset;
+		File[] stale = _directory.listFiles((file, name) -> name.startsWith(CODE_NAME_PREFIX) && !name.equals(latestFile));
+		if (0 != stale.length) {
+			Assert.assertTrue(1 == stale.length);
+			boolean didDelete = stale[0].delete();
+			Assert.assertTrue(didDelete);
+		}
+	}
+
+	/**
+	 * Deletes any object graph written to the topic for any write attempt other than the one for finalIntentionOffset.
+	 * 
+	 * @param finalIntentionOffset The offset of the final intention in the current set of changes being written.
+	 */
+	public void purgeStaleObjectGraphs(long finalIntentionOffset) {
+		String latestFile = GRAPH_NAME_PREFIX + finalIntentionOffset;
+		File[] stale = _directory.listFiles((file, name) -> name.startsWith(GRAPH_NAME_PREFIX) && !name.equals(latestFile));
+		if (0 != stale.length) {
+			Assert.assertTrue(1 == stale.length);
+			boolean didDelete = stale[0].delete();
+			Assert.assertTrue(didDelete);
+		}
 	}
 
 	@Override

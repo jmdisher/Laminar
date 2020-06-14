@@ -49,7 +49,7 @@ public class FutureDiskManager implements IDiskManager {
 		System.out.println("IDiskManager - fetchEvent");
 	}
 	@Override
-	public void commit(Intention intention, Effect effect, List<Consequence> consequences) {
+	public void commit(Intention intention, Effect effect, List<Consequence> consequences, byte[] newTransformedCode, byte[] objectGraph) {
 		if (null != f_commitMutation) {
 			f_commitMutation.put(CommittedIntention.create(intention, effect));
 			f_commitMutation = f_commitMutation.nextLink;

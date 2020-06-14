@@ -46,9 +46,9 @@ public class TestDiskManager {
 		DiskManager manager = new DiskManager(_folder.newFolder(), callbacks);
 		manager.startAndWaitForReady();
 		
-		manager.commit(ignored1, CommitInfo.Effect.VALID, Collections.singletonList(event1));
+		manager.commit(ignored1, CommitInfo.Effect.VALID, Collections.singletonList(event1), null, null);
 		while (callbacks.commitEventCount < 1) { callbacks.runOneCommand(); }
-		manager.commit(ignored2, CommitInfo.Effect.VALID, Collections.singletonList(event2));
+		manager.commit(ignored2, CommitInfo.Effect.VALID, Collections.singletonList(event2), null, null);
 		while (callbacks.commitEventCount < 2) { callbacks.runOneCommand(); }
 		callbacks.expectedEvent = event2;
 		manager.fetchConsequence(topic, 2L);
@@ -72,9 +72,9 @@ public class TestDiskManager {
 		DiskManager manager = new DiskManager(_folder.newFolder(), callbacks);
 		manager.startAndWaitForReady();
 		
-		manager.commit(mutation1, CommitInfo.Effect.VALID, Collections.singletonList(event1));
+		manager.commit(mutation1, CommitInfo.Effect.VALID, Collections.singletonList(event1), null, null);
 		while (callbacks.commitMutationCount < 1) { callbacks.runOneCommand(); }
-		manager.commit(mutation2, CommitInfo.Effect.VALID, Collections.singletonList(event2));
+		manager.commit(mutation2, CommitInfo.Effect.VALID, Collections.singletonList(event2), null, null);
 		while (callbacks.commitMutationCount < 2) { callbacks.runOneCommand(); }
 		
 		callbacks.expectedMutation = mutation1;
@@ -102,9 +102,9 @@ public class TestDiskManager {
 		DiskManager manager = new DiskManager(directory, callbacks);
 		manager.startAndWaitForReady();
 		
-		manager.commit(intention1, CommitInfo.Effect.VALID, Collections.emptyList());
+		manager.commit(intention1, CommitInfo.Effect.VALID, Collections.emptyList(), null, null);
 		while (callbacks.commitMutationCount < 1) { callbacks.runOneCommand(); }
-		manager.commit(intention2, CommitInfo.Effect.VALID, Collections.emptyList());
+		manager.commit(intention2, CommitInfo.Effect.VALID, Collections.emptyList(), null, null);
 		while (callbacks.commitMutationCount < 2) { callbacks.runOneCommand(); }
 		manager.stopAndWaitForTermination();
 		
@@ -176,9 +176,9 @@ public class TestDiskManager {
 		DiskManager manager = new DiskManager(directory, callbacks);
 		manager.startAndWaitForReady();
 		
-		manager.commit(ignored1, CommitInfo.Effect.VALID, Collections.singletonList(consequence1));
+		manager.commit(ignored1, CommitInfo.Effect.VALID, Collections.singletonList(consequence1), null, null);
 		while (callbacks.commitEventCount < 1) { callbacks.runOneCommand(); }
-		manager.commit(ignored2, CommitInfo.Effect.VALID, Collections.singletonList(consequence2));
+		manager.commit(ignored2, CommitInfo.Effect.VALID, Collections.singletonList(consequence2), null, null);
 		while (callbacks.commitEventCount < 2) { callbacks.runOneCommand(); }
 		manager.stopAndWaitForTermination();
 		
@@ -229,6 +229,64 @@ public class TestDiskManager {
 			Assert.assertEquals(consequence2.consequenceOffset, entry2.logicalOffset);
 			Assert.assertEquals(consequence2FileOffset, entry2.fileOffset);
 		}
+	}
+
+	/**
+	 * Tests that the management of AVM artifacts works correctly, even over topic delete and recreate.
+	 */
+	@Test
+	public void testProgrammableTopicArtifacts() throws Throwable {
+		File directory = _folder.newFolder();
+		TopicName topic = TopicName.fromString("fake");
+		byte[] code1 = new byte[] {1};
+		byte[] code2 = new byte[] {2};
+		byte[] arguments = new byte[0];
+		byte[] graph1 = new byte[] {1,1};
+		byte[] graph2 = new byte[] {1,2};
+		byte[] graph3 = new byte[] {1,3};
+		File topicDirectory = new File(new File(directory, DiskManager.CONSEQUENCE_TOPICS_DIRECTORY_NAME), topic.string);
+		
+		// Create the intentions.
+		Intention create1 = Intention.createTopic(1L, 1L, topic, UUID.randomUUID(), 1L, code1, arguments);
+		Intention put = Intention.put(1L, 2L, topic, UUID.randomUUID(), 1L, new byte[0], new byte[] {1});
+		Intention destroy = Intention.destroyTopic(1L, 3L, topic, UUID.randomUUID(), 1L);
+		Intention create2 = Intention.createTopic(1L, 4L, topic, UUID.randomUUID(), 1L, code2, arguments);
+		
+		Consequence create1Consequence = Consequence.createTopic(1L, 1L, 1L, UUID.randomUUID(), 1L, code1, arguments);
+		Consequence destroyConsequence = Consequence.destroyTopic(1L, 3L, 2L, UUID.randomUUID(), 1L);
+		Consequence create2Consequence = Consequence.createTopic(1L, 4L, 3L, UUID.randomUUID(), 1L, code2, arguments);
+		
+		LatchedCallbacks callbacks = new LatchedCallbacks();
+		DiskManager manager = new DiskManager(directory, callbacks);
+		manager.startAndWaitForReady();
+		
+		// Run the initial CREATE and then make sure the code and graph were written.
+		manager.commit(create1, CommitInfo.Effect.VALID, Collections.singletonList(create1Consequence), code1, graph1);
+		while (callbacks.commitMutationCount < 1) { callbacks.runOneCommand(); }
+		Assert.assertTrue(new File(topicDirectory, LogFileDomain.CODE_NAME_PREFIX + create1.intentionOffset).exists());
+		Assert.assertTrue(new File(topicDirectory, LogFileDomain.GRAPH_NAME_PREFIX + create1.intentionOffset).exists());
+		
+		// Run the PUT and see that the graph changed.
+		manager.commit(put, CommitInfo.Effect.VALID, Collections.emptyList(), null, graph2);
+		while (callbacks.commitMutationCount < 2) { callbacks.runOneCommand(); }
+		Assert.assertTrue(new File(topicDirectory, LogFileDomain.CODE_NAME_PREFIX + create1.intentionOffset).exists());
+		Assert.assertFalse(new File(topicDirectory, LogFileDomain.GRAPH_NAME_PREFIX + create1.intentionOffset).exists());
+		Assert.assertTrue(new File(topicDirectory, LogFileDomain.GRAPH_NAME_PREFIX + put.intentionOffset).exists());
+		
+		// Run the DESTROY and observe that nothing changed (since we passed in nulls).
+		manager.commit(destroy, CommitInfo.Effect.VALID, Collections.singletonList(destroyConsequence), null, null);
+		while (callbacks.commitMutationCount < 3) { callbacks.runOneCommand(); }
+		Assert.assertTrue(new File(topicDirectory, LogFileDomain.CODE_NAME_PREFIX + create1.intentionOffset).exists());
+		Assert.assertTrue(new File(topicDirectory, LogFileDomain.GRAPH_NAME_PREFIX + put.intentionOffset).exists());
+		
+		// Run the second CREATE and verify the new code and graph are written.
+		manager.commit(create2, CommitInfo.Effect.VALID, Collections.singletonList(create2Consequence), code2, graph3);
+		while (callbacks.commitMutationCount < 4) { callbacks.runOneCommand(); }
+		manager.stopAndWaitForTermination();
+		Assert.assertFalse(new File(topicDirectory, LogFileDomain.CODE_NAME_PREFIX + create1.intentionOffset).exists());
+		Assert.assertFalse(new File(topicDirectory, LogFileDomain.GRAPH_NAME_PREFIX + put.intentionOffset).exists());
+		Assert.assertTrue(new File(topicDirectory, LogFileDomain.CODE_NAME_PREFIX + create2.intentionOffset).exists());
+		Assert.assertTrue(new File(topicDirectory, LogFileDomain.GRAPH_NAME_PREFIX + create2.intentionOffset).exists());
 	}
 
 

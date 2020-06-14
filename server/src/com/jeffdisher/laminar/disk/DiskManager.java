@@ -131,7 +131,7 @@ public class DiskManager implements IDiskManager {
 	}
 
 	@Override
-	public synchronized void commit(Intention intention, CommitInfo.Effect effect, List<Consequence> consequences) {
+	public synchronized void commit(Intention intention, CommitInfo.Effect effect, List<Consequence> consequences, byte[] newTransformedCode, byte[] objectGraph) {
 		// Make sure this isn't reentrant.
 		Assert.assertTrue(Thread.currentThread() != _background);
 		// Make sure that the effect is consistent.
@@ -142,6 +142,12 @@ public class DiskManager implements IDiskManager {
 			for (Consequence consequence : consequences) {
 				_pendingWorkUnit.incomingCommitConsequences.add(new ConsequenceCommitTuple(intention.topic, consequence));
 			}
+		}
+		if (null != newTransformedCode) {
+			_pendingWorkUnit.incomingTransformedCode.put(intention.topic, newTransformedCode);
+		}
+		if (null != objectGraph) {
+			_pendingWorkUnit.incomingObjectGraphs.put(intention.topic, objectGraph);
 		}
 		this.notifyAll();
 	}
@@ -191,6 +197,26 @@ public class DiskManager implements IDiskManager {
 			}
 		}
 		
+		// Transformed code and object graph are very different from how we handle normal intentions or consequences since we only care about the most recent.
+		// However, these still need to be consistent if the system loses power at an arbitrary time so we will name-stamp each of them with the last intention number.
+		// After the intention index becomes durable, any older graphs which are now shadowed can be purged.
+		// Transformed code can still shadow old code if the topic was recreated.
+		long finalIntentionOffset = 0L;
+		if (work.incomingCommitIntentions.isEmpty()) {
+			Assert.assertTrue(work.incomingTransformedCode.isEmpty());
+			Assert.assertTrue(work.incomingObjectGraphs.isEmpty());
+		} else {
+			finalIntentionOffset = work.incomingCommitIntentions.get(work.incomingCommitIntentions.size() - 1).record.intentionOffset;
+			for (Map.Entry<TopicName, byte[]> codeEntry : work.incomingTransformedCode.entrySet()) {
+				LogFileDomain domain = _consequenceOutputStreams.get(codeEntry.getKey());
+				domain.writeCode(finalIntentionOffset, codeEntry.getValue());
+			}
+			for (Map.Entry<TopicName, byte[]> graphEntry : work.incomingObjectGraphs.entrySet()) {
+				LogFileDomain domain = _consequenceOutputStreams.get(graphEntry.getKey());
+				domain.writeObjectGraph(finalIntentionOffset, graphEntry.getValue());
+			}
+		}
+		
 		boolean shouldFlushIntentions = false;
 		int nextIndexFileOffset = _intentionStorage.getLogFileSizeBytes();
 		for (CommittedIntention intention : work.incomingCommitIntentions) {
@@ -225,6 +251,18 @@ public class DiskManager implements IDiskManager {
 			// We now force the index to become durable since this is the root-level data structure we will use to
 			// interpret the intentions, which is then used to determine the legitimacy of the consequence logs.
 			_intentionStorage.syncIndex();
+		}
+		
+		// The intentions are now synced so any updated code or objects are now live, meaning we can purge the old ones.
+		if (0L != finalIntentionOffset) {
+			for (TopicName topic : work.incomingTransformedCode.keySet()) {
+				LogFileDomain domain = _consequenceOutputStreams.get(topic);
+				domain.purgeStaleCode(finalIntentionOffset);
+			}
+			for (TopicName topic : work.incomingObjectGraphs.keySet()) {
+				LogFileDomain domain = _consequenceOutputStreams.get(topic);
+				domain.purgeStaleObjectGraphs(finalIntentionOffset);
+			}
 		}
 		
 		// Finally, send the callbacks.
@@ -347,11 +385,14 @@ public class DiskManager implements IDiskManager {
 	 */
 	private static class RequestGeneration {
 		// We track the incoming commits in 2 lists:  one for the "global" intentions and one for the "local" consequences.
-		private final List<CommittedIntention> incomingCommitIntentions = new LinkedList<>();
-		private final List<ConsequenceCommitTuple> incomingCommitConsequences = new LinkedList<>();
+		public final List<CommittedIntention> incomingCommitIntentions = new LinkedList<>();
+		public final List<ConsequenceCommitTuple> incomingCommitConsequences = new LinkedList<>();
+		// We just store the most recent incoming graph or code since they aren't visible to listeners.
+		public final Map<TopicName, byte[]> incomingTransformedCode = new HashMap<>();
+		public final Map<TopicName, byte[]> incomingObjectGraphs = new HashMap<>();
 		// We track fetch requests in 2 lists:  one for the "global" intentions and one for the "local" consequences.
-		private final List<Long> incomingFetchIntentionRequests = new LinkedList<>();
-		private final List<ConsequenceFetchTuple> incomingFetchConsequenceRequests = new LinkedList<>();
+		public final List<Long> incomingFetchIntentionRequests = new LinkedList<>();
+		public final List<ConsequenceFetchTuple> incomingFetchConsequenceRequests = new LinkedList<>();
 		
 		public boolean hasWork() {
 			return this.incomingCommitConsequences.isEmpty() && this.incomingCommitIntentions.isEmpty() && this.incomingFetchConsequenceRequests.isEmpty() && this.incomingFetchIntentionRequests.isEmpty();
