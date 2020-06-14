@@ -1,5 +1,6 @@
 package com.jeffdisher.laminar.disk;
 
+import java.io.Closeable;
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
@@ -27,6 +28,7 @@ public class DiskManager implements IDiskManager {
 	public static final String INTENTION_DIRECTORY_NAME = "intentions";
 	public static final String CONSEQUENCE_TOPICS_DIRECTORY_NAME = "consequence_topics";
 	public static final String LOG_FILE_NAME = "logs.0";
+	public static final String INDEX_FILE_NAME = "index.0";
 
 	// Read-only fields setup during construction.
 	private final IDiskManagerBackgroundCallbacks _callbackTarget;
@@ -41,9 +43,10 @@ public class DiskManager implements IDiskManager {
 	// Only accessed by background thread (current virtual "disk").
 	private final List<CommittedIntention> _committedIntentionVirtualDisk;
 	private final Map<TopicName, List<Consequence>> _committedConsequenceVirtualDisk;
-	private final FileOutputStream _intentionOutputStream;
+	// The files related to intentions are always being written so we always keep them open at the top leve.
+	private final OutputFileTuple _intentionStorage;
 	private final File _consequenceTopLevelDirectory;
-	private final Map<TopicName, FileOutputStream> _consequenceOutputStreams;
+	private final Map<TopicName, OutputFileTuple> _consequenceOutputStreams;
 
 	public DiskManager(File dataDirectory, IDiskManagerBackgroundCallbacks callbackTarget) {
 		// For now, we ignore the given directory as we are just going to be faking the disk in-memory.
@@ -84,11 +87,30 @@ public class DiskManager implements IDiskManager {
 		
 		// Create the common output stream for intentions.
 		File intentionLogFile = new File(intentionDirectory, LOG_FILE_NAME);
+		FileOutputStream intentionOutputStream;
 		try {
-			_intentionOutputStream = new FileOutputStream(intentionLogFile, true);
+			intentionOutputStream = new FileOutputStream(intentionLogFile, true);
 		} catch (FileNotFoundException e) {
 			throw new IllegalStateException("Failed to open initial intention log file: " + intentionLogFile);
 		}
+		File intentionIndexFile = new File(intentionDirectory, INDEX_FILE_NAME);
+		FileOutputStream intentionIndexStream;
+		try {
+			intentionIndexStream = new FileOutputStream(intentionIndexFile, true);
+		} catch (FileNotFoundException e) {
+			try {
+				intentionOutputStream.close();
+			} catch (IOException e1) {
+				// We don't expect this when we just opened it.
+				throw Assert.unexpected(e1);
+			}
+			throw new IllegalStateException("Failed to open initial intention index file: " + intentionIndexFile);
+		}
+		long logFileSize = intentionLogFile.length();
+		// We want to keep these log files small - in the future, we will split them, but we just add this assertion, now.
+		Assert.assertTrue(logFileSize < Integer.MAX_VALUE);
+		_intentionStorage = new OutputFileTuple(intentionOutputStream, intentionIndexStream, (int)logFileSize);
+		
 		// TODO:  We need to properly lifecycle these consequence output streams once we have completely shifted away from the virtual storage mechanism.
 		_consequenceOutputStreams = new HashMap<>();
 	}
@@ -117,9 +139,9 @@ public class DiskManager implements IDiskManager {
 			Assert.unexpected(e);
 		}
 		try {
-			_intentionOutputStream.close();
-			for (FileOutputStream stream : _consequenceOutputStreams.values()) {
-				stream.close();
+			_intentionStorage.close();
+			for (OutputFileTuple tuple : _consequenceOutputStreams.values()) {
+				tuple.close();
 			}
 		} catch (IOException e) {
 			// We aren't expecting a failure to close.
@@ -201,7 +223,7 @@ public class DiskManager implements IDiskManager {
 	private void _backgroundCommitsInWork(RequestGeneration work) throws IOException {
 		// We will write all the consequences before the intentions.  This is so that we can eventually use this pattern to make the intention file update into the atomic operation.
 		// We need to keep track of all the streams to sync as durable, after we write.
-		Map<TopicName, FileOutputStream> toFlush = new HashMap<>();
+		Map<TopicName, OutputFileTuple> toFlush = new HashMap<>();
 		for (ConsequenceCommitTuple tuple : work.incomingCommitConsequences) {
 			writeConsequenceToTopic(tuple.topic, tuple.consequence);
 			if (!toFlush.containsKey(tuple.topic)) {
@@ -210,6 +232,7 @@ public class DiskManager implements IDiskManager {
 		}
 		
 		boolean shouldFlushIntentions = false;
+		int nextIndexFileOffset = _intentionStorage.getLogFileSizeBytes();
 		for (CommittedIntention intention : work.incomingCommitIntentions) {
 			// Serialize the intention and store it in the log file.
 			// NOTE:  The maximum serialized size of an Intention is 2^16-1 but we also need to store the effect so we can't consider that part of the size.
@@ -219,7 +242,7 @@ public class DiskManager implements IDiskManager {
 			buffer.putShort((short)serializedSize);
 			buffer.put((byte)intention.effect.ordinal());
 			intention.record.serializeInto(buffer);
-			_intentionOutputStream.write(buffer.array());
+			_intentionStorage.appendToLogFile(buffer);
 			shouldFlushIntentions = true;
 			
 			// For now, we also maintain it in the virtual disk until the read path is complete.
@@ -227,11 +250,24 @@ public class DiskManager implements IDiskManager {
 		}
 		
 		// Now, Force everything to sync.
-		for (FileOutputStream stream : toFlush.values()) {
-			stream.getChannel().force(true);
+		for (OutputFileTuple tuple : toFlush.values()) {
+			tuple.syncLog();
+			tuple.syncIndex();
 		}
 		if (shouldFlushIntentions) {
-			_intentionOutputStream.getChannel().force(true);
+			_intentionStorage.syncLog();
+			// Now that the logs are durable, we can write the index.
+			for (CommittedIntention intention : work.incomingCommitIntentions) {
+				// Find the offsets of everything written and update the index file.
+				int serializedSize = intention.record.serializedSize();
+				int writeSize = Short.BYTES + Byte.BYTES + serializedSize;
+				IndexEntry entry = IndexEntry.create(intention.record.intentionOffset, nextIndexFileOffset);
+				_intentionStorage.appendToIndexFile(entry);
+				nextIndexFileOffset += writeSize;
+			}
+			// We now force the index to become durable since this is the root-level data structure we will use to
+			// interpret the intentions, which is then used to determine the legitimacy of the consequence logs.
+			_intentionStorage.syncIndex();
 		}
 		
 		// Finally, send the callbacks.
@@ -272,8 +308,14 @@ public class DiskManager implements IDiskManager {
 					throw new IllegalStateException("Failed to create topic storage directory: " + topicDirectory);
 				}
 				File logFile = new File(topicDirectory, LOG_FILE_NAME);
+				File indexFile = new File(topicDirectory, INDEX_FILE_NAME);
+				long logFileSize = logFile.length();
+				// We want to keep these log files small - in the future, we will split them, but we just add this assertion, now.
+				Assert.assertTrue(logFileSize < Integer.MAX_VALUE);
 				try {
-					_consequenceOutputStreams.put(topic, new FileOutputStream(logFile, true));
+					FileOutputStream logStream = new FileOutputStream(logFile, true);
+					FileOutputStream indexStream = new FileOutputStream(indexFile, true);
+					_consequenceOutputStreams.put(topic, new OutputFileTuple(logStream, indexStream, (int)logFileSize));
 				} catch (FileNotFoundException e) {
 					// We explicitly managed this creation so it can't fail.
 					throw Assert.unexpected(e);
@@ -296,8 +338,10 @@ public class DiskManager implements IDiskManager {
 		buffer.putShort((short)serialized.length);
 		buffer.put(serialized);
 		try {
-			FileOutputStream stream = _consequenceOutputStreams.get(topic);
-			stream.write(buffer.array());
+			OutputFileTuple tuple = _consequenceOutputStreams.get(topic);
+			IndexEntry newEntry = IndexEntry.create(record.consequenceOffset, tuple.getLogFileSizeBytes());
+			tuple.appendToLogFile(buffer);
+			tuple.appendToIndexFile(newEntry);
 		} catch (IOException e) {
 			// TODO:  Make a way to gracefully shutdown when this happens.
 			throw Assert.unimplemented(e.getLocalizedMessage());
@@ -350,6 +394,48 @@ public class DiskManager implements IDiskManager {
 		
 		public boolean hasWork() {
 			return this.incomingCommitConsequences.isEmpty() && this.incomingCommitIntentions.isEmpty() && this.incomingFetchConsequenceRequests.isEmpty() && this.incomingFetchIntentionRequests.isEmpty();
+		}
+	}
+
+
+	private static class OutputFileTuple implements Closeable {
+		private final FileOutputStream _logFile;
+		private final FileOutputStream _indexFile;
+		private int _logFileSize;
+		
+		public OutputFileTuple(FileOutputStream logFile, FileOutputStream indexFile, int logFileSize) {
+			_logFile = logFile;
+			_indexFile = indexFile;
+			_logFileSize = logFileSize;
+		}
+		
+		public void syncLog() throws IOException {
+			_logFile.getChannel().force(true);
+		}
+		
+		public void syncIndex() throws IOException {
+			_indexFile.getChannel().force(true);
+		}
+		
+		public int getLogFileSizeBytes() {
+			return _logFileSize;
+		}
+		
+		public void appendToLogFile(ByteBuffer buffer) throws IOException {
+			_logFile.write(buffer.array());
+			_logFileSize += buffer.capacity();
+		}
+		
+		public void appendToIndexFile(IndexEntry entry) throws IOException {
+			ByteBuffer entryBuffer = ByteBuffer.allocate(IndexEntry.BYTES);
+			entry.writeToBuffer(entryBuffer);
+			_indexFile.write(entryBuffer.array());
+		}
+		
+		@Override
+		public void close() throws IOException {
+			_logFile.close();
+			_indexFile.close();
 		}
 	}
 }

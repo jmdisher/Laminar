@@ -108,17 +108,21 @@ public class TestDiskManager {
 		while (callbacks.commitMutationCount < 2) { callbacks.runOneCommand(); }
 		manager.stopAndWaitForTermination();
 		
+		// Verify that the intention log file contains the expected data.
 		int intention1Size = intention1.serializedSize();
 		int intention2Size = intention2.serializedSize();
 		File logFile = new File(new File(directory, DiskManager.INTENTION_DIRECTORY_NAME), DiskManager.LOG_FILE_NAME);
 		long fileLength = logFile.length();
 		Assert.assertEquals((2 * Short.BYTES) + (2 * Byte.BYTES) + intention1Size + intention2Size, (int)fileLength);
+		int intention1FileOffset;
+		int intention2FileOffset;
 		try (FileInputStream stream = new FileInputStream(logFile)) {
 			ByteBuffer buffer = ByteBuffer.allocate((int)fileLength);
 			int read = stream.getChannel().read(buffer);
 			Assert.assertEquals((int)fileLength, read);
 			buffer.flip();
 			
+			intention1FileOffset = buffer.position();
 			short size = buffer.getShort();
 			Assert.assertEquals(Short.toUnsignedInt(size), intention1Size);
 			Assert.assertEquals(CommitInfo.Effect.VALID, CommitInfo.Effect.values()[(int)buffer.get()]);
@@ -126,12 +130,32 @@ public class TestDiskManager {
 			buffer.get(temp);
 			Assert.assertArrayEquals(intention1.serialize(), temp);
 			
+			intention2FileOffset = buffer.position();
 			size = buffer.getShort();
 			Assert.assertEquals(Short.toUnsignedInt(size), intention2Size);
 			Assert.assertEquals(CommitInfo.Effect.VALID, CommitInfo.Effect.values()[(int)buffer.get()]);
 			temp = new byte[(int)size];
 			buffer.get(temp);
 			Assert.assertArrayEquals(intention2.serialize(), temp);
+		}
+		
+		// Verify that the intention index file contains the expected data.
+		File indexFile = new File(new File(directory, DiskManager.INTENTION_DIRECTORY_NAME), DiskManager.INDEX_FILE_NAME);
+		long indexFileLength = indexFile.length();
+		Assert.assertEquals(2 * IndexEntry.BYTES, (int)indexFileLength);
+		try (FileInputStream stream = new FileInputStream(indexFile)) {
+			ByteBuffer buffer = ByteBuffer.allocate((int)indexFileLength);
+			int read = stream.getChannel().read(buffer);
+			Assert.assertEquals((int)indexFileLength, read);
+			buffer.flip();
+			
+			IndexEntry entry1 = IndexEntry.read(buffer);
+			Assert.assertEquals(intention1.intentionOffset, entry1.logicalOffset);
+			Assert.assertEquals(intention1FileOffset, entry1.fileOffset);
+			
+			IndexEntry entry2 = IndexEntry.read(buffer);
+			Assert.assertEquals(intention2.intentionOffset, entry2.logicalOffset);
+			Assert.assertEquals(intention2FileOffset, entry2.fileOffset);
 		}
 	}
 
@@ -158,28 +182,52 @@ public class TestDiskManager {
 		while (callbacks.commitEventCount < 2) { callbacks.runOneCommand(); }
 		manager.stopAndWaitForTermination();
 		
+		// Verify that the consequence log file contains the expected data.
 		byte[] serialized1 = consequence1.serialize();
 		byte[] serialized2 = consequence2.serialize();
 		File logFile = new File(new File(new File(directory, DiskManager.CONSEQUENCE_TOPICS_DIRECTORY_NAME), topic.string), DiskManager.LOG_FILE_NAME);
 		long fileLength = logFile.length();
 		Assert.assertEquals((2 * Short.BYTES) + serialized1.length + serialized2.length, (int)fileLength);
+		int consequence1FileOffset;
+		int consequence2FileOffset;
 		try (FileInputStream stream = new FileInputStream(logFile)) {
 			ByteBuffer buffer = ByteBuffer.allocate((int)fileLength);
 			int read = stream.getChannel().read(buffer);
 			Assert.assertEquals((int)fileLength, read);
 			buffer.flip();
 			
+			consequence1FileOffset = buffer.position();
 			short size = buffer.getShort();
 			Assert.assertEquals(Short.toUnsignedInt(size), serialized1.length);
 			byte[] temp = new byte[(int)size];
 			buffer.get(temp);
 			Assert.assertArrayEquals(serialized1, temp);
 			
+			consequence2FileOffset = buffer.position();
 			size = buffer.getShort();
 			Assert.assertEquals(Short.toUnsignedInt(size), serialized2.length);
 			temp = new byte[(int)size];
 			buffer.get(temp);
 			Assert.assertArrayEquals(serialized2, temp);
+		}
+		
+		// Verify that the consequence index file contains the expected data.
+		File indexFile = new File(new File(new File(directory, DiskManager.CONSEQUENCE_TOPICS_DIRECTORY_NAME), topic.string), DiskManager.INDEX_FILE_NAME);
+		long indexFileLength = indexFile.length();
+		Assert.assertEquals(2 * IndexEntry.BYTES, (int)indexFileLength);
+		try (FileInputStream stream = new FileInputStream(indexFile)) {
+			ByteBuffer buffer = ByteBuffer.allocate((int)indexFileLength);
+			int read = stream.getChannel().read(buffer);
+			Assert.assertEquals((int)indexFileLength, read);
+			buffer.flip();
+			
+			IndexEntry entry1 = IndexEntry.read(buffer);
+			Assert.assertEquals(consequence1.consequenceOffset, entry1.logicalOffset);
+			Assert.assertEquals(consequence1FileOffset, entry1.fileOffset);
+			
+			IndexEntry entry2 = IndexEntry.read(buffer);
+			Assert.assertEquals(consequence2.consequenceOffset, entry2.logicalOffset);
+			Assert.assertEquals(consequence2FileOffset, entry2.fileOffset);
 		}
 	}
 
