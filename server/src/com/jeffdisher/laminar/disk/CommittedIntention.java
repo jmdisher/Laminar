@@ -16,7 +16,7 @@ import com.jeffdisher.laminar.utils.Assert;
  * may be preferable to only persist Intention, store only the last N CommitInfo on each node and then define an
  * "unknown" CommitInfo.Effect to allow very late reconnects to only get partial data.
  */
-public class CommittedIntention {
+public final class CommittedIntention {
 	public static CommittedIntention create(Intention record, CommitInfo.Effect effect) {
 		Assert.assertTrue(null != record);
 		Assert.assertTrue(null != effect);
@@ -30,5 +30,29 @@ public class CommittedIntention {
 	private CommittedIntention(Intention record, CommitInfo.Effect effect) {
 		this.record = record;
 		this.effect = effect;
+	}
+
+	@Override
+	public boolean equals(Object arg0) {
+		boolean isEqual = (this == arg0);
+		if (!isEqual && (null != arg0) && (this.getClass() == arg0.getClass())) {
+			CommittedIntention object = (CommittedIntention) arg0;
+			isEqual = (this.record.equals(object.record))
+					&& (this.effect == object.effect)
+			;
+		}
+		return isEqual;
+	}
+
+	@Override
+	public int hashCode() {
+		return this.record.hashCode()
+				^ this.effect.ordinal()
+		;
+	}
+
+	@Override
+	public String toString() {
+		return "CommittedIntention(record=" + this.record + ", effect=" + this.effect + ")";
 	}
 }

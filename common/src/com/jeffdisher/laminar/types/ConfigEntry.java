@@ -60,8 +60,29 @@ public final class ConfigEntry {
 	}
 
 	@Override
+	public boolean equals(Object arg0) {
+		boolean isEqual = (this == arg0);
+		if (!isEqual && (null != arg0) && (this.getClass() == arg0.getClass())) {
+			ConfigEntry object = (ConfigEntry) arg0;
+			isEqual = this.nodeUuid.equals(object.nodeUuid)
+					&& this.cluster.equals(object.cluster)
+					&& this.client.equals(object.client)
+			;
+		}
+		return isEqual;
+	}
+
+	@Override
+	public int hashCode() {
+		return this.nodeUuid.hashCode()
+				^ this.cluster.hashCode()
+				^ this.client.hashCode()
+		;
+	}
+
+	@Override
 	public String toString() {
-		return "(UUID: " + this.nodeUuid + ", Cluster: " + this.cluster.toString() + ", Client: " + this.client + ")";
+		return "ConfigEntry(UUID: " + this.nodeUuid + ", Cluster: " + this.cluster.toString() + ", Client: " + this.client + ")";
 	}
 
 	public int serializedSize() {

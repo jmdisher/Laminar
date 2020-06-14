@@ -212,16 +212,14 @@ public class TestClusterManager {
 		Intention record1_fix = Intention.put(2L, record1.intentionOffset, topic, record1.clientId, record1.clientNonce, new byte[0], new byte[] {1,2,3, 4, 5, 6});
 		TestingCommands.readPeerStateAndSendMutation(upstreamManager, upstreamCallbacks, record1_fix);
 		incoming = TestingCommands.readIncomingMutation(downstreamManager, downstreamCallbacks, upstreamEntry);
-		Assert.assertArrayEquals(((Payload_KeyPut)record1_fix.payload).key, ((Payload_KeyPut)incoming.payload).key);
-		Assert.assertArrayEquals(((Payload_KeyPut)record1_fix.payload).value, ((Payload_KeyPut)incoming.payload).value);
+		Assert.assertEquals((Payload_KeyPut)record1_fix.payload, (Payload_KeyPut)incoming.payload);
 		
 		// Upstream receives the ack and tries to send the next mutation so give them the last one we sent, new term.
 		receivedAckNumber = TestingCommands.receiveAckAndSend(upstreamManager, upstreamCallbacks, record1_fix.termNumber, record2);
 		Assert.assertEquals(record1_fix.intentionOffset, receivedAckNumber);
 		
 		incoming = TestingCommands.readIncomingMutation(downstreamManager, downstreamCallbacks, upstreamEntry);
-		Assert.assertArrayEquals(((Payload_KeyPut)record2.payload).key, ((Payload_KeyPut)incoming.payload).key);
-		Assert.assertArrayEquals(((Payload_KeyPut)record2.payload).value, ((Payload_KeyPut)incoming.payload).value);
+		Assert.assertEquals((Payload_KeyPut)record2.payload, (Payload_KeyPut)incoming.payload);
 		receivedAckNumber = TestingCommands.receiveAckFromDownstream(upstreamManager, upstreamCallbacks, downstreamEntry);
 		Assert.assertEquals(record2.intentionOffset, receivedAckNumber);
 		
@@ -269,7 +267,7 @@ public class TestClusterManager {
 		
 		// Process the mutation on the downstream, which should result in an ack being sent back.
 		Intention received = TestingCommands.readIncomingMutation(downstreamManager, downstreamCallbacks, upstreamEntry);
-		Assert.assertEquals(record1.intentionOffset, received.intentionOffset);
+		Assert.assertEquals(record1, received);
 		
 		// Immediately send another mutation before accepting the ack and observe that it FAILS to send (see the failSendNewMutation command).
 		Intention record2 = Intention.put(1L, 2L, topic, record1.clientId, 2L, new byte[0], new byte[] {2});

@@ -1,6 +1,7 @@
 package com.jeffdisher.laminar.types.payload;
 
 import java.nio.ByteBuffer;
+import java.util.Arrays;
 
 import com.jeffdisher.laminar.utils.MiscHelpers;
 
@@ -10,7 +11,7 @@ import com.jeffdisher.laminar.utils.MiscHelpers;
  * -code (byte[])
  * -arguments (byte[])
  */
-public class Payload_TopicCreate implements IPayload {
+public final class Payload_TopicCreate implements IPayload {
 	public static Payload_TopicCreate create(byte[] code, byte[] arguments) {
 		return new Payload_TopicCreate(code, arguments);
 	}
@@ -43,5 +44,30 @@ public class Payload_TopicCreate implements IPayload {
 	public void serializeInto(ByteBuffer buffer) {
 		MiscHelpers.writeSizedBytes(buffer, this.code);
 		MiscHelpers.writeSizedBytes(buffer, this.arguments);
+	}
+
+	@Override
+	public boolean equals(Object arg0) {
+		boolean isEqual = (this == arg0);
+		if (!isEqual && (null != arg0) && (this.getClass() == arg0.getClass())) {
+			Payload_TopicCreate object = (Payload_TopicCreate) arg0;
+			isEqual = Arrays.equals(this.code, object.code)
+					&& Arrays.equals(this.arguments, object.arguments)
+			;
+		}
+		return isEqual;
+	}
+
+	@Override
+	public int hashCode() {
+		return Arrays.hashCode(this.code)
+				^ Arrays.hashCode(this.arguments)
+		;
+	}
+
+	@Override
+	public String toString() {
+		// We will just print the array sizes since these are bulk code and data.
+		return "Payload_TopicCreate(code=" + this.code.length + " bytes, effect=" + this.arguments.length + " bytes)";
 	}
 }

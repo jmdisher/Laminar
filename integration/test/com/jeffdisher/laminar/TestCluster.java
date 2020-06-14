@@ -282,9 +282,9 @@ public class TestCluster {
 			// Finally, check that the listeners saw all the results.
 			Consequence[] leaderRecords = leaderListener.waitForTerminate();
 			Consequence[] followerRecords = followerListener.waitForTerminate();
-			Assert.assertEquals(leaderRecords[0].intentionOffset, followerRecords[0].intentionOffset);
-			Assert.assertEquals(leaderRecords[1].intentionOffset, followerRecords[1].intentionOffset);
-			Assert.assertEquals(leaderRecords[2].intentionOffset, followerRecords[2].intentionOffset);
+			Assert.assertEquals(leaderRecords[0], followerRecords[0]);
+			Assert.assertEquals(leaderRecords[1], followerRecords[1]);
+			Assert.assertEquals(leaderRecords[2], followerRecords[2]);
 			Assert.assertEquals(leaderRecords[1].intentionOffset, leaderRecords[0].intentionOffset + 1);
 			Assert.assertEquals(leaderRecords[2].intentionOffset, leaderRecords[1].intentionOffset + 1);
 			
@@ -496,10 +496,10 @@ public class TestCluster {
 			// Finally, check that the listeners saw all the results.
 			Consequence[] records1 = listener1.waitForTerminate();
 			Consequence[] records2 = listener2.waitForTerminate();
-			Assert.assertEquals(records1[0].intentionOffset, records2[0].intentionOffset);
-			Assert.assertEquals(records1[1].intentionOffset, records2[1].intentionOffset);
+			Assert.assertEquals(records1[0], records2[0]);
+			Assert.assertEquals(records1[1], records2[1]);
 			Assert.assertEquals(records1[1].intentionOffset, records2[0].intentionOffset + 1);
-			Assert.assertEquals(records1[2].intentionOffset, records2[2].intentionOffset);
+			Assert.assertEquals(records1[2], records2[2]);
 			Assert.assertEquals(records1[2].intentionOffset, records2[1].intentionOffset + 1);
 		} finally {
 			// Shut down.

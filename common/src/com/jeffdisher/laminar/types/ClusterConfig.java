@@ -4,6 +4,7 @@ import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.UnknownHostException;
 import java.nio.ByteBuffer;
+import java.util.Arrays;
 
 import com.jeffdisher.laminar.utils.Assert;
 
@@ -138,11 +139,30 @@ public final class ClusterConfig {
 		return buffer.array();
 	}
 
+	@Override
+	public boolean equals(Object arg0) {
+		boolean isEqual = (this == arg0);
+		if (!isEqual && (null != arg0) && (this.getClass() == arg0.getClass())) {
+			ClusterConfig object = (ClusterConfig) arg0;
+			isEqual = Arrays.deepEquals(this.entries, object.entries);
+		}
+		return isEqual;
+	}
+
+	@Override
+	public int hashCode() {
+		return Arrays.deepHashCode(this.entries);
+	}
+
+	@Override
+	public String toString() {
+		return "ClusterConfig(" + Arrays.deepToString(this.entries) + ")";
+	}
+
 
 	private static IllegalArgumentException _parseError() {
 		throw new IllegalArgumentException("ClusterConfig invalid");
 	}
-
 
 	private int _serializedSize() {
 		// We have 1 byte for the number of entries but each entry can be a different size.

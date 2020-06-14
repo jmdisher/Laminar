@@ -288,14 +288,14 @@ public class TestDiskManager {
 		@Override
 		public void mainIntentionWasFetched(StateSnapshot snapshot, long previousMutationTermNumber, CommittedIntention record) {
 			// We currently just support a single match.
-			Assert.assertTrue(record.record == this.expectedMutation);
+			Assert.assertTrue(record.record.equals(this.expectedMutation));
 			this.fetchMutationCount += 1;
 		}
 		
 		@Override
 		public void mainConsequenceWasFetched(TopicName topic, Consequence record) {
 			// We currently just support a single match.
-			Assert.assertTrue(record == this.expectedEvent);
+			Assert.assertTrue(record.equals(this.expectedEvent));
 			this.fetchEventCount += 1;
 		}
 	}

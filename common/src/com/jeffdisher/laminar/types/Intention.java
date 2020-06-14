@@ -29,7 +29,7 @@ import com.jeffdisher.laminar.utils.Assert;
  * This class represents the logical representation of the intention, as well as its physical
  * serialization/deserialization logic.
  */
-public class Intention {
+public final class Intention {
 	public static Intention createTopic(long termNumber, long intentionOffset, TopicName topic, UUID clientId, long clientNonce, byte[] code, byte[] arguments) {
 		// The offsets must be positive.
 		Assert.assertTrue(termNumber > 0L);
@@ -206,6 +206,37 @@ public class Intention {
 			.putLong(this.clientNonce)
 		;
 		this.payload.serializeInto(buffer);
+	}
+
+	@Override
+	public boolean equals(Object arg0) {
+		boolean isEqual = (this == arg0);
+		if (!isEqual && (null != arg0) && (this.getClass() == arg0.getClass())) {
+			Intention object = (Intention) arg0;
+			isEqual = (this.type == object.type)
+					&& (this.termNumber == object.termNumber)
+					&& (this.intentionOffset == object.intentionOffset)
+					&& (this.topic.equals(object.topic))
+					&& (this.clientId.equals(object.clientId))
+					&& (this.clientNonce == object.clientNonce)
+					&& (this.payload.equals(object.payload))
+			;
+		}
+		return isEqual;
+	}
+
+	@Override
+	public int hashCode() {
+		// We will just use the most basic data intention offset and term number are probably sufficient, on their own.
+		return this.type.ordinal()
+				^ (int)this.termNumber
+				^ (int)this.intentionOffset
+		;
+	}
+
+	@Override
+	public String toString() {
+		return "Intention(type=" + this.type + ", term=" + this.termNumber + ", offset=" + this.intentionOffset +")";
 	}
 
 

@@ -18,7 +18,7 @@ import com.jeffdisher.laminar.utils.Assert;
  * This class represents the logical representation of the consequence, as well as its physical
  * serialization/deserialization logic.
  */
-public class Consequence {
+public final class Consequence {
 	public static Consequence createTopic(long termNumber, long globalOffset, long consequenceOffset, UUID clientId, long clientNonce, byte[] code, byte[] arguments) {
 		// The offsets must be positive.
 		Assert.assertTrue(termNumber > 0L);
@@ -158,6 +158,33 @@ public class Consequence {
 		;
 		this.payload.serializeInto(wrapper);
 		return buffer;
+	}
+
+	@Override
+	public boolean equals(Object arg0) {
+		boolean isEqual = (this == arg0);
+		if (!isEqual && (null != arg0) && (this.getClass() == arg0.getClass())) {
+			Consequence object = (Consequence) arg0;
+			isEqual = (this.type == object.type)
+					&& (this.termNumber == object.termNumber)
+					&& (this.intentionOffset == object.intentionOffset)
+					&& (this.consequenceOffset == object.consequenceOffset)
+					&& (this.clientId.equals(object.clientId))
+					&& (this.clientNonce == object.clientNonce)
+					&& (this.payload.equals(object.payload))
+			;
+		}
+		return isEqual;
+	}
+
+	@Override
+	public int hashCode() {
+		// We will just use the most basic data intention offset and term number are probably sufficient, on their own.
+		return this.type.ordinal()
+				^ (int)this.termNumber
+				^ (int)this.intentionOffset
+				^ (int)this.consequenceOffset
+		;
 	}
 
 	@Override

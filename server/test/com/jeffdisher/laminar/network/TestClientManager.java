@@ -23,7 +23,6 @@ import com.jeffdisher.laminar.types.Intention;
 import com.jeffdisher.laminar.types.TopicName;
 import com.jeffdisher.laminar.types.message.ClientMessage;
 import com.jeffdisher.laminar.types.message.ClientMessagePayload_KeyPut;
-import com.jeffdisher.laminar.types.payload.Payload_KeyPut;
 import com.jeffdisher.laminar.types.response.ClientResponse;
 import com.jeffdisher.laminar.types.response.ClientResponsePayload_ClusterConfig;
 import com.jeffdisher.laminar.types.response.ClientResponsePayload_ConfigEntry;
@@ -201,11 +200,7 @@ public class TestClientManager {
 			Assert.assertEquals(serialized.length, raw.length);
 			// Deserialize the buffer.
 			Consequence deserialized = Consequence.deserialize(raw);
-			Assert.assertEquals(record.intentionOffset, deserialized.intentionOffset);
-			Assert.assertEquals(record.consequenceOffset, deserialized.consequenceOffset);
-			Assert.assertEquals(record.clientId, deserialized.clientId);
-			Assert.assertArrayEquals(((Payload_KeyPut)record.payload).key, ((Payload_KeyPut)deserialized.payload).key);
-			Assert.assertArrayEquals(((Payload_KeyPut)record.payload).value, ((Payload_KeyPut)deserialized.payload).value);
+			Assert.assertEquals(record, deserialized);
 		}
 		NetworkManager.NodeToken noNode = callbacks.runRunnableAndGetNewClientNode(manager);
 		Assert.assertNull(noNode);

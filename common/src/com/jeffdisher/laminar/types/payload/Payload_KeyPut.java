@@ -1,6 +1,7 @@
 package com.jeffdisher.laminar.types.payload;
 
 import java.nio.ByteBuffer;
+import java.util.Arrays;
 
 import com.jeffdisher.laminar.utils.MiscHelpers;
 
@@ -10,7 +11,7 @@ import com.jeffdisher.laminar.utils.MiscHelpers;
  * -key (byte[])
  * -value (byte[])
  */
-public class Payload_KeyPut implements IPayload {
+public final class Payload_KeyPut implements IPayload {
 	public static Payload_KeyPut create(byte[] key, byte[] value) {
 		return new Payload_KeyPut(key, value);
 	}
@@ -43,5 +44,29 @@ public class Payload_KeyPut implements IPayload {
 	public void serializeInto(ByteBuffer buffer) {
 		MiscHelpers.writeSizedBytes(buffer, this.key);
 		MiscHelpers.writeSizedBytes(buffer, this.value);
+	}
+
+	@Override
+	public boolean equals(Object arg0) {
+		boolean isEqual = (this == arg0);
+		if (!isEqual && (null != arg0) && (this.getClass() == arg0.getClass())) {
+			Payload_KeyPut object = (Payload_KeyPut) arg0;
+			isEqual = Arrays.equals(this.key, object.key)
+					&& Arrays.equals(this.value, object.value)
+			;
+		}
+		return isEqual;
+	}
+
+	@Override
+	public int hashCode() {
+		return Arrays.hashCode(this.key)
+				^ Arrays.hashCode(this.value)
+		;
+	}
+
+	@Override
+	public String toString() {
+		return "Payload_KeyPut(key=" + Arrays.toString(this.key) + ", value=" + Arrays.toString(this.value) + ")";
 	}
 }

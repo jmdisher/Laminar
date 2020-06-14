@@ -12,8 +12,6 @@ import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.types.ConfigEntry;
 import com.jeffdisher.laminar.types.Intention;
 import com.jeffdisher.laminar.types.TopicName;
-import com.jeffdisher.laminar.types.payload.Payload_ConfigChange;
-import com.jeffdisher.laminar.types.payload.Payload_KeyPut;
 
 
 /**
@@ -32,13 +30,7 @@ public class TestIntention {
 		Intention record = Intention.put(termNumber, globalOffset, topic, clientId, clientNonce, key, value);
 		byte[] serialized = record.serialize();
 		Intention deserialized = Intention.deserialize(serialized);
-		Assert.assertEquals(record.type, deserialized.type);
-		Assert.assertEquals(record.termNumber, deserialized.termNumber);
-		Assert.assertEquals(record.intentionOffset, deserialized.intentionOffset);
-		Assert.assertEquals(record.clientId, deserialized.clientId);
-		Assert.assertEquals(record.clientNonce, deserialized.clientNonce);
-		Assert.assertArrayEquals(((Payload_KeyPut)record.payload).key, ((Payload_KeyPut)deserialized.payload).key);
-		Assert.assertArrayEquals(((Payload_KeyPut)record.payload).value, ((Payload_KeyPut)deserialized.payload).value);
+		Assert.assertEquals(record, deserialized);
 	}
 
 	@Test
@@ -55,13 +47,7 @@ public class TestIntention {
 		record.serializeInto(buffer);
 		buffer.flip();
 		Intention deserialized = Intention.deserializeFrom(buffer);
-		Assert.assertEquals(record.type, deserialized.type);
-		Assert.assertEquals(record.termNumber, deserialized.termNumber);
-		Assert.assertEquals(record.intentionOffset, deserialized.intentionOffset);
-		Assert.assertEquals(record.clientId, deserialized.clientId);
-		Assert.assertEquals(record.clientNonce, deserialized.clientNonce);
-		Assert.assertArrayEquals(((Payload_KeyPut)record.payload).key, ((Payload_KeyPut)deserialized.payload).key);
-		Assert.assertArrayEquals(((Payload_KeyPut)record.payload).value, ((Payload_KeyPut)deserialized.payload).value);
+		Assert.assertEquals(record, deserialized);
 	}
 
 	@Test
@@ -79,11 +65,6 @@ public class TestIntention {
 		record.serializeInto(buffer);
 		buffer.flip();
 		Intention deserialized = Intention.deserializeFrom(buffer);
-		Assert.assertEquals(record.type, deserialized.type);
-		Assert.assertEquals(record.termNumber, deserialized.termNumber);
-		Assert.assertEquals(record.intentionOffset, deserialized.intentionOffset);
-		Assert.assertEquals(record.clientId, deserialized.clientId);
-		Assert.assertEquals(record.clientNonce, deserialized.clientNonce);
-		Assert.assertEquals(((Payload_ConfigChange)record.payload).config.entries.length, ((Payload_ConfigChange)deserialized.payload).config.entries.length);
+		Assert.assertEquals(record, deserialized);
 	}
 }

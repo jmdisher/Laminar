@@ -26,14 +26,7 @@ public class TestConsequence {
 		Consequence record = Consequence.put(termNumber, globalOffset, localOffset, clientId, clientNonce, key, value);
 		byte[] serialized = record.serialize();
 		Consequence deserialized = Consequence.deserialize(serialized);
-		Assert.assertEquals(record.type, deserialized.type);
-		Assert.assertEquals(record.termNumber, deserialized.termNumber);
-		Assert.assertEquals(record.intentionOffset, deserialized.intentionOffset);
-		Assert.assertEquals(record.consequenceOffset, deserialized.consequenceOffset);
-		Assert.assertEquals(record.clientId, deserialized.clientId);
-		Assert.assertEquals(record.clientNonce, deserialized.clientNonce);
-		Assert.assertArrayEquals(((Payload_KeyPut)record.payload).key, ((Payload_KeyPut)deserialized.payload).key);
-		Assert.assertArrayEquals(((Payload_KeyPut)record.payload).value, ((Payload_KeyPut)deserialized.payload).value);
+		Assert.assertEquals(record, deserialized);
 		Assert.assertArrayEquals(key, ((Payload_KeyPut)deserialized.payload).key);
 		Assert.assertArrayEquals(value, ((Payload_KeyPut)deserialized.payload).value);
 	}
