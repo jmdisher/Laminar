@@ -80,39 +80,55 @@ public final class Consequence {
 	 * Deserializes an Consequence from raw bytes.  Note that there is no difference between common-case and special-
 	 * case Consequence in the serialized form.
 	 * 
-	 * @param serialized A serialized Consequence/
+	 * @param serialized A serialized Consequence.
 	 * @return A new Consequence instance.
 	 */
 	public static Consequence deserialize(byte[] serialized) {
 		ByteBuffer wrapper = ByteBuffer.wrap(serialized);
-		int ordinal = (int) wrapper.get();
+		return _deserializeFrom(wrapper);
+	}
+
+	/**
+	 * Deserializes an Consequence from a ByteBuffer.  Note that there is no difference between common-case and special-
+	 * case Consequence in the serialized form.
+	 * 
+	 * @param buffer A ByteBuffer containing a serialized Consequence.
+	 * @return A new Consequence instance.
+	 */
+	public static Consequence deserializeFrom(ByteBuffer buffer) {
+		return _deserializeFrom(buffer);
+	}
+
+
+	private static Consequence _deserializeFrom(ByteBuffer buffer) throws AssertionError {
+		int ordinal = (int) buffer.get();
 		if (ordinal >= Type.values().length) {
 			throw Assert.unimplemented("Handle corrupt message");
 		}
 		Type type = Type.values()[ordinal];
-		long termNumber = wrapper.getLong();
-		long globalOffset = wrapper.getLong();
-		long consequenceOffset = wrapper.getLong();
-		UUID clientId = new UUID(wrapper.getLong(), wrapper.getLong());
-		long clientNonce = wrapper.getLong();
+		long termNumber = buffer.getLong();
+		long globalOffset = buffer.getLong();
+		long consequenceOffset = buffer.getLong();
+		UUID clientId = new UUID(buffer.getLong(), buffer.getLong());
+		long clientNonce = buffer.getLong();
 		IPayload payload;
 		switch (type) {
 		case INVALID:
 			throw Assert.unimplemented("Handle invalid deserialization");
 		case TOPIC_CREATE:
-			payload = Payload_TopicCreate.deserialize(wrapper);
+			payload = Payload_TopicCreate.deserialize(buffer);
 			break;
 		case TOPIC_DESTROY:
-			payload = Payload_Empty.deserialize(wrapper);
+			payload = Payload_Empty.deserialize(buffer);
 			break;
 		case KEY_PUT:
-			payload = Payload_KeyPut.deserialize(wrapper);
+			payload = Payload_KeyPut.deserialize(buffer);
 			break;
 		case KEY_DELETE:
-			payload = Payload_KeyDelete.deserialize(wrapper);
+			payload = Payload_KeyDelete.deserialize(buffer);
 			break;
 		case CONFIG_CHANGE:
-			payload = Payload_ConfigChange.deserialize(wrapper);
+			payload = Payload_ConfigChange.deserialize(buffer);
 			break;
 		default:
 			throw Assert.unreachable("Unmatched deserialization type");
@@ -146,18 +162,18 @@ public final class Consequence {
 	 * @return The raw bytes of the serialized receiver.
 	 */
 	public byte[] serialize() {
-		byte[] buffer = new byte[Byte.BYTES + Long.BYTES + Long.BYTES + Long.BYTES + (2 * Long.BYTES) + Long.BYTES + this.payload.serializedSize()];
+		byte[] buffer = new byte[_serializedSize()];
 		ByteBuffer wrapper = ByteBuffer.wrap(buffer);
-		wrapper
-			.put((byte)this.type.ordinal())
-			.putLong(this.termNumber)
-			.putLong(this.intentionOffset)
-			.putLong(this.consequenceOffset)
-			.putLong(this.clientId.getMostSignificantBits()).putLong(this.clientId.getLeastSignificantBits())
-			.putLong(this.clientNonce)
-		;
-		this.payload.serializeInto(wrapper);
+		_serializeInto(wrapper);
 		return buffer;
+	}
+
+	public int serializedSize() {
+		return _serializedSize();
+	}
+
+	public void serializeInto(ByteBuffer buffer) {
+		_serializeInto(buffer);
 	}
 
 	@Override
@@ -190,6 +206,22 @@ public final class Consequence {
 	@Override
 	public String toString() {
 		return "Consequence(type=" + this.type + ", global=" + this.intentionOffset + ", local=" + this.consequenceOffset + ")";
+	}
+
+	private int _serializedSize() {
+		return Byte.BYTES + Long.BYTES + Long.BYTES + Long.BYTES + (2 * Long.BYTES) + Long.BYTES + this.payload.serializedSize();
+	}
+
+	private void _serializeInto(ByteBuffer buffer) {
+		buffer
+			.put((byte)this.type.ordinal())
+			.putLong(this.termNumber)
+			.putLong(this.intentionOffset)
+			.putLong(this.consequenceOffset)
+			.putLong(this.clientId.getMostSignificantBits()).putLong(this.clientId.getLeastSignificantBits())
+			.putLong(this.clientNonce)
+		;
+		this.payload.serializeInto(buffer);
 	}
 
 
