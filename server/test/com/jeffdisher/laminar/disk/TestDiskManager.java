@@ -111,7 +111,7 @@ public class TestDiskManager {
 		// Verify that the intention log file contains the expected data.
 		int intention1Size = intention1.serializedSize();
 		int intention2Size = intention2.serializedSize();
-		File logFile = new File(new File(directory, DiskManager.INTENTION_DIRECTORY_NAME), DiskManager.LOG_FILE_NAME);
+		File logFile = new File(new File(directory, DiskManager.INTENTION_DIRECTORY_NAME), LogFileDomain.LOG_FILE_NAME);
 		long fileLength = logFile.length();
 		Assert.assertEquals((2 * Short.BYTES) + (2 * Byte.BYTES) + intention1Size + intention2Size, (int)fileLength);
 		int intention1FileOffset;
@@ -140,7 +140,7 @@ public class TestDiskManager {
 		}
 		
 		// Verify that the intention index file contains the expected data.
-		File indexFile = new File(new File(directory, DiskManager.INTENTION_DIRECTORY_NAME), DiskManager.INDEX_FILE_NAME);
+		File indexFile = new File(new File(directory, DiskManager.INTENTION_DIRECTORY_NAME), LogFileDomain.INDEX_FILE_NAME);
 		long indexFileLength = indexFile.length();
 		Assert.assertEquals(2 * IndexEntry.BYTES, (int)indexFileLength);
 		try (FileInputStream stream = new FileInputStream(indexFile)) {
@@ -185,7 +185,7 @@ public class TestDiskManager {
 		// Verify that the consequence log file contains the expected data.
 		byte[] serialized1 = consequence1.serialize();
 		byte[] serialized2 = consequence2.serialize();
-		File logFile = new File(new File(new File(directory, DiskManager.CONSEQUENCE_TOPICS_DIRECTORY_NAME), topic.string), DiskManager.LOG_FILE_NAME);
+		File logFile = new File(new File(new File(directory, DiskManager.CONSEQUENCE_TOPICS_DIRECTORY_NAME), topic.string), LogFileDomain.LOG_FILE_NAME);
 		long fileLength = logFile.length();
 		Assert.assertEquals((2 * Short.BYTES) + serialized1.length + serialized2.length, (int)fileLength);
 		int consequence1FileOffset;
@@ -212,7 +212,7 @@ public class TestDiskManager {
 		}
 		
 		// Verify that the consequence index file contains the expected data.
-		File indexFile = new File(new File(new File(directory, DiskManager.CONSEQUENCE_TOPICS_DIRECTORY_NAME), topic.string), DiskManager.INDEX_FILE_NAME);
+		File indexFile = new File(new File(new File(directory, DiskManager.CONSEQUENCE_TOPICS_DIRECTORY_NAME), topic.string), LogFileDomain.INDEX_FILE_NAME);
 		long indexFileLength = indexFile.length();
 		Assert.assertEquals(2 * IndexEntry.BYTES, (int)indexFileLength);
 		try (FileInputStream stream = new FileInputStream(indexFile)) {
