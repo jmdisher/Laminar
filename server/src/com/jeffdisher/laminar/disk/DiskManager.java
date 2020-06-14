@@ -33,9 +33,6 @@ public class DiskManager implements IDiskManager {
 	// (this is still preferable to a simple queue as it allows natural batching back-pressure while working)
 	private RequestGeneration _pendingWorkUnit;
 
-	// Only accessed by background thread (current virtual "disk").
-	private final List<CommittedIntention> _committedIntentionVirtualDisk;
-	private final Map<TopicName, List<Consequence>> _committedConsequenceVirtualDisk;
 	// The files related to intentions are always being written so we always keep them open at the top leve.
 	private final LogFileDomain _intentionStorage;
 	private final File _consequenceTopLevelDirectory;
@@ -59,12 +56,6 @@ public class DiskManager implements IDiskManager {
 		
 		_keepRunning = false;
 		_pendingWorkUnit = new RequestGeneration();
-		
-		_committedIntentionVirtualDisk = new LinkedList<>();
-		_committedConsequenceVirtualDisk = new HashMap<>();
-		
-		// (we introduce a null to all virtual disk extents since they must be 1-indexed)
-		_committedIntentionVirtualDisk.add(null);
 		
 		// Create the directories we know about.
 		File intentionDirectory = new File(dataDirectory, INTENTION_DIRECTORY_NAME);
@@ -175,17 +166,6 @@ public class DiskManager implements IDiskManager {
 				long previousMutationTermNumber = (intentionOffset > 1)
 						? _readCommittedIntention(intentionOffset-1).record.termNumber
 						: 0L;
-				
-				// Temporary verifications:
-				// These indexing errors should be intercepted at a higher level, before we get to the disk.
-				Assert.assertTrue((int)intentionOffset < _committedIntentionVirtualDisk.size());
-				CommittedIntention oldRecord = _committedIntentionVirtualDisk.get((int)intentionOffset);
-				// See if we can get the previous term number.
-				long oldPreviousMutationTermNumber = (intentionOffset > 1)
-						? _committedIntentionVirtualDisk.get((int)intentionOffset - 1).record.termNumber
-						: 0L;
-				Assert.assertTrue(record.equals(oldRecord));
-				Assert.assertTrue(previousMutationTermNumber == oldPreviousMutationTermNumber);
 				_callbackTarget.ioEnqueueDiskCommandForMainThread((snapshot) -> _callbackTarget.mainIntentionWasFetched(snapshot, previousMutationTermNumber, record));
 			}
 			
@@ -194,13 +174,6 @@ public class DiskManager implements IDiskManager {
 				TopicName topic = tuple.topic;
 				int offset = (int) tuple.offset;
 				Consequence record = _readConsequence(topic, offset);
-				
-				// Temporary verifications:
-				List<Consequence> topicStore = _committedConsequenceVirtualDisk.get(topic);
-				// These indexing errors should be intercepted at a higher level, before we get to the disk.
-				Assert.assertTrue(offset < topicStore.size());
-				Consequence oldRecord = topicStore.get(offset);
-				Assert.assertTrue(record.equals(oldRecord));
 				_callbackTarget.ioEnqueueDiskCommandForMainThread((snapshot) -> _callbackTarget.mainConsequenceWasFetched(topic, record));
 			}
 			work = _backgroundWaitForWork();
@@ -231,9 +204,6 @@ public class DiskManager implements IDiskManager {
 			intention.record.serializeInto(buffer);
 			_intentionStorage.appendToLogFile(buffer);
 			shouldFlushIntentions = true;
-			
-			// For now, we also maintain it in the virtual disk until the read path is complete.
-			_committedIntentionVirtualDisk.add(intention);
 		}
 		
 		// Now, Force everything to sync.
@@ -301,14 +271,6 @@ public class DiskManager implements IDiskManager {
 					throw Assert.unexpected(e);
 				}
 			}
-			
-			// Create the virtual disk entry.
-			if (!_committedConsequenceVirtualDisk.containsKey(topic)) {
-				List<Consequence> list = new LinkedList<>();
-				_committedConsequenceVirtualDisk.put(topic, list);
-				// (we introduce a null to all virtual disk extents since they must be 1-indexed)
-				list.add(null);
-			}
 		}
 		
 		// Write to the log.
@@ -326,9 +288,6 @@ public class DiskManager implements IDiskManager {
 			// TODO:  Make a way to gracefully shutdown when this happens.
 			throw Assert.unimplemented(e.getLocalizedMessage());
 		}
-		
-		// Write to the virtual disk.
-		_committedConsequenceVirtualDisk.get(topic).add(record);
 	}
 
 	private CommittedIntention _readCommittedIntention(long intentionOffset) throws IOException {
