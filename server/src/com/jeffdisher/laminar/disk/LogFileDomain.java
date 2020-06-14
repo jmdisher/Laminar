@@ -84,6 +84,31 @@ public class LogFileDomain implements Closeable {
 		_writeIndexFile.write(entryBuffer.array());
 	}
 
+	public ByteBuffer readExtentAtOffset(long logicalOffset) throws IOException {
+		// Read the index to find this offset in the file, and the next one (or end of file) so we can read the extent.
+		// (since we don't currently support compaction, we can find where this is in the index with a static calculation)
+		long offsetOfIndexEntry = (logicalOffset - 1L) * (long)IndexEntry.BYTES;
+		ByteBuffer buffer = ByteBuffer.allocate(IndexEntry.BYTES * 2);
+		int readSize = _readIndexFile.read(buffer, offsetOfIndexEntry);
+		buffer.flip();
+		IndexEntry entry = IndexEntry.read(buffer);
+		Assert.assertTrue(logicalOffset == entry.logicalOffset);
+		int endOfRead;
+		if (IndexEntry.BYTES == readSize) {
+			// This is the end of the file (log files are small so we can cast to int).
+			endOfRead = (int)_readLogFile.size();
+		} else {
+			Assert.assertTrue((2 * IndexEntry.BYTES) == readSize);
+			// We are in the middle of the file.
+			endOfRead = IndexEntry.read(buffer).fileOffset;
+		}
+		ByteBuffer total = ByteBuffer.allocate(endOfRead - entry.fileOffset);
+		readSize = _readLogFile.read(total, entry.fileOffset);
+		total.flip();
+		Assert.assertTrue(readSize == (endOfRead - entry.fileOffset));
+		return total;
+	}
+
 	@Override
 	public void close() throws IOException {
 		_writeLogFile.close();

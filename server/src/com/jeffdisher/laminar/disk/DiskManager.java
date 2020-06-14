@@ -170,13 +170,22 @@ public class DiskManager implements IDiskManager {
 				// (this is because it would not be able to evict the element until the caller was "done" with it)
 				// In the future, this layer almost definitely will have a cache but it will be an LRU physical cache which
 				// is not required to satisfy all requests.
-				// These indexing errors should be intercepted at a higher level, before we get to the disk.
-				Assert.assertTrue((int)intentionOffset < _committedIntentionVirtualDisk.size());
-				CommittedIntention record = _committedIntentionVirtualDisk.get((int)intentionOffset);
+				CommittedIntention record = _readCommittedIntention(intentionOffset);
 				// See if we can get the previous term number.
 				long previousMutationTermNumber = (intentionOffset > 1)
+						? _readCommittedIntention(intentionOffset-1).record.termNumber
+						: 0L;
+				
+				// Temporary verifications:
+				// These indexing errors should be intercepted at a higher level, before we get to the disk.
+				Assert.assertTrue((int)intentionOffset < _committedIntentionVirtualDisk.size());
+				CommittedIntention oldRecord = _committedIntentionVirtualDisk.get((int)intentionOffset);
+				// See if we can get the previous term number.
+				long oldPreviousMutationTermNumber = (intentionOffset > 1)
 						? _committedIntentionVirtualDisk.get((int)intentionOffset - 1).record.termNumber
 						: 0L;
+				Assert.assertTrue(record.equals(oldRecord));
+				Assert.assertTrue(previousMutationTermNumber == oldPreviousMutationTermNumber);
 				_callbackTarget.ioEnqueueDiskCommandForMainThread((snapshot) -> _callbackTarget.mainIntentionWasFetched(snapshot, previousMutationTermNumber, record));
 			}
 			
@@ -184,10 +193,14 @@ public class DiskManager implements IDiskManager {
 			for (ConsequenceFetchTuple tuple : work.incomingFetchConsequenceRequests) {
 				TopicName topic = tuple.topic;
 				int offset = (int) tuple.offset;
+				Consequence record = _readConsequence(topic, offset);
+				
+				// Temporary verifications:
 				List<Consequence> topicStore = _committedConsequenceVirtualDisk.get(topic);
 				// These indexing errors should be intercepted at a higher level, before we get to the disk.
 				Assert.assertTrue(offset < topicStore.size());
-				Consequence record = topicStore.get(offset);
+				Consequence oldRecord = topicStore.get(offset);
+				Assert.assertTrue(record.equals(oldRecord));
 				_callbackTarget.ioEnqueueDiskCommandForMainThread((snapshot) -> _callbackTarget.mainConsequenceWasFetched(topic, record));
 			}
 			work = _backgroundWaitForWork();
@@ -316,6 +329,28 @@ public class DiskManager implements IDiskManager {
 		
 		// Write to the virtual disk.
 		_committedConsequenceVirtualDisk.get(topic).add(record);
+	}
+
+	private CommittedIntention _readCommittedIntention(long intentionOffset) throws IOException {
+		// We start by reading the serialized extent (the LogFileDomain knows how to read its own index and the length of the file, so it knows how big this is).
+		ByteBuffer serializedExtent = _intentionStorage.readExtentAtOffset(intentionOffset);
+		// We want the size of the serialized intention.
+		Short.toUnsignedInt(serializedExtent.getShort());
+		// Next, we need the effect.
+		CommitInfo.Effect effect = CommitInfo.Effect.values()[(int)serializedExtent.get()];
+		// Finally, we deserialize the extent.
+		Intention intention = Intention.deserializeFrom(serializedExtent);
+		CommittedIntention complete = CommittedIntention.create(intention, effect);
+		return complete;
+	}
+
+	private Consequence _readConsequence(TopicName topic, int offset) throws IOException {
+		// We start by reading the serialized extent (the LogFileDomain knows how to read its own index and the length of the file, so it knows how big this is).
+		ByteBuffer serializedExtent = _consequenceOutputStreams.get(topic).readExtentAtOffset(offset);
+		// We want the size of the serialized consequence.
+		Short.toUnsignedInt(serializedExtent.getShort());
+		// Finally, we deserialize the extent.
+		return Consequence.deserializeFrom(serializedExtent);
 	}
 
 
