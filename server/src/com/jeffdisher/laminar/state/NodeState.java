@@ -68,6 +68,9 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 	private final Map<Long, SyncProgress> _configsPendingCommit;
 	// The offset of the mutation most recently committed to disk (used to keep both the clients and other nodes in sync).
 	private long _lastCommittedMutationOffset;
+	// We record the offset of the most recent intention we _decided_ to commit, to know when to ignore the first new message after an election (when we are in sync with the new leader).
+	// (this is always <= _lastCommittedMutationOffset since that one is updated after the disk responds).
+	private long _lastIntentionOffsetSentToDisk;
 	// The term number of the mutation most recently removed from in-flight (used to avoid conflict in sync).
 	private long _lastTermNumberRemovedFromInFlight;
 
@@ -268,14 +271,15 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		// We can only append mutations if we are a follower and this mutation is either from the past or is the next mutation we were waiting for.
 		if ((RaftState.FOLLOWER == _currentState) && (record.intentionOffset <= (_selfState.lastIntentionOffsetReceived + 1))) {
 			// We will never receive a mutation from before our commit offset (but it could be _at_ the commit offset if the leader was behind us yet still up-to-date with the majority).
-			Assert.assertTrue(record.intentionOffset >= _lastCommittedMutationOffset);
-			if (record.intentionOffset == _lastCommittedMutationOffset) {
+			// NOTE:  For this case, we check the most recent intention we sent to commit, since it might not have finished committing, yet.
+			Assert.assertTrue(record.intentionOffset >= _lastIntentionOffsetSentToDisk);
+			if (record.intentionOffset == _lastIntentionOffsetSentToDisk) {
 				// This should only happen right after an election and should then be somewhat rare:  it only happens when the leader is only as up-to-date as the majority, not ahead.
 				// We just make sure it is consistent with what we committed and then ask for the next.
 				Assert.assertTrue(_lastTermNumberRemovedFromInFlight == record.termNumber);
 				nextMutationToRequest = record.intentionOffset + 1;
 			} else {
-				Assert.assertTrue(record.intentionOffset > _lastCommittedMutationOffset);
+				Assert.assertTrue(record.intentionOffset > _lastIntentionOffsetSentToDisk);
 				nextMutationToRequest = _mainProcessValidMutationFromUpstream(previousMutationTermNumber, record);
 			}
 		} else {
@@ -569,6 +573,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		// TODO:  We probably want to lock-step the mutation on the event commit since we will be able to detect the broken data, that way, and replay it.
 		_diskManager.commitIntention(committedIntention);
 		_lastTermNumberRemovedFromInFlight = mutation.termNumber;
+		_lastIntentionOffsetSentToDisk = mutation.intentionOffset;
 	}
 
 	private void _rebuildDownstreamUnionAfterConfigChange() {

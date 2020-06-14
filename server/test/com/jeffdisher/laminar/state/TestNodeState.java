@@ -489,6 +489,45 @@ public class TestNodeState {
 		test.join();
 	}
 
+	/**
+	 * Tests the case where a new leader sends us an intention we already committed, but haven't yet observed commit.
+	 */
+	@Test
+	public void testDelayedCommitAppendAfterElection() throws Throwable {
+		// Create the node.
+		MainThread test = new MainThread();
+		test.start();
+		test.startLatch.await();
+		NodeState nodeState = test.nodeState;
+		Runner runner = new Runner(nodeState);
+		TopicName topic = TopicName.fromString("test");
+		Intention intention1 = Intention.put(1L, 1L, topic, UUID.randomUUID(), 1L, new byte[0], new byte[] {1});
+		ConfigEntry upstreamEntry1 = new ConfigEntry(UUID.randomUUID(), new InetSocketAddress(3), new InetSocketAddress(4));
+		ConfigEntry upstreamEntry2 = new ConfigEntry(UUID.randomUUID(), new InetSocketAddress(5), new InetSocketAddress(6));
+		
+		// Send it data from the leader.
+		F<Void> clusterFollower = test.clusterManager.get_mainEnterFollowerState();
+		F<Long> clientFollower = test.clientManager.get_mainEnterFollowerState();
+		F<Intention> clusterReceived = test.clusterManager.get_mainMutationWasReceivedOrFetched();
+		runner.runVoid((snapshot) -> nodeState.mainAppendIntentionFromUpstream(upstreamEntry1, 1L, 0L, intention1));
+		clusterFollower.get();
+		// Last committed offset is still 0L, here.
+		Assert.assertEquals(0L, clientFollower.get().longValue());
+		Assert.assertEquals(intention1, clusterReceived.get());
+		
+		// Tell it to commit this.
+		F<CommittedIntention> commitMutation = test.diskManager.get_commitMutation();
+		runner.runVoid((snapshot) -> nodeState.mainCommittedIntentionOffsetFromUpstream(upstreamEntry1, 1L, 1L));
+		commitMutation.get();
+		
+		// Send it the same mutation from a new leader (since the new leader starts by sending its most recent mutation).
+		runner.runVoid((snapshot) -> nodeState.mainAppendIntentionFromUpstream(upstreamEntry2, 2L, 0L, intention1));
+		
+		// Stop.
+		runner.runVoid((snapshot) -> test.nodeState.mainHandleStopCommand());
+		test.join();
+	}
+
 
 	private static ClusterConfig _createConfig() {
 		return ClusterConfig.configFromEntries(new ConfigEntry[] {new ConfigEntry(UUID.randomUUID(), new InetSocketAddress(1), new InetSocketAddress(2))});
