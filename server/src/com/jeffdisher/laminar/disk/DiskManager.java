@@ -8,10 +8,12 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 
+import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.types.CommitInfo;
 import com.jeffdisher.laminar.types.Consequence;
 import com.jeffdisher.laminar.types.Intention;
 import com.jeffdisher.laminar.types.TopicName;
+import com.jeffdisher.laminar.types.payload.Payload_ConfigChange;
 import com.jeffdisher.laminar.utils.Assert;
 
 
@@ -149,6 +151,11 @@ public class DiskManager implements IDiskManager {
 		if (null != objectGraph) {
 			_pendingWorkUnit.incomingObjectGraphs.put(intention.topic, objectGraph);
 		}
+		// We also want to see if the intention was a config update, since we want to store that, too.
+		// (it seems simpler to read that here, as well, instead of plumbing it down from NodeState).
+		if (Intention.Type.CONFIG_CHANGE == intention.type) {
+			_pendingWorkUnit.incomingConfig = ((Payload_ConfigChange)intention.payload).config;
+		}
 		this.notifyAll();
 	}
 
@@ -215,6 +222,10 @@ public class DiskManager implements IDiskManager {
 				LogFileDomain domain = _consequenceOutputStreams.get(graphEntry.getKey());
 				domain.writeObjectGraph(finalIntentionOffset, graphEntry.getValue());
 			}
+			// We similarly handle the ClusterConfig.
+			if (null != work.incomingConfig) {
+				_intentionStorage.writeClusterConfig(finalIntentionOffset, work.incomingConfig);
+			}
 		}
 		
 		boolean shouldFlushIntentions = false;
@@ -262,6 +273,9 @@ public class DiskManager implements IDiskManager {
 			for (TopicName topic : work.incomingObjectGraphs.keySet()) {
 				LogFileDomain domain = _consequenceOutputStreams.get(topic);
 				domain.purgeStaleObjectGraphs(finalIntentionOffset);
+			}
+			if (null != work.incomingConfig) {
+				_intentionStorage.purgeStaleConfigs(finalIntentionOffset);
 			}
 		}
 		
@@ -390,6 +404,8 @@ public class DiskManager implements IDiskManager {
 		// We just store the most recent incoming graph or code since they aren't visible to listeners.
 		public final Map<TopicName, byte[]> incomingTransformedCode = new HashMap<>();
 		public final Map<TopicName, byte[]> incomingObjectGraphs = new HashMap<>();
+		// We also need to store the most recent config, so we handle that as just the most recent.
+		public ClusterConfig incomingConfig;
 		// We track fetch requests in 2 lists:  one for the "global" intentions and one for the "local" consequences.
 		public final List<Long> incomingFetchIntentionRequests = new LinkedList<>();
 		public final List<ConsequenceFetchTuple> incomingFetchConsequenceRequests = new LinkedList<>();

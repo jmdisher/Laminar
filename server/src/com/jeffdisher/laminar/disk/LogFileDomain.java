@@ -9,6 +9,7 @@ import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.file.StandardOpenOption;
 
+import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.utils.Assert;
 
 
@@ -22,6 +23,7 @@ public class LogFileDomain implements Closeable {
 	public static final String INDEX_FILE_NAME = "index.0";
 	public static final String CODE_NAME_PREFIX = "code.";
 	public static final String GRAPH_NAME_PREFIX = "graph.";
+	public static final String CONFIG_NAME_PREFIX = "config.";
 
 	public static LogFileDomain openFromDirectory(File directory) throws IOException {
 		File logFile = new File(directory, LOG_FILE_NAME);
@@ -144,6 +146,21 @@ public class LogFileDomain implements Closeable {
 	}
 
 	/**
+	 * Writes the given newConfig as the config for the given finalIntentionOffset, and forces it to sync to disk.
+	 * 
+	 * @param finalIntentionOffset The offset of the final intention in the current set of changes being written.
+	 * @param newConfig An updated ClusterConfig.
+	 * @throws IOException Something went wrong when opening, writing, or synchronizing the file.
+	 */
+	public void writeClusterConfig(long finalIntentionOffset, ClusterConfig newConfig) throws IOException {
+		File graphFile = new File(_directory, CONFIG_NAME_PREFIX + finalIntentionOffset);
+		try (FileOutputStream graphOutputStream = new FileOutputStream(graphFile, true)) {
+			graphOutputStream.write(newConfig.serialize());
+			graphOutputStream.getChannel().force(true);
+		}
+	}
+
+	/**
 	 * Deletes any transformed code written to the topic for any write attempt other than the one for finalIntentionOffset.
 	 * 
 	 * @param finalIntentionOffset The offset of the final intention in the current set of changes being written.
@@ -166,6 +183,21 @@ public class LogFileDomain implements Closeable {
 	public void purgeStaleObjectGraphs(long finalIntentionOffset) {
 		String latestFile = GRAPH_NAME_PREFIX + finalIntentionOffset;
 		File[] stale = _directory.listFiles((file, name) -> name.startsWith(GRAPH_NAME_PREFIX) && !name.equals(latestFile));
+		if (0 != stale.length) {
+			Assert.assertTrue(1 == stale.length);
+			boolean didDelete = stale[0].delete();
+			Assert.assertTrue(didDelete);
+		}
+	}
+
+	/**
+	 * Deletes any cluster config associated with any write attempt other than the one for finalIntentionOffset.
+	 * 
+	 * @param finalIntentionOffset The offset of the final intention in the current set of changes being written.
+	 */
+	public void purgeStaleConfigs(long finalIntentionOffset) {
+		String latestFile = CONFIG_NAME_PREFIX + finalIntentionOffset;
+		File[] stale = _directory.listFiles((file, name) -> name.startsWith(CONFIG_NAME_PREFIX) && !name.equals(latestFile));
 		if (0 != stale.length) {
 			Assert.assertTrue(1 == stale.length);
 			boolean didDelete = stale[0].delete();

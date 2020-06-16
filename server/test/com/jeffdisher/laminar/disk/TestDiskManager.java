@@ -2,6 +2,7 @@ package com.jeffdisher.laminar.disk;
 
 import java.io.File;
 import java.io.FileInputStream;
+import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.util.Collections;
 import java.util.UUID;
@@ -13,7 +14,9 @@ import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 
 import com.jeffdisher.laminar.state.StateSnapshot;
+import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.types.CommitInfo;
+import com.jeffdisher.laminar.types.ConfigEntry;
 import com.jeffdisher.laminar.types.Consequence;
 import com.jeffdisher.laminar.types.Intention;
 import com.jeffdisher.laminar.types.TopicName;
@@ -287,6 +290,55 @@ public class TestDiskManager {
 		Assert.assertFalse(new File(topicDirectory, LogFileDomain.GRAPH_NAME_PREFIX + put.intentionOffset).exists());
 		Assert.assertTrue(new File(topicDirectory, LogFileDomain.CODE_NAME_PREFIX + create2.intentionOffset).exists());
 		Assert.assertTrue(new File(topicDirectory, LogFileDomain.GRAPH_NAME_PREFIX + create2.intentionOffset).exists());
+	}
+
+	/**
+	 * Tests that config updates are written to disk.
+	 */
+	@Test
+	public void testConfigUpdates() throws Throwable {
+		File directory = _folder.newFolder();
+		ClusterConfig config1 = ClusterConfig.configFromEntries(new ConfigEntry[] {
+				new ConfigEntry(UUID.randomUUID(), new InetSocketAddress(2000), new InetSocketAddress(3000)),
+		});
+		ClusterConfig config2 = ClusterConfig.configFromEntries(new ConfigEntry[] {
+				config1.entries[0],
+				new ConfigEntry(UUID.randomUUID(), new InetSocketAddress(2001), new InetSocketAddress(3001)),
+		});
+		File intentionDirectory = new File(directory, DiskManager.INTENTION_DIRECTORY_NAME);
+		
+		// Create the intentions.
+		Intention change1 = Intention.updateConfig(1L, 1L, UUID.randomUUID(), 1L, config1);
+		Intention change2 = Intention.updateConfig(1L, 2L, UUID.randomUUID(), 1L, config2);
+		
+		LatchedCallbacks callbacks = new LatchedCallbacks();
+		DiskManager manager = new DiskManager(directory, callbacks);
+		manager.startAndWaitForReady();
+		
+		// Run the first change and verify we can see the file.
+		manager.commit(change1, CommitInfo.Effect.VALID, Collections.emptyList(), null, null);
+		while (callbacks.commitMutationCount < 1) { callbacks.runOneCommand(); }
+		File file1 = new File(intentionDirectory, LogFileDomain.CONFIG_NAME_PREFIX + change1.intentionOffset);
+		Assert.assertTrue(file1.exists());
+		try (FileInputStream stream = new FileInputStream(file1)) {
+			byte[] buffer = new byte[(int)file1.length()];
+			stream.read(buffer);
+			Assert.assertEquals(config1, ClusterConfig.deserialize(buffer));
+		}
+		
+		// Run the second change and verify that we see the new file but not the old one.
+		manager.commit(change2, CommitInfo.Effect.VALID, Collections.emptyList(), null, null);
+		while (callbacks.commitMutationCount < 2) { callbacks.runOneCommand(); }
+		File file2 = new File(intentionDirectory, LogFileDomain.CONFIG_NAME_PREFIX + change2.intentionOffset);
+		Assert.assertFalse(file1.exists());
+		Assert.assertTrue(file2.exists());
+		try (FileInputStream stream = new FileInputStream(file2)) {
+			byte[] buffer = new byte[(int)file2.length()];
+			stream.read(buffer);
+			Assert.assertEquals(config2, ClusterConfig.deserialize(buffer));
+		}
+		
+		manager.stopAndWaitForTermination();
 	}
 
 
