@@ -141,6 +141,7 @@ public class RecoveredState {
 
 	private static File _getLatestFile(File directory, String prefix, long maximumIntentionOffset) {
 		File[] matches = directory.listFiles((file, name) -> name.startsWith(prefix));
+		// Find the matching file.
 		long greatestSuffix = -1;
 		File matchingFile = null;
 		for (File check : matches) {
@@ -148,6 +149,15 @@ public class RecoveredState {
 			if ((suffix > greatestSuffix) && (suffix <= maximumIntentionOffset)) {
 				greatestSuffix = suffix;
 				matchingFile = check;
+			}
+		}
+		// Clean any other stale or future files.
+		for (File check : matches) {
+			if (check != matchingFile) {
+				boolean didDelete = check.delete();
+				if (!didDelete) {
+					throw new IllegalStateException("Failed to delete stale/invalid file: " + check);
+				}
 			}
 		}
 		return matchingFile;
