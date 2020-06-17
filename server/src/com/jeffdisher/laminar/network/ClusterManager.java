@@ -84,6 +84,12 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 	}
 
 	@Override
+	public void restoreState(long lastCommittedIntentionOffset) {
+		_lastReceivedIntentionOffset = lastCommittedIntentionOffset;
+		_lastCommittedIntentionOffset = lastCommittedIntentionOffset;
+	}
+
+	@Override
 	public void mainOpenDownstreamConnection(ConfigEntry entry) {
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
 		System.out.println("Downstream(open): " + entry.nodeUuid);

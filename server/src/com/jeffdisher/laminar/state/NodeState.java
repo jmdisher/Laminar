@@ -15,6 +15,7 @@ import com.jeffdisher.laminar.console.IConsoleManagerBackgroundCallbacks;
 import com.jeffdisher.laminar.disk.CommittedIntention;
 import com.jeffdisher.laminar.disk.IDiskManager;
 import com.jeffdisher.laminar.disk.IDiskManagerBackgroundCallbacks;
+import com.jeffdisher.laminar.disk.RecoveredState;
 import com.jeffdisher.laminar.network.IClientManager;
 import com.jeffdisher.laminar.network.IClientManagerCallbacks;
 import com.jeffdisher.laminar.network.IClusterManager;
@@ -102,6 +103,34 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		_inFlightMutations = new InFlightIntentions();
 		
 		_commandQueue = new UninterruptibleQueue<>();
+	}
+
+	/**
+	 * Called before starting up any components, but after all relationships have been established, in the case where
+	 * the server is coming back from a restart (not called if this is a fresh start).
+	 * 
+	 * @param recoveredState A description of the recovered state which should be restored.
+	 */
+	public void restoreState(RecoveredState recoveredState) {
+		// Restore DiskManager.
+		_diskManager.restoreState(recoveredState.activeTopics.keySet());
+		
+		// Restore ClusterManager.
+		_clusterManager.restoreState(recoveredState.lastCommittedIntentionOffset);
+		
+		// Plumb through mutation executor state.
+		_mutationExecutor.restoreState(recoveredState.activeTopics, recoveredState.nextConsequenceOffsetByTopic);
+		
+		// Finally, update our own state.
+		Set<DownstreamPeerSyncState> nodesInConfig = _openConnectionsForIncomingConfig(recoveredState.config);
+		// This is the resumed config so we don't start in joint consensus.
+		_currentConfig = new SyncProgress(recoveredState.config, nodesInConfig);
+		_currentTermNumber = recoveredState.currentTermNumber;
+		_lastTermNumberRemovedFromInFlight = recoveredState.currentTermNumber;
+		_lastCommittedMutationOffset = recoveredState.lastCommittedIntentionOffset;
+		_lastIntentionOffsetSentToDisk = recoveredState.lastCommittedIntentionOffset;
+		_selfState.lastIntentionOffsetReceived = recoveredState.lastCommittedIntentionOffset;
+		_inFlightMutations.restoreState(recoveredState.lastCommittedIntentionOffset);
 	}
 
 	public void runUntilShutdown() {
@@ -494,17 +523,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 			// -we need to initiate an outgoing connection to any of these new nodes
 			
 			// Add the missing nodes and start the outgoing connections.
-			Set<DownstreamPeerSyncState> nodesInConfig = new HashSet<>();
-			for (ConfigEntry entry : newConfig.entries) {
-				DownstreamPeerSyncState peer = _unionOfDownstreamNodes.get(entry.nodeUuid);
-				if (null == peer) {
-					// This is a new node so start the connection and add it to the map.
-					peer = new DownstreamPeerSyncState(entry);
-					_clusterManager.mainOpenDownstreamConnection(entry);
-					_unionOfDownstreamNodes.put(entry.nodeUuid, peer);
-				}
-				nodesInConfig.add(peer);
-			}
+			Set<DownstreamPeerSyncState> nodesInConfig = _openConnectionsForIncomingConfig(newConfig);
 			// Add this to our pending map of commits so we know when to exit joint consensus.
 			SyncProgress overwrite = _configsPendingCommit.put(mutation.intentionOffset, new SyncProgress(newConfig, nodesInConfig));
 			// We should never be overwriting something.
@@ -778,5 +797,20 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		TopicName topic = mutation.topic;
 		IntentionExecutor.ExecutionResult result = _mutationExecutor.execute(mutation);
 		_commit(mutation, result.effect, topic, result.consequences, result.newTransformedCode, result.objectGraph);
+	}
+
+	private Set<DownstreamPeerSyncState> _openConnectionsForIncomingConfig(ClusterConfig newConfig) {
+		Set<DownstreamPeerSyncState> nodesInConfig = new HashSet<>();
+		for (ConfigEntry entry : newConfig.entries) {
+			DownstreamPeerSyncState peer = _unionOfDownstreamNodes.get(entry.nodeUuid);
+			if (null == peer) {
+				// This is a new node so start the connection and add it to the map.
+				peer = new DownstreamPeerSyncState(entry);
+				_clusterManager.mainOpenDownstreamConnection(entry);
+				_unionOfDownstreamNodes.put(entry.nodeUuid, peer);
+			}
+			nodesInConfig.add(peer);
+		}
+		return nodesInConfig;
 	}
 }

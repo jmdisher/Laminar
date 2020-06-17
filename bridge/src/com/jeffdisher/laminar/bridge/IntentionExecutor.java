@@ -36,6 +36,18 @@ public class IntentionExecutor {
 		_nextConsequenceOffsetByTopic = new HashMap<>();
 	}
 
+	/**
+	 * Called by the NodeState to restore the state of the executor after a restart (not called on a normal start).
+	 * This is called before the system finishes starting up so nothing else is in-flight.
+	 * 
+	 * @param activeTopics The map of topics which haven't been deleted.
+	 * @param nextConsequenceOffsetByTopic The map of all topics ever created to their next consequence offset.
+	 */
+	public void restoreState(Map<TopicName, TopicContext> activeTopics, Map<TopicName, Long> nextConsequenceOffsetByTopic) {
+		_activeTopics.putAll(activeTopics);
+		_nextConsequenceOffsetByTopic.putAll(nextConsequenceOffsetByTopic);
+	}
+
 	public void stop() {
 		_bridge.shutdown();
 	}

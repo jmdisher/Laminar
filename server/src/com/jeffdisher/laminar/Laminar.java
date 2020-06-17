@@ -10,6 +10,7 @@ import java.util.UUID;
 
 import com.jeffdisher.laminar.console.ConsoleManager;
 import com.jeffdisher.laminar.disk.DiskManager;
+import com.jeffdisher.laminar.disk.RecoveredState;
 import com.jeffdisher.laminar.network.ClientManager;
 import com.jeffdisher.laminar.network.ClusterManager;
 import com.jeffdisher.laminar.state.NodeState;
@@ -68,9 +69,23 @@ public class Laminar {
 			failStart("Failure binding required port: " + e.getLocalizedMessage());
 		}
 		
+		// Note that we need to create an "initial config" which we will use until we get a cluster update from a client or another node starts sending updates.
+		ConfigEntry self = new ConfigEntry(serverUuid, clusterSocketAddress, clientSocketAddress);
+		
+		// Data elements which we may find on-disk after a restart.
+		RecoveredState recoveredState = null;
+		
 		// Check data directory.
 		File dataDirectory = new File(dataDirectoryName);
-		if (!dataDirectory.exists()) {
+		if (dataDirectory.exists()) {
+			// See if we are restarting from an existing state.
+			try {
+				// Returns null if this doesn't appear to be a valid storage representation.
+				recoveredState = RecoveredState.readStateFromRootDirectory(dataDirectory, ClusterConfig.configFromEntries(new ConfigEntry[] {self}));
+			} catch (IOException e1) {
+				failStart("Failure restarting from on-disk state: " + e1.getLocalizedMessage());
+			}
+		} else {
 			boolean didCreate = dataDirectory.mkdirs();
 			if (!didCreate) {
 				failStart("Could not create data directory (or parents): \"" + dataDirectoryName +"\"");
@@ -87,8 +102,6 @@ public class Laminar {
 		
 		// By this point, all requirements of the system should be satisfied so create the subsystems.
 		// First, the core NodeState and the background thread callback handlers for the managers.
-		// Note that we need to create an "initial config" which we will use until we get a cluster update from a client or another node starts sending updates.
-		ConfigEntry self = new ConfigEntry(serverUuid, clusterSocketAddress, clientSocketAddress);
 		ClusterConfig initialConfig = ClusterConfig.configFromEntries(new ConfigEntry[] {self});
 		NodeState thisNodeState = new NodeState(initialConfig);
 		// We also want to install an uncaught exception handler to make sure background thread failures are fatal.
@@ -124,6 +137,11 @@ public class Laminar {
 		thisNodeState.registerClusterManager(clulsterManager);
 		thisNodeState.registerDiskManager(diskManager);
 		thisNodeState.registerConsoleManager(consoleManager);
+		
+		// Before we start everything, restore any state if we are restarting.
+		if (null != recoveredState) {
+			thisNodeState.restoreState(recoveredState);
+		}
 		
 		// Start all background threads and other manager processes.
 		clientManager.startAndWaitForReady();

@@ -1,5 +1,6 @@
 package com.jeffdisher.laminar;
 
+import java.io.File;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetAddress;
@@ -606,6 +607,71 @@ public class TestClientsAndListeners {
 			Assert.assertEquals(3L, destroyEvent.intentionOffset);
 			Assert.assertEquals(4L, destroyEvent.consequenceOffset);
 		}
+		
+		// Shut down.
+		Assert.assertEquals(0, wrapper.stop());
+	}
+
+	/**
+	 * Tests that a restart of a single node in the middle of a sequence of messages will restart such that clients and
+	 * listeners can reconnect and continue running as though there was no problem.
+	 */
+	@Test
+	public void testRestart() throws Throwable {
+		TopicName topic = TopicName.fromString("test");
+		// We want to reuse the data directory so we see restart logic.
+		File dataDirectory = _folder.newFolder();
+		// We also need the UUID so that the configs match.
+		UUID serverUuid = UUID.randomUUID();
+		ServerWrapper wrapper = ServerWrapper.startedServerWrapperWithUuid("testRestart-PRE", serverUuid, 2000, 3000, dataDirectory);
+		InetSocketAddress address = new InetSocketAddress(InetAddress.getLocalHost(), 3000);
+		
+		// Start a listener before the client begins.
+		CaptureListener beforeListener = new CaptureListener(address, topic, 21);
+		beforeListener.setName("Before");
+		beforeListener.start();
+		
+		try (ClientConnection client = ClientConnection.open(address)) {
+			Assert.assertEquals(CommitInfo.Effect.VALID, client.sendCreateTopic(topic).waitForCommitted().effect);
+			// Send 10 messages, then restart, then another 10 messages.  After, wait for them all to commit.
+			ClientResult[] results = new ClientResult[20];
+			for (int i = 0; i < 10; ++i) {
+				results[i] = client.sendPut(topic, new byte[0], new byte[] {(byte)i});
+			}
+			Assert.assertEquals(0, wrapper.stop());
+			wrapper = ServerWrapper.startedServerWrapperWithUuid("testRestart-POST", serverUuid, 2000, 3000, dataDirectory);
+			for (int i = 10; i < results.length; ++i) {
+				results[i] = client.sendPut(topic, new byte[0], new byte[] {(byte)i});
+			}
+			for (int i = 0; i < results.length; ++i) {
+				results[i].waitForReceived();
+				CommitInfo info = results[i].waitForCommitted();
+				Assert.assertEquals(CommitInfo.Effect.VALID, info.effect);
+				long commitOffset = info.intentionOffset;
+				Assert.assertEquals((long)(2 + i), commitOffset);
+			}
+			// By this point, the client must have received the config (since it gets that before any received/committed).
+			Assert.assertNotNull(client.getCurrentConfig());
+		}
+		
+		// Start a listener after the client is done.
+		CaptureListener afterListener = new CaptureListener(address, topic, 21);
+		afterListener.setName("After");
+		afterListener.start();
+		
+		// Wait for the listeners to stop and then verify what they found is correct.
+		Consequence[] beforeEvents = beforeListener.waitForTerminate();
+		Consequence[] afterEvents = afterListener.waitForTerminate();
+		for (int i = 0; i < beforeEvents.length-1; ++i) {
+			// Add a bias to skip the topic creation.
+			int index = i + 1;
+			// Check the after, first, since that happened after the poison was done and the difference can point to different bugs.
+			Assert.assertEquals(i, ((Payload_KeyPut)afterEvents[index].payload).value[0]);
+			Assert.assertEquals(i, ((Payload_KeyPut)beforeEvents[index].payload).value[0]);
+		}
+		// Also verify that the listeners got the config.
+		Assert.assertNotNull(beforeListener.getCurrentConfig());
+		Assert.assertNotNull(afterListener.getCurrentConfig());
 		
 		// Shut down.
 		Assert.assertEquals(0, wrapper.stop());

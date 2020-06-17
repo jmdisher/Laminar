@@ -79,6 +79,11 @@ public class FutureClusterManager implements IClusterManager {
 	}
 
 	@Override
+	public void restoreState(long lastCommittedIntentionOffset) {
+		System.out.println("IClusterManager - restoreState");
+	}
+
+	@Override
 	public void mainDisconnectAllPeers() {
 		System.out.println("IClusterManager - mainDisconnectAllPeers");
 	}

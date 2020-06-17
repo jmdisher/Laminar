@@ -7,6 +7,7 @@ import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.types.CommitInfo;
@@ -61,14 +62,18 @@ public class DiskManager implements IDiskManager {
 		
 		// Create the directories we know about.
 		File intentionDirectory = new File(dataDirectory, INTENTION_DIRECTORY_NAME);
-		boolean didCreate = intentionDirectory.mkdirs();
-		if (!didCreate) {
-			throw new IllegalStateException("Failed to create intention directory: " + intentionDirectory);
+		if (!intentionDirectory.exists()) {
+			boolean didCreate = intentionDirectory.mkdirs();
+			if (!didCreate) {
+				throw new IllegalStateException("Failed to create intention directory: " + intentionDirectory);
+			}
 		}
 		_consequenceTopLevelDirectory = new File(dataDirectory, CONSEQUENCE_TOPICS_DIRECTORY_NAME);
-		didCreate = _consequenceTopLevelDirectory.mkdirs();
-		if (!didCreate) {
-			throw new IllegalStateException("Failed to create consequence topics directory: " + _consequenceTopLevelDirectory);
+		if (!_consequenceTopLevelDirectory.exists()) {
+			boolean didCreate = _consequenceTopLevelDirectory.mkdirs();
+			if (!didCreate) {
+				throw new IllegalStateException("Failed to create consequence topics directory: " + _consequenceTopLevelDirectory);
+			}
 		}
 		
 		// Create the common output stream for intentions.
@@ -113,6 +118,21 @@ public class DiskManager implements IDiskManager {
 		} catch (IOException e) {
 			// We aren't expecting a failure to close.
 			throw Assert.unexpected(e);
+		}
+	}
+
+	@Override
+	public void restoreState(Set<TopicName> activeTopics) {
+		for (TopicName topic : activeTopics) {
+			File topicDirectory = new File(_consequenceTopLevelDirectory, topic.string);
+			// We just read through this so it better still be there.
+			Assert.assertTrue(topicDirectory.isDirectory());
+			try {
+				_consequenceOutputStreams.put(topic, LogFileDomain.openFromDirectory(topicDirectory));
+			} catch (IOException e) {
+				// We just read through this before deciding to restore so this shouldn't be able to fail.
+				throw Assert.unexpected(e);
+			}
 		}
 	}
 

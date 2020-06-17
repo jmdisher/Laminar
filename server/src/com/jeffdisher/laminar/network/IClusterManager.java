@@ -10,6 +10,14 @@ import com.jeffdisher.laminar.types.Intention;
  */
 public interface IClusterManager {
 	/**
+	 * Called by the NodeState to restore the state of the receiver after a restart (not called on a normal start).
+	 * This is called before the system finishes starting up so nothing else is in-flight.
+	 * 
+	 * @param lastCommittedIntentionOffset The offset of the last committed intention.
+	 */
+	void restoreState(long lastCommittedIntentionOffset);
+
+	/**
 	 * Disconnects all outgoing and incoming peers, but also queues up reconnections to all outgoing peers which were
 	 * disconnected (since some reconnects might already be queued up).
 	 * Called by the NodeState as part of the POISON testing message.

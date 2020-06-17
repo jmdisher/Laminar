@@ -1,6 +1,7 @@
 package com.jeffdisher.laminar.state;
 
 import java.util.List;
+import java.util.Set;
 
 import org.junit.Assert;
 
@@ -38,6 +39,11 @@ public class FutureDiskManager implements IDiskManager {
 		Assert.assertNull(f_commitEvent);
 		f_commitEvent = new F<Consequence>();
 		return f_commitEvent;
+	}
+
+	@Override
+	public void restoreState(Set<TopicName> activeTopics) {
+		System.out.println("IDiskManager - restoreState");
 	}
 
 	@Override

@@ -26,6 +26,16 @@ public class InFlightIntentions {
 	}
 
 	/**
+	 * Called by the NodeState to restore the state of the receiver after a restart (not called on a normal start).
+	 * This is called before the system finishes starting up so nothing else is in-flight.
+	 * 
+	 * @param lastCommittedIntentionOffset The offset of the last committed intention.
+	 */
+	public void restoreState(long lastCommittedIntentionOffset) {
+		_inFlightIntentionOffsetBias = lastCommittedIntentionOffset + 1L;
+	}
+
+	/**
 	 * @return The offset of the next mutation to be added or otherwise handled.
 	 */
 	public long getNextIntentionOffset() {
