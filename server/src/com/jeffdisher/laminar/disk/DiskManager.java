@@ -138,6 +138,12 @@ public class DiskManager implements IDiskManager {
 		Assert.assertTrue(Thread.currentThread() != _background);
 		// Make sure that the effect is consistent.
 		Assert.assertTrue((CommitInfo.Effect.VALID == effect) == (null != consequences));
+		if ((CommitInfo.Effect.VALID == effect) && (Intention.Type.TOPIC_CREATE == intention.type)) {
+			// We require that transformed code and object graph are specified for every creation, just as empty arrays if not a programmable topic.
+			// This is done to avoid leaving stale files we may incorrectly read after TOPIC_DESTROY and a later TOPIC_CREATE of non-programmable topic.
+			Assert.assertTrue(null != newTransformedCode);
+			Assert.assertTrue(null != objectGraph);
+		}
 		
 		_pendingWorkUnit.incomingCommitIntentions.add(CommittedIntention.create(intention, effect));
 		if (null != consequences) {

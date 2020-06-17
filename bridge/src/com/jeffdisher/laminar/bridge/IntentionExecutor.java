@@ -74,7 +74,9 @@ public class IntentionExecutor {
 					}
 				} else {
 					// This is a normal topic so no special action.
+					// Note that we still store empty code and graph so they can over-write stale on-disk copies from a previous creation of this topic.
 					context.transformedCode = new byte[0];
+					context.objectGraph = new byte[0];
 					events = Collections.singletonList(defaultEvent);
 				}
 				if (null != events) {
