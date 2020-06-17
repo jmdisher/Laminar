@@ -21,6 +21,20 @@ public class ListenerManager {
 	private final Map<TopicName, Long> _lastCommittedOffsetsByTopic = new HashMap<>();
 
 	/**
+	 * Called when restoring state after a restart.  The given nextConsequenceOffsetByTopic is a map containing the next
+	 * consequence offsets which will be assigned to all known topics, active and inactive.  This is used to seed the
+	 * receiver's internal triggering for attached listeners.
+	 * 
+	 * @param nextConsequenceOffsetByTopic The next consequence offset which will be assigned to any new consequences in
+	 * each topic, active or not.
+	 */
+	public void restoreState(Map<TopicName, Long> nextConsequenceOffsetByTopic) {
+		for (Map.Entry<TopicName, Long> next : nextConsequenceOffsetByTopic.entrySet()) {
+			_lastCommittedOffsetsByTopic.put(next.getKey(), next.getValue() - 1L);
+		}
+	}
+
+	/**
 	 * Adds the given listener to internal tracking for when next data becomes available.
 	 * 
 	 * @param listener The now-writable listener.

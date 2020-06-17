@@ -84,7 +84,8 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 	}
 
 	@Override
-	public void restoreState(long lastCommittedIntentionOffset) {
+	public void restoreState(boolean isLeader, long lastCommittedIntentionOffset) {
+		_isLeader = isLeader;
 		_lastReceivedIntentionOffset = lastCommittedIntentionOffset;
 		_lastCommittedIntentionOffset = lastCommittedIntentionOffset;
 	}

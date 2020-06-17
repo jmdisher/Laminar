@@ -1,5 +1,7 @@
 package com.jeffdisher.laminar.state;
 
+import java.util.Map;
+
 import org.junit.Assert;
 
 import com.jeffdisher.laminar.disk.CommittedIntention;
@@ -30,6 +32,10 @@ public class FutureClientManager implements IClientManager {
 		return f_mainProcessingPendingMessageCommits;
 	}
 
+	@Override
+	public void restoreState(Map<TopicName, Long> nextConsequenceOffsetByTopic) {
+		System.out.println("IClientManager - restoreState");
+	}
 	@Override
 	public void mainDisconnectAllClientsAndListeners() {
 		System.out.println("IClientManager - mainDisconnectAllClientsAndListeners");

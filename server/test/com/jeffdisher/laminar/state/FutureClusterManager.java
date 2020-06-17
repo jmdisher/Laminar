@@ -79,7 +79,7 @@ public class FutureClusterManager implements IClusterManager {
 	}
 
 	@Override
-	public void restoreState(long lastCommittedIntentionOffset) {
+	public void restoreState(boolean isLeader, long lastCommittedIntentionOffset) {
 		System.out.println("IClusterManager - restoreState");
 	}
 

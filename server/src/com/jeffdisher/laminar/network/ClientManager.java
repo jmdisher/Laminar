@@ -112,6 +112,11 @@ public class ClientManager implements IClientManager, INetworkManagerBackgroundC
 	}
 
 	@Override
+	public void restoreState(Map<TopicName, Long> nextConsequenceOffsetByTopic) {
+		_listenerManager.restoreState(nextConsequenceOffsetByTopic);
+	}
+
+	@Override
 	public void mainDisconnectAllClientsAndListeners() {
 		// Called on main thread.
 		Assert.assertTrue(Thread.currentThread() == _mainThread);

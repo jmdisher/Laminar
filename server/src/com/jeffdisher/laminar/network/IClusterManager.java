@@ -13,9 +13,11 @@ public interface IClusterManager {
 	 * Called by the NodeState to restore the state of the receiver after a restart (not called on a normal start).
 	 * This is called before the system finishes starting up so nothing else is in-flight.
 	 * 
+	 * @param isLeader True if we should assume that we are restoring as the leader (only element of the cluster, for
+	 * example).
 	 * @param lastCommittedIntentionOffset The offset of the last committed intention.
 	 */
-	void restoreState(long lastCommittedIntentionOffset);
+	void restoreState(boolean isLeader, long lastCommittedIntentionOffset);
 
 	/**
 	 * Disconnects all outgoing and incoming peers, but also queues up reconnections to all outgoing peers which were

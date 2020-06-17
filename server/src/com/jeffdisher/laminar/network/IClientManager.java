@@ -1,5 +1,7 @@
 package com.jeffdisher.laminar.network;
 
+import java.util.Map;
+
 import com.jeffdisher.laminar.disk.CommittedIntention;
 import com.jeffdisher.laminar.state.StateSnapshot;
 import com.jeffdisher.laminar.types.ClusterConfig;
@@ -12,6 +14,14 @@ import com.jeffdisher.laminar.types.TopicName;
  * Interface of ClientManager to make unit testing NodeState easier.
  */
 public interface IClientManager {
+	/**
+	 * Called by the NodeState to restore the state of the receiver after a restart (not called on a normal start).
+	 * This is called before the system finishes starting up so nothing else is in-flight.
+	 * 
+	 * @param nextConsequenceOffsetByTopic The next consequence offset to assign for all known topics.
+	 */
+	void restoreState(Map<TopicName, Long> nextConsequenceOffsetByTopic);
+
 	/**
 	 * Requests that all clients and listeners be disconnected.
 	 * This is currently just used to implement the POISON method, for testing.

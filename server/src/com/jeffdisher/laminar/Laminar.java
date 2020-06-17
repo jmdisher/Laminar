@@ -139,13 +139,14 @@ public class Laminar {
 		thisNodeState.registerConsoleManager(consoleManager);
 		
 		// Before we start everything, restore any state if we are restarting.
+		// (we need to start the cluster manager, first, since we create outgoing connections)
+		clulsterManager.startAndWaitForReady();
 		if (null != recoveredState) {
 			thisNodeState.restoreState(recoveredState);
 		}
 		
 		// Start all background threads and other manager processes.
 		clientManager.startAndWaitForReady();
-		clulsterManager.startAndWaitForReady();
 		diskManager.startAndWaitForReady();
 		consoleManager.startAndWaitForReady();
 		

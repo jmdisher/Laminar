@@ -1,5 +1,6 @@
 package com.jeffdisher.laminar;
 
+import java.io.File;
 import java.io.OutputStream;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
@@ -818,6 +819,87 @@ public class TestCluster {
 		}
 	}
 
+	/**
+	 * Creates a 3-node cluster and restarts the leader, then, once it come back up and syncs, restarts the other 2
+	 * nodes, forcing the original restart to be the leader.
+	 * This proves that a restarted node is not any different than another and can go on to lead the cluster.
+	 */
+	@Test
+	public void testRestartInCluster() throws Throwable {
+		TopicName topic = TopicName.fromString("test");
+		// Create our config.
+		InetSocketAddress server1Address = new InetSocketAddress(InetAddress.getLocalHost(), 2001);
+		InetSocketAddress server2Address = new InetSocketAddress(InetAddress.getLocalHost(), 2002);
+		InetSocketAddress server3Address = new InetSocketAddress(InetAddress.getLocalHost(), 2003);
+		UUID serverUuids[] = new UUID[] {
+				UUID.randomUUID(),
+				UUID.randomUUID(),
+				UUID.randomUUID(),
+		};
+		ClusterConfig config = ClusterConfig.configFromEntries(new ConfigEntry[] {
+				new ConfigEntry(serverUuids[0], new InetSocketAddress(InetAddress.getLocalHost(), 3001), server1Address),
+				new ConfigEntry(serverUuids[1], new InetSocketAddress(InetAddress.getLocalHost(), 3002), server2Address),
+				new ConfigEntry(serverUuids[2], new InetSocketAddress(InetAddress.getLocalHost(), 3003), server3Address),
+		});
+		File[] dataDirectories = new File[] {
+				_folder.newFolder(),
+				_folder.newFolder(),
+				_folder.newFolder(),
+		};
+		
+		// Start all servers.
+		ServerWrapper servers[] = new ServerWrapper[3];
+		for (int i = 0; i < servers.length; ++i) {
+			servers[i] = _startServerWrapperInDirectory(dataDirectories[i], "testRestartInCluster", serverUuids[i], i);
+		}
+		
+		// Start the client, set the config, and run the test.
+		ClientConnection client = ClientConnection.open(server1Address);
+		try {
+			client.sendUpdateConfig(config);
+			Assert.assertEquals(CommitInfo.Effect.VALID, client.sendCreateTopic(topic).waitForCommitted().effect);
+			
+			// Send the first batch and wait for it to commit.
+			_runBatch(client, topic, 10, 0);
+			// Stop the current leader.
+			int initialLeaderIndex = _stopCurrentLeader(config, servers, client);
+			// Send another batch to the degraded cluster.
+			_runBatch(client, topic, 10, 10);
+			// Stop the current leader and restart the original one.
+			int secondLeaderIndex = _stopCurrentLeader(config, servers, client);
+			servers[initialLeaderIndex] = _startServerWrapperInDirectory(dataDirectories[initialLeaderIndex], "testRestartInCluster", serverUuids[initialLeaderIndex], initialLeaderIndex);
+			// Send another batch and wait for it to commit.
+			_runBatch(client, topic, 10, 20);
+			// Stop the final server (should be the leader) and restart the previous.
+			int thirdLeaderIndex = _stopCurrentLeader(config, servers, client);
+			Assert.assertNotEquals(initialLeaderIndex, thirdLeaderIndex);
+			Assert.assertNotEquals(secondLeaderIndex, thirdLeaderIndex);
+			servers[secondLeaderIndex] = _startServerWrapperInDirectory(dataDirectories[secondLeaderIndex], "testRestartInCluster", serverUuids[secondLeaderIndex], secondLeaderIndex);
+			// Send another batch.
+			_runBatch(client, topic, 10, 30);
+			// Restart the last server before attaching listeners..
+			servers[thirdLeaderIndex] = _startServerWrapperInDirectory(dataDirectories[thirdLeaderIndex], "testRestartInCluster", serverUuids[thirdLeaderIndex], thirdLeaderIndex);
+			
+			// We need to add an extra event and skip over it to account for the creation of the topic.
+			Consequence[] records1 = _listenOnServer(server1Address, topic, client.getClientId(), 41);
+			Consequence[] records2 = _listenOnServer(server2Address, topic, client.getClientId(), 41);
+			Consequence[] records3 = _listenOnServer(server3Address, topic, client.getClientId(), 41);
+			for (int i = 0; i < 40; ++i) {
+				int index = i + 1;
+				
+				Assert.assertEquals((byte)i, ((Payload_KeyPut)records1[index].payload).value[0]);
+				Assert.assertEquals((byte)i, ((Payload_KeyPut)records2[index].payload).value[0]);
+				Assert.assertEquals((byte)i, ((Payload_KeyPut)records3[index].payload).value[0]);
+			}
+		} finally {
+			// Shut down.
+			client.close();
+			for (ServerWrapper wrapper: servers) {
+				Assert.assertEquals(0, wrapper.stop());
+			}
+		}
+	}
+
 
 	private Consequence[] _listenOnServer(InetSocketAddress serverAddress, TopicName topic, UUID clientUuid, int count) throws Throwable {
 		CaptureListener listener = new CaptureListener(serverAddress, topic, count);
@@ -836,11 +918,15 @@ public class TestCluster {
 		}
 	}
 
-	private void _rotateServer(UUID[] serverUuids, ClusterConfig config, ServerWrapper[] servers,
-			ClientConnection client) throws InterruptedException, Throwable {
+	private void _rotateServer(UUID[] serverUuids, ClusterConfig config, ServerWrapper[] servers, ClientConnection client) throws InterruptedException, Throwable {
+		int attachedIndex = _stopCurrentLeader(config, servers, client);
+		servers[attachedIndex] = _startServerWrapper("testElectionTimeout", serverUuids[attachedIndex], attachedIndex);
+	}
+
+	private int _stopCurrentLeader(ClusterConfig config, ServerWrapper[] servers, ClientConnection client) throws InterruptedException {
 		int attachedIndex = _getAttachedServerIndex(config, client);
 		Assert.assertEquals(0, servers[attachedIndex].stop());
-		servers[attachedIndex] = _startServerWrapper("testElectionTimeout", serverUuids[attachedIndex], attachedIndex);
+		return attachedIndex;
 	}
 
 	private int _getAttachedServerIndex(ClusterConfig config, ClientConnection client) {
@@ -857,7 +943,11 @@ public class TestCluster {
 	}
 
 	private ServerWrapper _startServerWrapper(String name, UUID uuid, int i) throws Throwable {
+		return _startServerWrapperInDirectory(_folder.newFolder(), name, uuid, i);
+	}
+
+	private ServerWrapper _startServerWrapperInDirectory(File dataDirectory, String name, UUID uuid, int i) throws Throwable {
 		int count = i + 1;
-		return ServerWrapper.startedServerWrapperWithUuid(name + "-" + count, uuid, 3000 + count, 2000 + count, _folder.newFolder());
+		return ServerWrapper.startedServerWrapperWithUuid(name + "-" + count, uuid, 3000 + count, 2000 + count, dataDirectory);
 	}
 }

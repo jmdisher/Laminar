@@ -115,8 +115,12 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		// Restore DiskManager.
 		_diskManager.restoreState(recoveredState.activeTopics.keySet());
 		
+		// Restore ClientManager.
+		_clientManager.restoreState(recoveredState.nextConsequenceOffsetByTopic);
+		
 		// Restore ClusterManager.
-		_clusterManager.restoreState(recoveredState.lastCommittedIntentionOffset);
+		boolean shouldAssumeIsLeader = (1 == recoveredState.config.entries.length);
+		_clusterManager.restoreState(shouldAssumeIsLeader, recoveredState.lastCommittedIntentionOffset);
 		
 		// Plumb through mutation executor state.
 		_mutationExecutor.restoreState(recoveredState.activeTopics, recoveredState.nextConsequenceOffsetByTopic);
