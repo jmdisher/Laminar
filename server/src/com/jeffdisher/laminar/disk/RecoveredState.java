@@ -2,6 +2,7 @@ package com.jeffdisher.laminar.disk;
 
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
@@ -61,7 +62,8 @@ public class RecoveredState {
 		File topLevelConsequenceDirectory = new File(dataDirectory, DiskManager.CONSEQUENCE_TOPICS_DIRECTORY_NAME);
 		
 		// The intention index is the last thing written so it is the first thing we read.
-		ByteBuffer intentBuffer = _readLastExtentFromLogDirectory(intentionDirectory, -1L);
+		// We need to add an extra byte to the record size interpretation for intentions for CommitInfo.Effect.
+		ByteBuffer intentBuffer = _readLastExtentFromLogDirectory(intentionDirectory, false, Byte.BYTES);
 		// We want the size of the serialized intention.
 		Short.toUnsignedInt(intentBuffer.getShort());
 		// Next, we need the effect.
@@ -85,56 +87,102 @@ public class RecoveredState {
 		for (File directory : topicDirectories) {
 			TopicName topic = TopicName.fromString(directory.getName());
 			// Get the last consequence to see if it is a DESTROY_TOPIC.
-			ByteBuffer consequenceBuffer = _readLastExtentFromLogDirectory(directory, maximumIntentionOffset);
-			// We want the size of the serialized consequence.
-			Short.toUnsignedInt(consequenceBuffer.getShort());
-			// Finally, we deserialize the extent.
-			Consequence consequence = Consequence.deserializeFrom(consequenceBuffer);
-			if (Consequence.Type.TOPIC_DESTROY != consequence.type) {
-				// This is an active topic.
-				TopicContext context = new TopicContext();
-				activeTopics.put(topic, context);
-				
-				// Check the code (even present as an empty file if not programmable).
-				File codeFile = _getLatestFile(directory, LogFileDomain.CODE_NAME_PREFIX, maximumIntentionOffset);
-				context.transformedCode = Files.readAllBytes(codeFile.toPath());
-				// Check the graph (even present as an empty file if not programmable).
-				File graphFile = _getLatestFile(directory, LogFileDomain.GRAPH_NAME_PREFIX, maximumIntentionOffset);
-				context.objectGraph = Files.readAllBytes(graphFile.toPath());
+			// Note that we may need to walk backward through the topic to find the last entry with a valid intention offset.
+			Consequence consequence = null;
+			boolean isSuccessfulRead = false;
+			boolean shouldTruncate = false;
+			while (!isSuccessfulRead) {
+				ByteBuffer consequenceBuffer = _readLastExtentFromLogDirectory(directory, shouldTruncate, 0);
+				if (null != consequenceBuffer) {
+					// We want the size of the serialized consequence.
+					Short.toUnsignedInt(consequenceBuffer.getShort());
+					// Finally, we deserialize the extent.
+					Consequence check = Consequence.deserializeFrom(consequenceBuffer);
+					if (check.intentionOffset <= maximumIntentionOffset) {
+						consequence = check;
+						isSuccessfulRead = true;
+					} else {
+						// This consequence is too late so remove it and try again.
+						shouldTruncate = true;
+					}
+				} else {
+					// The topic is empty.
+					isSuccessfulRead = true;
+				}
 			}
-			nextConsequenceOffsetByTopic.put(topic, consequence.consequenceOffset + 1L);
+			// We will only add this to the maps if we managed to read something.
+			if (null != consequence) {
+				if (Consequence.Type.TOPIC_DESTROY != consequence.type) {
+					// This is an active topic.
+					TopicContext context = new TopicContext();
+					activeTopics.put(topic, context);
+					
+					// Check the code (even present as an empty file if not programmable).
+					File codeFile = _getLatestFile(directory, LogFileDomain.CODE_NAME_PREFIX, maximumIntentionOffset);
+					context.transformedCode = Files.readAllBytes(codeFile.toPath());
+					// Check the graph (even present as an empty file if not programmable).
+					File graphFile = _getLatestFile(directory, LogFileDomain.GRAPH_NAME_PREFIX, maximumIntentionOffset);
+					context.objectGraph = Files.readAllBytes(graphFile.toPath());
+				}
+				nextConsequenceOffsetByTopic.put(topic, consequence.consequenceOffset + 1L);
+			}
 		}
 		return new RecoveredState(configToReturn, intention.termNumber, intention.intentionOffset, activeTopics, nextConsequenceOffsetByTopic);
 	}
 
-	private static ByteBuffer _readLastExtentFromLogDirectory(File directory, long maximumIntentionOffset) throws IOException {
+	private static ByteBuffer _readLastExtentFromLogDirectory(File directory, boolean shouldRemoveLastEntry, int addToRecordSize) throws IOException {
 		// The index represents the atomic write so we use that to find the last valid extent.
 		File indexFile = new File(directory, LogFileDomain.INDEX_FILE_NAME);
-		long fileOffsetToRead;
+		long fileOffsetToRead = -1L;
 		try (FileInputStream stream = new FileInputStream(indexFile)) {
 			FileChannel intentIndex = stream.getChannel();
-			ByteBuffer indexEntry = ByteBuffer.allocate(IndexEntry.BYTES);
 			long offsetOfLastEntry = indexFile.length() - IndexEntry.BYTES;
-			long offsetOfMaxEntry = (-1L == maximumIntentionOffset)
-					? offsetOfLastEntry
-					: (maximumIntentionOffset - 1L) * (long)IndexEntry.BYTES;
-			if (offsetOfMaxEntry < offsetOfLastEntry) {
-				throw Assert.unimplemented("Truncate file");
+			if (shouldRemoveLastEntry) {
+				// The index contains data beyond the last valid index entry so truncate it (requires a writable stream).
+				try (FileOutputStream recovery = new FileOutputStream(indexFile, true)) {
+					long validLength = indexFile.length() - IndexEntry.BYTES;
+					System.out.println("RECOVERY:  Truncated topic index " + indexFile + " from " + indexFile.length() + " to " + validLength);
+					recovery.getChannel().truncate(validLength);
+				}
+				// Correct the offset to reflect the change.
+				offsetOfLastEntry -= IndexEntry.BYTES;
 			}
-			intentIndex.read(indexEntry, offsetOfLastEntry);
-			indexEntry.flip();
-			IndexEntry finalEntry = IndexEntry.read(indexEntry);
-			fileOffsetToRead = finalEntry.fileOffset;
+			// Make sure we haven't left just an empty file.
+			if (indexFile.length() > 0) {
+				ByteBuffer indexEntry = ByteBuffer.allocate(IndexEntry.BYTES);
+				int readSize = intentIndex.read(indexEntry, offsetOfLastEntry);
+				Assert.assertTrue(indexEntry.capacity() == readSize);
+				indexEntry.flip();
+				IndexEntry finalEntry = IndexEntry.read(indexEntry);
+				fileOffsetToRead = finalEntry.fileOffset;
+			}
 		}
 		
-		// We can use this to read the final entry from the log file.
-		File intentLogFile = new File(directory, LogFileDomain.LOG_FILE_NAME);
-		ByteBuffer bufferToReturn;
-		try (FileInputStream stream = new FileInputStream(intentLogFile)) {
-			FileChannel intentLog = stream.getChannel();
-			bufferToReturn = ByteBuffer.allocate((int)(intentLogFile.length() - fileOffsetToRead));
-			intentLog.read(bufferToReturn, fileOffsetToRead);
-			bufferToReturn.flip();
+		// Make sure that we found an offset.
+		ByteBuffer bufferToReturn = null;
+		if (fileOffsetToRead >= 0L) {
+			// We can use this to read the final entry from the log file.
+			File logFile = new File(directory, LogFileDomain.LOG_FILE_NAME);
+			try (FileInputStream stream = new FileInputStream(logFile)) {
+				FileChannel intentLog = stream.getChannel();
+				bufferToReturn = ByteBuffer.allocate((int)(logFile.length() - fileOffsetToRead));
+				int readSize = intentLog.read(bufferToReturn, fileOffsetToRead);
+				Assert.assertTrue(bufferToReturn.capacity() == readSize);
+				bufferToReturn.flip();
+				
+				// Before we return this, we need to check if the file had corruption beyond what the index describes so read its size (adding constant, if required).
+				bufferToReturn.mark();
+				int recordSize = Short.toUnsignedInt(bufferToReturn.getShort()) + addToRecordSize;
+				if (bufferToReturn.remaining() > recordSize) {
+					// This file needs to be truncated.
+					try (FileOutputStream recovery = new FileOutputStream(logFile, true)) {
+						long validLength = logFile.length() - (bufferToReturn.remaining() - recordSize);
+						System.out.println("RECOVERY:  Truncated log file " + logFile + " from " + logFile.length() + " to " + validLength);
+						recovery.getChannel().truncate(validLength);
+					}
+				}
+				bufferToReturn.reset();
+			}
 		}
 		return bufferToReturn;
 	}
