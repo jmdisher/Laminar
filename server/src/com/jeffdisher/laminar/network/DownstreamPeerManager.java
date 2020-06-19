@@ -205,7 +205,6 @@ public class DownstreamPeerManager {
 		peer.didHandshake = true;
 		Assert.assertTrue(DownstreamPeerState.NO_NEXT_INTENTION == peer.nextIntentionOffsetToSend);
 		peer.nextIntentionOffsetToSend = lastReceivedIntentionOffset + 1;
-		Assert.assertTrue(null == peer.pendingVoteRequest);
 		return new ReadOnlyDownstreamPeerState(peer);
 	}
 
