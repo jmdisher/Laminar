@@ -1,21 +1,15 @@
 package com.jeffdisher.laminar.performance;
 
-import java.net.InetAddress;
-import java.net.InetSocketAddress;
-
 import org.junit.Assert;
 import org.junit.ClassRule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 
-import com.jeffdisher.laminar.ServerWrapper;
 import com.jeffdisher.laminar.avm.ContractPackager;
 import com.jeffdisher.laminar.client.ClientConnection;
 import com.jeffdisher.laminar.client.ClientResult;
 import com.jeffdisher.laminar.contracts.DoNothing;
-import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.types.CommitInfo;
-import com.jeffdisher.laminar.types.ConfigEntry;
 import com.jeffdisher.laminar.types.TopicName;
 
 
@@ -91,82 +85,71 @@ public class PerfWritePerformance {
 
 
 	private static long _runTestLoad(int nodeCount, int clientCount, int messagesPerClient) throws Throwable {
-		// Create the servers and find their initial configs.
-		ServerWrapper[] servers = new ServerWrapper[nodeCount];
-		ConfigEntry[] configs = new ConfigEntry[nodeCount];
-		for (int i = 0; i < servers.length; ++i) {
-			int clusterPort = 2000 + i;
-			int clientPort = 3000 + i;
-			servers[i] = ServerWrapper.startedServerWrapper("perf_nodes" + nodeCount + "_clients" + clientCount +"_load" + messagesPerClient + "-" + i, clusterPort, clientPort, _folder.newFolder());
-			InetSocketAddress address = new InetSocketAddress(InetAddress.getLocalHost(), clientPort);
-			try (ClientConnection configClient = ClientConnection.open(address)) {
-				configClient.waitForConnectionOrFailure();
-				configs[i] = configClient.getCurrentConfig().entries[0];
-			}
-		}
-		
-		// Send the new config, wait for the cluster to form, and create the topic for the test.
+		// We just want the one topic.
 		TopicName topic = TopicName.fromString("test");
-		InetSocketAddress address = new InetSocketAddress(InetAddress.getLocalHost(), 3000);
-		try (ClientConnection configClient = ClientConnection.open(address)) {
-			configClient.waitForConnectionOrFailure();
-			Assert.assertEquals(CommitInfo.Effect.VALID, configClient.sendUpdateConfig(ClusterConfig.configFromEntries(configs)).waitForCommitted().effect);
-			
-			if (TEST_PROGRAMMABLE) {
-				byte[] code = ContractPackager.createJarForClass(DoNothing.class);
-				byte[] arguments = new byte[0];
-				Assert.assertEquals(CommitInfo.Effect.VALID, configClient.sendCreateProgrammableTopic(topic, code, arguments).waitForCommitted().effect);
-			} else {
-				Assert.assertEquals(CommitInfo.Effect.VALID, configClient.sendCreateTopic(topic).waitForCommitted().effect);
-			}
+		byte[] code = TEST_PROGRAMMABLE
+				? ContractPackager.createJarForClass(DoNothing.class)
+				: new byte[0];
+		byte[] arguments = new byte[0];
+		
+		// Create the components for the test run.
+		Engine.TopicConfiguration topicToCreate = new Engine.TopicConfiguration(topic, code, arguments);
+		Runner[] clients = new Runner[clientCount];
+		for (int i = 0; i < clientCount; ++i) {
+			clients[i] = new Runner(topic, messagesPerClient);
 		}
 		
-		// Open all real client connections.
-		ClientConnection[] clients = new ClientConnection[clientCount];
-		for (int i = 0; i < clients.length; ++i) {
-			clients[i] = ClientConnection.open(address);
-			clients[i].waitForConnectionOrFailure();
-		}
+		// Execute performance run.
+		long[] nanoTimes = Engine.runWithUnitsOnThreads(_folder.newFolder(), "Write", nodeCount, messagesPerClient, new Engine.TopicConfiguration[] {topicToCreate}, clients);
 		
-		// Run the core of the test.
-		long start = System.currentTimeMillis();
-		_sendPut(topic, clients, messagesPerClient);
-		long end = System.currentTimeMillis();
-		
-		// Shut down.
-		for (int i = 0; i < clients.length; ++i) {
-			clients[i].close();
+		// Collect the maximum value, since we want to treat the block of clients as 1 data point.
+		// If any of these were -1L, there was an error.
+		long totalTimeNanos = 0L;
+		for (long time : nanoTimes) {
+			Assert.assertNotEquals(-1L, time);
+			totalTimeNanos = Long.max(totalTimeNanos, time);
 		}
-		for (int i = 0; i < servers.length; ++i) {
-			Assert.assertEquals(0, servers[i].stop());
-		}
-		
-		// Print report.
-		long totalTimeMillis = (end - start);
-		long perMessageTimeMicros = (1000 * totalTimeMillis / (clientCount * messagesPerClient));
+		long perMessageTimeMicros = (totalTimeNanos / (clientCount * messagesPerClient)) / 1_000;
 		
 		System.out.println("PERF:");
 		System.out.println("\tNode count: " + nodeCount);
 		System.out.println("\tClient count: " + clientCount);
 		System.out.println("\tMessages per client: " + messagesPerClient);
-		System.out.println("\tTotal time: " + totalTimeMillis + " ms");
+		System.out.println("\tTotal time: " + (totalTimeNanos / 1_000_000) + " ms");
 		System.out.println("\tTime per message: " + perMessageTimeMicros + " us");
 		return perMessageTimeMicros;
 	}
 
-	private static void _sendPut(TopicName topic, ClientConnection[] clients, int count) throws InterruptedException {
-		byte[] key = new byte[] {1,2,3,4};
-		ClientResult[][] results = new ClientResult[count][clients.length];
-		for (int i = 0; i < count; ++i) {
-			for (int j = 0; j < clients.length; ++j) {
-				results[i][j] = clients[j].sendPut(topic, key, new byte[] {(byte)i});
-			}
+
+	private static class Runner implements IPerformanceUnit {
+		private final TopicName _topic;
+		private final ClientResult[] _results;
+		public Runner(TopicName topic, int iterationsToCapture) {
+			_topic = topic;
+			_results = new ClientResult[iterationsToCapture];
 		}
-		for (int i = 0; i < count; ++i) {
-			for (int j = 0; j < clients.length; ++j) {
-				CommitInfo info = results[i][j].waitForCommitted();
+		@Override
+		public void startWithClient(ClientConnection client) throws Throwable {
+			// Do nothing.
+		}
+		@Override
+		public void runIteration(ClientConnection client, int iteration) throws Throwable {
+			// Send the message and store result for later.
+			byte[] key = new byte[] {1,2,3,4};
+			byte[] value = new byte[] {(byte)iteration};
+			_results[iteration] = client.sendPut(_topic, key, value);
+		}
+		@Override
+		public void finishTestUnderTime(ClientConnection client) throws Throwable {
+			// Wait on all results.
+			for (ClientResult result : _results) {
+				CommitInfo info = result.waitForCommitted();
 				Assert.assertEquals(CommitInfo.Effect.VALID, info.effect);
 			}
+		}
+		@Override
+		public void exceptionInRun(Throwable t) {
+			t.printStackTrace();
 		}
 	}
 }
