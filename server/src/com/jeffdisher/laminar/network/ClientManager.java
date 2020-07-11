@@ -17,6 +17,7 @@ import java.util.function.Consumer;
 import com.jeffdisher.laminar.components.INetworkManagerBackgroundCallbacks;
 import com.jeffdisher.laminar.components.NetworkManager;
 import com.jeffdisher.laminar.disk.CommittedIntention;
+import com.jeffdisher.laminar.logging.Logger;
 import com.jeffdisher.laminar.state.StateSnapshot;
 import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.types.CommitInfo;
@@ -40,6 +41,7 @@ import com.jeffdisher.laminar.utils.Assert;
  * only hand-off to the coordination thread, outside.
  */
 public class ClientManager implements IClientManager, INetworkManagerBackgroundCallbacks {
+	private final Logger _logger;
 	private final Thread _mainThread;
 	private final ConfigEntry _selfConfig;
 	private final NetworkManager _networkManager;
@@ -65,7 +67,8 @@ public class ClientManager implements IClientManager, INetworkManagerBackgroundC
 	private final Map<Long, List<ReconnectingClientState>> _reconnectingClientsByIntentionOffset;
 	private final ListenerManager _listenerManager;
 
-	public ClientManager(ConfigEntry selfConfig, ServerSocketChannel serverSocket, IClientManagerCallbacks callbacks) throws IOException {
+	public ClientManager(Logger logger, ConfigEntry selfConfig, ServerSocketChannel serverSocket, IClientManagerCallbacks callbacks) throws IOException {
+		_logger = logger;
 		_mainThread = Thread.currentThread();
 		_selfConfig = selfConfig;
 		// This is really just a high-level wrapper over the common NetworkManager so create that here.
@@ -292,23 +295,23 @@ public class ClientManager implements IClientManager, INetworkManagerBackgroundC
 				boolean removedClosing = _closingClients.remove(node);
 				boolean removeConsistent = false;
 				if (removedNew) {
-					System.out.println("Disconnect new client");
+					_logger.info("Disconnect new client");
 					removeConsistent = true;
 				}
 				if (removedNormal) {
 					Assert.assertTrue(!removeConsistent);
-					System.out.println("Disconnect normal client");
+					_logger.info("Disconnect normal client");
 					removeConsistent = true;
 				}
 				if (null != removedListener) {
 					Assert.assertTrue(!removeConsistent);
-					System.out.println("Disconnect listener client");
+					_logger.info("Disconnect listener client");
 					_listenerManager.removeDisconnectedListener(removedListener);
 					removeConsistent = true;
 				}
 				if (removedClosing) {
 					Assert.assertTrue(!removeConsistent);
-					System.out.println("Disconnect closing client");
+					_logger.info("Disconnect closing client");
 					removeConsistent = true;
 				}
 				Assert.assertTrue(removeConsistent);
@@ -362,7 +365,7 @@ public class ClientManager implements IClientManager, INetworkManagerBackgroundC
 					_closingClients.remove(node);
 				} else {
 					// This appears to have disconnected before we processed it.
-					System.out.println("NOTE: Processed write ready from disconnected client");
+					_logger.info("NOTE: Processed write ready from disconnected client");
 				}
 			}});
 	}
@@ -422,13 +425,13 @@ public class ClientManager implements IClientManager, INetworkManagerBackgroundC
 			if (null == _clusterLeader) {
 				// The HANDSHAKE is special so we return CLIENT_READY instead of a RECEIVED and COMMIT (which is otherwise all we send).
 				ClientResponse ready = ClientResponse.clientReady(state.nextNonce, lastCommittedMutationOffset, currentConfig);
-				System.out.println("HANDSHAKE: " + state.clientId);
+				_logger.info("HANDSHAKE: " + state.clientId);
 				_mainEnqueueMessageToClient(clientId, ready);
 			} else {
 				// Someone else is the leader so send them a redirect.
 				// On new connections, the redirect shouldn't pretend to know what the leader has committed (could confuse client).
 				ClientResponse redirect = ClientResponse.redirect(_clusterLeader, 0L);
-				System.out.println("REDIRECT: " + state.clientId);
+				_logger.info("REDIRECT: " + state.clientId);
 				_mainEnqueueMessageToClient(clientId, redirect);
 			}
 			break;
@@ -440,7 +443,7 @@ public class ClientManager implements IClientManager, INetworkManagerBackgroundC
 			// what to re-send).
 			ClientMessagePayload_Reconnect reconnect = (ClientMessagePayload_Reconnect)incoming.payload;
 			if (null == _clusterLeader) {
-				System.out.println("RECONNECT: " + reconnect.clientId + " (their commit " + reconnect.lastCommitIntentionOffset + ", our received " + lastReceivedMutationOffset + ")");
+				_logger.info("RECONNECT: " + reconnect.clientId + " (their commit " + reconnect.lastCommitIntentionOffset + ", our received " + lastReceivedMutationOffset + ")");
 				if (reconnect.lastCommitIntentionOffset > lastReceivedMutationOffset) {
 					// They are from the future so this probably means we just started and haven't yet found the leader.  Just disconnect them.
 					boolean didRemove = _newClients.remove(client);
@@ -454,7 +457,7 @@ public class ClientManager implements IClientManager, INetworkManagerBackgroundC
 				ClientState state = _createAndInstallNewClient(client, reconnect.clientId, -1L);
 				// On new connections, the redirect shouldn't pretend to know what the leader has committed (could confuse client).
 				ClientResponse redirect = ClientResponse.redirect(_clusterLeader, 0L);
-				System.out.println("REDIRECT: " + state.clientId);
+				_logger.info("REDIRECT: " + state.clientId);
 				_mainEnqueueMessageToClient(state.clientId, redirect);
 			}
 			break;
@@ -696,7 +699,7 @@ public class ClientManager implements IClientManager, INetworkManagerBackgroundC
 			Assert.unimplemented("TODO: Disconnect listener on invalid state transition");
 		} else {
 			// This appears to have disconnected before we processed it.
-			System.out.println("NOTE: Processed read ready from disconnected client");
+			_logger.info("NOTE: Processed read ready from disconnected client");
 		}
 	}
 
@@ -745,7 +748,7 @@ public class ClientManager implements IClientManager, INetworkManagerBackgroundC
 			mutationOffsetToFetch = offsetToFetch;
 		} else if (!isPerformingReconnect) {
 			// This is a degenerate case where they didn't miss anything so just send them the client ready.
-			System.out.println("Note:  RECONNECT degenerate case: " + state.clientId + " with nonce " + incoming.nonce);
+			_logger.info("Note:  RECONNECT degenerate case: " + state.clientId + " with nonce " + incoming.nonce);
 			_mainConcludeReconnectPhase(state, reconnectState.earliestNextNonce, lastCommittedMutationOffset, currentConfig);
 		}
 		return mutationOffsetToFetch;

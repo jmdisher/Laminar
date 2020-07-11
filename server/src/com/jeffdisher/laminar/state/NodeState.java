@@ -16,6 +16,7 @@ import com.jeffdisher.laminar.disk.CommittedIntention;
 import com.jeffdisher.laminar.disk.IDiskManager;
 import com.jeffdisher.laminar.disk.IDiskManagerBackgroundCallbacks;
 import com.jeffdisher.laminar.disk.RecoveredState;
+import com.jeffdisher.laminar.logging.Logger;
 import com.jeffdisher.laminar.network.IClientManager;
 import com.jeffdisher.laminar.network.IClientManagerCallbacks;
 import com.jeffdisher.laminar.network.IClusterManager;
@@ -45,6 +46,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 	// This avoids any special-case in the LEADER->FOLLOWER transition, which is more complicated, as it will follow the general rule of demoting when a higher term number is seen.
 	private static final long BOOTSTRAP_TERM = 0L;
 
+	private final Logger _logger;
 	// We keep the main thread for asserting no re-entrance bugs or invalid interface uses.
 	private final Thread _mainThread;
 
@@ -82,7 +84,8 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 	private boolean _keepRunning;
 	private final UninterruptibleQueue<StateSnapshot> _commandQueue;
 
-	public NodeState(ClusterConfig initialConfig) {
+	public NodeState(Logger logger, ClusterConfig initialConfig) {
+		_logger = logger;
 		// We define the thread which instantiates us as "main".
 		_mainThread = Thread.currentThread();
 		// Note that we default to the LEADER state (typically forced into a FOLLOWER state when an existing LEADER attempts to append entries).
@@ -268,7 +271,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 
 	@Override
 	public void mainForceLeader() {
-		System.out.println("CANDIDATE(forced): " + (_currentTermNumber + 1));
+		_logger.info("CANDIDATE(forced): " + (_currentTermNumber + 1));
 		_mainStartElection(_currentTermNumber + 1);
 	}
 	// </IClientManagerCallbacks>
@@ -391,7 +394,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 				// In order to defeat this backward majority, Node B or C must also start an election but they need to start
 				// one for the next term, in order to overrule what they can prove is an illegitimate leader.
 				long overruleTermNumber = newTermNumber + 1;
-				System.out.println("CANDIDATE(stale peer request): " + overruleTermNumber);
+				_logger.info("CANDIDATE(stale peer request): " + overruleTermNumber);
 				_mainStartElection(overruleTermNumber);
 			}
 		}
@@ -414,7 +417,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 	@Override
 	public void mainUpstreamMessageDidTimeout() {
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
-		System.out.println("CANDIDATE(leader timeout): " + (_currentTermNumber + 1));
+		_logger.info("CANDIDATE(leader timeout): " + (_currentTermNumber + 1));
 		_mainStartElection(_currentTermNumber + 1);
 	}
 	// </IClusterManagerCallbacks>
@@ -596,7 +599,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 	private void _rebuildDownstreamUnionAfterConfigChange() {
 		HashMap<UUID, DownstreamPeerSyncState> copy = new HashMap<>(_unionOfDownstreamNodes);
 		_unionOfDownstreamNodes.clear();
-		System.out.println("Config(rebuild): Config has " + _currentConfig.config.entries.length + " entries, " + _configsPendingCommit.size() + " pending configs");
+		_logger.info("Config(rebuild): Config has " + _currentConfig.config.entries.length + " entries, " + _configsPendingCommit.size() + " pending configs");
 		// "self" is always in the union of nodes, even if not part of this config.
 		_unionOfDownstreamNodes.put(_self.nodeUuid, _selfState);
 		for (ConfigEntry entry : _currentConfig.config.entries) {
@@ -725,7 +728,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		_currentState = RaftState.FOLLOWER;
 		_clusterLeader = peer;
 		_currentTermNumber = termNumber;
-		System.out.println("FOLLOWER(" + peer.nodeUuid + "): " + termNumber);
+		_logger.info("FOLLOWER(" + peer.nodeUuid + "): " + termNumber);
 		StateSnapshot snapshot = new StateSnapshot(_currentConfig.config, _lastCommittedMutationOffset, _selfState.lastIntentionOffsetReceived, _currentTermNumber);
 		_clientManager.mainEnterFollowerState(_clusterLeader, snapshot);
 		_clusterManager.mainEnterFollowerState();
@@ -780,7 +783,7 @@ public class NodeState implements IClientManagerCallbacks, IClusterManagerCallba
 		if (isElected) {
 			// We won the election so enter the leader state.
 			_currentState = RaftState.LEADER;
-			System.out.println("LEADER: " + _currentTermNumber);
+			_logger.info("LEADER: " + _currentTermNumber);
 			StateSnapshot snapshot = new StateSnapshot(_currentConfig.config, _lastCommittedMutationOffset, _selfState.lastIntentionOffsetReceived, _currentTermNumber);
 			_clientManager.mainEnterLeaderState(snapshot);
 			_clusterManager.mainEnterLeaderState(snapshot);

@@ -9,6 +9,7 @@ import java.util.function.Consumer;
 
 import com.jeffdisher.laminar.components.INetworkManagerBackgroundCallbacks;
 import com.jeffdisher.laminar.components.NetworkManager;
+import com.jeffdisher.laminar.logging.Logger;
 import com.jeffdisher.laminar.network.p2p.DownstreamMessage;
 import com.jeffdisher.laminar.network.p2p.DownstreamPayload_AppendIntentions;
 import com.jeffdisher.laminar.network.p2p.DownstreamPayload_Identity;
@@ -27,6 +28,7 @@ import com.jeffdisher.laminar.utils.Assert;
  * Top-level abstraction of a collection of network connections related to interactions with other servers.
  */
 public class ClusterManager implements IClusterManager, INetworkManagerBackgroundCallbacks {
+	private final Logger _logger;
 	private static final long MILLIS_BETWEEN_CONNECTION_ATTEMPTS = 100L;
 	private static final long MILLIS_BETWEEN_HEARTBEATS = 100L;
 	/**
@@ -58,7 +60,8 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 	// These elements are relevant when _THIS_ node is a FOLLOWER.
 	private final UpstreamPeerManager _upstreamPeers;
 
-	public ClusterManager(ConfigEntry self, ServerSocketChannel serverSocket, IClusterManagerCallbacks callbacks) throws IOException {
+	public ClusterManager(Logger logger, ConfigEntry self, ServerSocketChannel serverSocket, IClusterManagerCallbacks callbacks) throws IOException {
+		_logger = logger;
 		_mainThread = Thread.currentThread();
 		_self = self;
 		// This is really just a high-level wrapper over the common NetworkManager so create that here.
@@ -93,14 +96,14 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 	@Override
 	public void mainOpenDownstreamConnection(ConfigEntry entry) {
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
-		System.out.println("Downstream(open): " + entry.nodeUuid);
+		_logger.info("Downstream(open): " + entry.nodeUuid);
 		_mainCreateNewConnectionToPeer(entry);
 	}
 
 	@Override
 	public void mainCloseDownstreamConnection(ConfigEntry entry) {
 		Assert.assertTrue(Thread.currentThread() == _mainThread);
-		System.out.println("Downstream(close): " + entry.nodeUuid);
+		_logger.info("Downstream(close): " + entry.nodeUuid);
 		NetworkManager.NodeToken token = _downstreamPeers.removeDownstreamPeer(entry.nodeUuid);
 		_networkManager.closeConnection(token);
 	}
@@ -217,7 +220,7 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 					_downstreamPeers.removeNode(node);
 				} else {
 					// This may be something we explicitly disconnected.
-					System.out.println("Unknown node disconnected");
+					_logger.info("Unknown node disconnected");
 				}
 			}});
 	}
@@ -247,7 +250,7 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 					}
 				} else {
 					// This happens in cases where we explicitly disconnected this peer but they may still have readable messages pending.
-					System.out.println("NOTE: Processed write ready from disconnected peer");
+					_logger.info("NOTE: Processed write ready from disconnected peer");
 				}
 			}});
 	}
@@ -333,7 +336,7 @@ public class ClusterManager implements IClusterManager, INetworkManagerBackgroun
 					_lastUpstreamMessageMillisTime = System.currentTimeMillis();
 				} else {
 					// This happens in cases where we explicitly disconnected this peer but they may still have readable messages pending.
-					System.out.println("NOTE: Processed read ready from disconnected peer");
+					_logger.info("NOTE: Processed read ready from disconnected peer");
 				}
 			}});
 	}

@@ -11,6 +11,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 import com.jeffdisher.laminar.avm.TopicContext;
+import com.jeffdisher.laminar.logging.Logger;
 import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.types.Consequence;
 import com.jeffdisher.laminar.types.Intention;
@@ -47,23 +48,23 @@ public class RecoveredState {
 	 * @return The state which can be used to recover the system or null if there was no state on-disk.
 	 * @throws IOException Something went wrong while operating on the directory.
 	 */
-	public static RecoveredState readStateFromRootDirectory(File dataDirectory, ClusterConfig defaultConfig) throws IOException {
+	public static RecoveredState readStateFromRootDirectory(Logger logger, File dataDirectory, ClusterConfig defaultConfig) throws IOException {
 		// We only proceed if the directory exists and is empty.
 		RecoveredState state = null;
 		if (dataDirectory.isDirectory() && (0 != dataDirectory.listFiles().length)) {
-			state = _readStateFromExistingStructure(dataDirectory, defaultConfig);
+			state = _readStateFromExistingStructure(logger, dataDirectory, defaultConfig);
 		}
 		return state;
 	}
 
 
-	private static RecoveredState _readStateFromExistingStructure(File dataDirectory, ClusterConfig defaultConfig) throws IOException {
+	private static RecoveredState _readStateFromExistingStructure(Logger logger, File dataDirectory, ClusterConfig defaultConfig) throws IOException {
 		File intentionDirectory = new File(dataDirectory, DiskManager.INTENTION_DIRECTORY_NAME);
 		File topLevelConsequenceDirectory = new File(dataDirectory, DiskManager.CONSEQUENCE_TOPICS_DIRECTORY_NAME);
 		
 		// The intention index is the last thing written so it is the first thing we read.
 		// We need to add an extra byte to the record size interpretation for intentions for CommitInfo.Effect.
-		ByteBuffer intentBuffer = _readLastExtentFromLogDirectory(intentionDirectory, false, Byte.BYTES);
+		ByteBuffer intentBuffer = _readLastExtentFromLogDirectory(logger, intentionDirectory, false, Byte.BYTES);
 		// We want the size of the serialized intention.
 		Short.toUnsignedInt(intentBuffer.getShort());
 		// Next, we need the effect.
@@ -92,7 +93,7 @@ public class RecoveredState {
 			boolean isSuccessfulRead = false;
 			boolean shouldTruncate = false;
 			while (!isSuccessfulRead) {
-				ByteBuffer consequenceBuffer = _readLastExtentFromLogDirectory(directory, shouldTruncate, 0);
+				ByteBuffer consequenceBuffer = _readLastExtentFromLogDirectory(logger, directory, shouldTruncate, 0);
 				if (null != consequenceBuffer) {
 					// We want the size of the serialized consequence.
 					Short.toUnsignedInt(consequenceBuffer.getShort());
@@ -130,7 +131,7 @@ public class RecoveredState {
 		return new RecoveredState(configToReturn, intention.termNumber, intention.intentionOffset, activeTopics, nextConsequenceOffsetByTopic);
 	}
 
-	private static ByteBuffer _readLastExtentFromLogDirectory(File directory, boolean shouldRemoveLastEntry, int addToRecordSize) throws IOException {
+	private static ByteBuffer _readLastExtentFromLogDirectory(Logger logger, File directory, boolean shouldRemoveLastEntry, int addToRecordSize) throws IOException {
 		// The index represents the atomic write so we use that to find the last valid extent.
 		File indexFile = new File(directory, LogFileDomain.INDEX_FILE_NAME);
 		long fileOffsetToRead = -1L;
@@ -141,7 +142,7 @@ public class RecoveredState {
 				// The index contains data beyond the last valid index entry so truncate it (requires a writable stream).
 				try (FileOutputStream recovery = new FileOutputStream(indexFile, true)) {
 					long validLength = indexFile.length() - IndexEntry.BYTES;
-					System.out.println("RECOVERY:  Truncated topic index " + indexFile + " from " + indexFile.length() + " to " + validLength);
+					logger.important("RECOVERY:  Truncated topic index " + indexFile + " from " + indexFile.length() + " to " + validLength);
 					recovery.getChannel().truncate(validLength);
 				}
 				// Correct the offset to reflect the change.
@@ -177,7 +178,7 @@ public class RecoveredState {
 					// This file needs to be truncated.
 					try (FileOutputStream recovery = new FileOutputStream(logFile, true)) {
 						long validLength = logFile.length() - (bufferToReturn.remaining() - recordSize);
-						System.out.println("RECOVERY:  Truncated log file " + logFile + " from " + logFile.length() + " to " + validLength);
+						logger.important("RECOVERY:  Truncated log file " + logFile + " from " + logFile.length() + " to " + validLength);
 						recovery.getChannel().truncate(validLength);
 					}
 				}

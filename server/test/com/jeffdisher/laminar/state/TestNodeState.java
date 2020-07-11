@@ -10,6 +10,7 @@ import org.junit.Test;
 
 import com.jeffdisher.laminar.console.IConsoleManager;
 import com.jeffdisher.laminar.disk.CommittedIntention;
+import com.jeffdisher.laminar.logging.Logger;
 import com.jeffdisher.laminar.network.IClusterManagerCallbacks;
 import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.types.CommitInfo;
@@ -553,7 +554,7 @@ public class TestNodeState {
 		
 		@Override
 		public void run() {
-			this.nodeState = new NodeState(this.initialConfig);
+			this.nodeState = new NodeState(new Logger(System.out, true), this.initialConfig);
 			this.clientManager = new FutureClientManager();
 			this.clusterManager = new FutureClusterManager();
 			this.diskManager = new FutureDiskManager();

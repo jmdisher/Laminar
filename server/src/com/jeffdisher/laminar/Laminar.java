@@ -11,6 +11,7 @@ import java.util.UUID;
 import com.jeffdisher.laminar.console.ConsoleManager;
 import com.jeffdisher.laminar.disk.DiskManager;
 import com.jeffdisher.laminar.disk.RecoveredState;
+import com.jeffdisher.laminar.logging.Logger;
 import com.jeffdisher.laminar.network.ClientManager;
 import com.jeffdisher.laminar.network.ClusterManager;
 import com.jeffdisher.laminar.state.NodeState;
@@ -43,6 +44,7 @@ public class Laminar {
 		String clusterPortString = parseOption(args, "--clusterPort");
 		String dataDirectoryName = parseOption(args, "--data");
 		String uuidString = parseOption(args, "--uuid");
+		boolean verbose = _parseFlag(args, "--verbose");
 		
 		// Create the UUID this node will use (in config, etc).
 		UUID serverUuid = (null == uuidString)
@@ -69,6 +71,9 @@ public class Laminar {
 			failStart("Failure binding required port: " + e.getLocalizedMessage());
 		}
 		
+		// Create the logger.
+		Logger logger = new Logger(System.out, verbose);
+		
 		// Note that we need to create an "initial config" which we will use until we get a cluster update from a client or another node starts sending updates.
 		ConfigEntry self = new ConfigEntry(serverUuid, clusterSocketAddress, clientSocketAddress);
 		
@@ -81,7 +86,7 @@ public class Laminar {
 			// See if we are restarting from an existing state.
 			try {
 				// Returns null if this doesn't appear to be a valid storage representation.
-				recoveredState = RecoveredState.readStateFromRootDirectory(dataDirectory, ClusterConfig.configFromEntries(new ConfigEntry[] {self}));
+				recoveredState = RecoveredState.readStateFromRootDirectory(logger, dataDirectory, ClusterConfig.configFromEntries(new ConfigEntry[] {self}));
 			} catch (IOException e1) {
 				failStart("Failure restarting from on-disk state: " + e1.getLocalizedMessage());
 			}
@@ -103,7 +108,7 @@ public class Laminar {
 		// By this point, all requirements of the system should be satisfied so create the subsystems.
 		// First, the core NodeState and the background thread callback handlers for the managers.
 		ClusterConfig initialConfig = ClusterConfig.configFromEntries(new ConfigEntry[] {self});
-		NodeState thisNodeState = new NodeState(initialConfig);
+		NodeState thisNodeState = new NodeState(logger, initialConfig);
 		// We also want to install an uncaught exception handler to make sure background thread failures are fatal.
 		Thread.setDefaultUncaughtExceptionHandler(new Thread.UncaughtExceptionHandler() {
 			@Override
@@ -117,14 +122,14 @@ public class Laminar {
 		// Now, create the managers.
 		ClientManager clientManager = null;
 		try {
-			clientManager = new ClientManager(self, clientSocket, thisNodeState);
+			clientManager = new ClientManager(logger, self, clientSocket, thisNodeState);
 		} catch (IOException e1) {
 			// Not sure how creating the Selector would fail but we can handle it since we haven't started, yet.
 			failStart("Failure creating ClientManager: " + e1.getLocalizedMessage());
 		}
 		ClusterManager clulsterManager = null;
 		try {
-			clulsterManager = new ClusterManager(self, clusterSocket, thisNodeState);
+			clulsterManager = new ClusterManager(logger, self, clusterSocket, thisNodeState);
 		} catch (IOException e1) {
 			// Not sure how creating the Selector would fail but we can handle it since we haven't started, yet.
 			failStart("Failure creating ClusterManager: " + e1.getLocalizedMessage());
@@ -194,6 +199,14 @@ public class Laminar {
 			}
 		}
 		return result;
+	}
+
+	private static boolean _parseFlag(String[] args, String option) {
+		boolean flagSet = false;
+		for (int index = 0; !flagSet && (index < args.length); ++index) {
+			flagSet = option.equals(args[index]);
+		}
+		return flagSet;
 	}
 
 	private static InetSocketAddress _parseIpAndPort(String ipString, String portString) {

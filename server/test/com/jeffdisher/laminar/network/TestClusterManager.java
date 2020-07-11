@@ -12,6 +12,7 @@ import java.util.function.Consumer;
 import org.junit.Assert;
 import org.junit.Test;
 
+import com.jeffdisher.laminar.logging.Logger;
 import com.jeffdisher.laminar.network.p2p.DownstreamMessage;
 import com.jeffdisher.laminar.network.p2p.DownstreamPayload_AppendIntentions;
 import com.jeffdisher.laminar.network.p2p.DownstreamPayload_Identity;
@@ -26,6 +27,7 @@ import com.jeffdisher.laminar.utils.TestingHelpers;
 
 
 public class TestClusterManager {
+	private static final Logger LOGGER = new Logger(System.out, true);
 	private static final int PORT_BASE = 3100;
 
 	@Test
@@ -34,7 +36,7 @@ public class TestClusterManager {
 		ConfigEntry self = _buildSelf();
 		ServerSocketChannel socket = TestingHelpers.createServerSocket(port);
 		TestClusterCallbacks callbacks = new TestClusterCallbacks();
-		ClusterManager manager = new ClusterManager(self, socket, callbacks);
+		ClusterManager manager = new ClusterManager(LOGGER, self, socket, callbacks);
 		manager.startAndWaitForReady();
 		manager.stopAndWaitForTermination();
 		socket.close();
@@ -54,7 +56,7 @@ public class TestClusterManager {
 		ConfigEntry self = _buildSelf();
 		ServerSocketChannel socket = TestingHelpers.createServerSocket(managerPort);
 		TestClusterCallbacks callbacks = new TestClusterCallbacks();
-		ClusterManager manager = new ClusterManager(self, socket, callbacks);
+		ClusterManager manager = new ClusterManager(LOGGER, self, socket, callbacks);
 		manager.startAndWaitForReady();
 		
 		// Issue the open connection request, wait for the command that we failed to run, and verify it wasn't connected.
@@ -127,8 +129,8 @@ public class TestClusterManager {
 		ConfigEntry downstreamEntry = new ConfigEntry(UUID.randomUUID(), new InetSocketAddress(downstreamPort), new InetSocketAddress(9999));
 		TestClusterCallbacks upstreamCallbacks = new TestClusterCallbacks();
 		TestClusterCallbacks downstreamCallbacks = new TestClusterCallbacks();
-		ClusterManager upstreamManager = new ClusterManager(upstreamEntry, upstreamSocket, upstreamCallbacks);
-		ClusterManager downstreamManager = new ClusterManager(downstreamEntry, downstreamSocket, downstreamCallbacks);
+		ClusterManager upstreamManager = new ClusterManager(LOGGER, upstreamEntry, upstreamSocket, upstreamCallbacks);
+		ClusterManager downstreamManager = new ClusterManager(LOGGER, downstreamEntry, downstreamSocket, downstreamCallbacks);
 		upstreamManager.startAndWaitForReady();
 		downstreamManager.startAndWaitForReady();
 		
@@ -176,8 +178,8 @@ public class TestClusterManager {
 		ConfigEntry downstreamEntry = new ConfigEntry(UUID.randomUUID(), new InetSocketAddress(downstreamPort), new InetSocketAddress(9999));
 		TestClusterCallbacks upstreamCallbacks = new TestClusterCallbacks();
 		TestClusterCallbacks downstreamCallbacks = new TestClusterCallbacks();
-		ClusterManager upstreamManager = new ClusterManager(upstreamEntry, upstreamSocket, upstreamCallbacks);
-		ClusterManager downstreamManager = new ClusterManager(downstreamEntry, downstreamSocket, downstreamCallbacks);
+		ClusterManager upstreamManager = new ClusterManager(LOGGER, upstreamEntry, upstreamSocket, upstreamCallbacks);
+		ClusterManager downstreamManager = new ClusterManager(LOGGER, downstreamEntry, downstreamSocket, downstreamCallbacks);
 		upstreamManager.startAndWaitForReady();
 		downstreamManager.startAndWaitForReady();
 		
@@ -251,8 +253,8 @@ public class TestClusterManager {
 		ConfigEntry downstreamEntry = new ConfigEntry(UUID.randomUUID(), new InetSocketAddress(downstreamPort), new InetSocketAddress(9999));
 		TestClusterCallbacks upstreamCallbacks = new TestClusterCallbacks();
 		TestClusterCallbacks downstreamCallbacks = new TestClusterCallbacks();
-		ClusterManager upstreamManager = new ClusterManager(upstreamEntry, upstreamSocket, upstreamCallbacks);
-		ClusterManager downstreamManager = new ClusterManager(downstreamEntry, downstreamSocket, downstreamCallbacks);
+		ClusterManager upstreamManager = new ClusterManager(LOGGER, upstreamEntry, upstreamSocket, upstreamCallbacks);
+		ClusterManager downstreamManager = new ClusterManager(LOGGER, downstreamEntry, downstreamSocket, downstreamCallbacks);
 		upstreamManager.startAndWaitForReady();
 		downstreamManager.startAndWaitForReady();
 		

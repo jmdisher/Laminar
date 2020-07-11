@@ -13,6 +13,7 @@ import org.junit.Test;
 
 import com.jeffdisher.laminar.components.NetworkManager;
 import com.jeffdisher.laminar.disk.CommittedIntention;
+import com.jeffdisher.laminar.logging.Logger;
 import com.jeffdisher.laminar.state.Helpers;
 import com.jeffdisher.laminar.state.StateSnapshot;
 import com.jeffdisher.laminar.types.ClusterConfig;
@@ -31,6 +32,7 @@ import com.jeffdisher.laminar.utils.TestingHelpers;
 
 
 public class TestClientManager {
+	private static final Logger LOGGER = new Logger(System.out, true);
 	private static final int PORT_BASE = 3100;
 
 	/**
@@ -47,7 +49,7 @@ public class TestClientManager {
 		ConfigEntry self = new ConfigEntry(UUID.randomUUID(), new InetSocketAddress(9999), new InetSocketAddress(port));
 		ServerSocketChannel socket = TestingHelpers.createServerSocket(port);
 		LatchedCallbacks callbacks = new LatchedCallbacks();
-		ClientManager manager = new ClientManager(self, socket, callbacks);
+		ClientManager manager = new ClientManager(LOGGER, self, socket, callbacks);
 		manager.startAndWaitForReady();
 		
 		// Create the connection and send the "temp" message through, directly.
@@ -108,7 +110,7 @@ public class TestClientManager {
 		ServerSocketChannel socket = TestingHelpers.createServerSocket(port);
 		LatchedCallbacks callbacks = new LatchedCallbacks();
 		UUID clientId = UUID.randomUUID();
-		ClientManager manager = new ClientManager(self, socket, callbacks);
+		ClientManager manager = new ClientManager(LOGGER, self, socket, callbacks);
 		manager.startAndWaitForReady();
 		
 		// Create the connection, send the commit message, and read it, directly.
@@ -175,7 +177,7 @@ public class TestClientManager {
 		ConfigEntry self = new ConfigEntry(UUID.randomUUID(), new InetSocketAddress(9999), new InetSocketAddress(port));
 		ServerSocketChannel socket = TestingHelpers.createServerSocket(port);
 		LatchedCallbacks callbacks = new LatchedCallbacks();
-		ClientManager manager = new ClientManager(self, socket, callbacks);
+		ClientManager manager = new ClientManager(LOGGER, self, socket, callbacks);
 		manager.startAndWaitForReady();
 		
 		// Create the connection, send the commit message, and read it, directly.
@@ -220,7 +222,7 @@ public class TestClientManager {
 		ConfigEntry self = new ConfigEntry(UUID.randomUUID(), new InetSocketAddress(9999), new InetSocketAddress(port));
 		ServerSocketChannel socket = TestingHelpers.createServerSocket(port);
 		LatchedCallbacks callbacks = new LatchedCallbacks();
-		ClientManager manager = new ClientManager(self, socket, callbacks);
+		ClientManager manager = new ClientManager(LOGGER, self, socket, callbacks);
 		manager.startAndWaitForReady();
 		
 		// Create the connection, send the commit message, and read it, directly.
@@ -268,7 +270,7 @@ public class TestClientManager {
 		ConfigEntry self = new ConfigEntry(UUID.randomUUID(), new InetSocketAddress(9999), new InetSocketAddress(port));
 		ServerSocketChannel socket = TestingHelpers.createServerSocket(port);
 		LatchedCallbacks callbacks = new LatchedCallbacks();
-		ClientManager manager = new ClientManager(self, socket, callbacks);
+		ClientManager manager = new ClientManager(LOGGER, self, socket, callbacks);
 		manager.startAndWaitForReady();
 		
 		// Now, tell the ClientManager to enter the follower state.

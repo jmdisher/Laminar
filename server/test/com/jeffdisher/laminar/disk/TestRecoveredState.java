@@ -14,6 +14,7 @@ import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 
 import com.jeffdisher.laminar.avm.TopicContext;
+import com.jeffdisher.laminar.logging.Logger;
 import com.jeffdisher.laminar.types.ClusterConfig;
 import com.jeffdisher.laminar.types.CommitInfo;
 import com.jeffdisher.laminar.types.ConfigEntry;
@@ -27,6 +28,8 @@ import com.jeffdisher.laminar.types.TopicName;
  * a server restarts.
  */
 public class TestRecoveredState {
+	private static final Logger LOGGER = new Logger(System.out, true);
+
 	@Rule
 	public TemporaryFolder _folder = new TemporaryFolder();
 
@@ -84,7 +87,7 @@ public class TestRecoveredState {
 		while (callbacks.commitMutationCount < 7) { callbacks.runOneCommand(); }
 		manager.stopAndWaitForTermination();
 		
-		RecoveredState state = RecoveredState.readStateFromRootDirectory(directory, ClusterConfig.configFromEntries(new ConfigEntry[] {
+		RecoveredState state = RecoveredState.readStateFromRootDirectory(LOGGER, directory, ClusterConfig.configFromEntries(new ConfigEntry[] {
 				new ConfigEntry(UUID.randomUUID(), new InetSocketAddress(2000), new InetSocketAddress(3000)),
 		}));
 		Assert.assertEquals(config, state.config);
@@ -172,7 +175,7 @@ public class TestRecoveredState {
 		}
 		
 		// Run the recovery and basic sanity checks.
-		RecoveredState state = RecoveredState.readStateFromRootDirectory(directory, ClusterConfig.configFromEntries(new ConfigEntry[] {
+		RecoveredState state = RecoveredState.readStateFromRootDirectory(LOGGER, directory, ClusterConfig.configFromEntries(new ConfigEntry[] {
 				new ConfigEntry(UUID.randomUUID(), new InetSocketAddress(2000), new InetSocketAddress(3000)),
 		}));
 		Assert.assertEquals(config, state.config);
@@ -243,7 +246,7 @@ public class TestRecoveredState {
 		}
 		
 		// Run the recovery and verify the returned data is as expected.
-		RecoveredState state = RecoveredState.readStateFromRootDirectory(directory, ClusterConfig.configFromEntries(new ConfigEntry[] {
+		RecoveredState state = RecoveredState.readStateFromRootDirectory(LOGGER, directory, ClusterConfig.configFromEntries(new ConfigEntry[] {
 				new ConfigEntry(UUID.randomUUID(), new InetSocketAddress(2000), new InetSocketAddress(3000)),
 		}));
 		Assert.assertEquals(1L, state.currentTermNumber);
@@ -279,7 +282,7 @@ public class TestRecoveredState {
 		manager.stopAndWaitForTermination();
 		
 		// Verify that the RecoveryState is correct.
-		RecoveredState state = RecoveredState.readStateFromRootDirectory(directory, ClusterConfig.configFromEntries(new ConfigEntry[] {
+		RecoveredState state = RecoveredState.readStateFromRootDirectory(LOGGER, directory, ClusterConfig.configFromEntries(new ConfigEntry[] {
 				new ConfigEntry(UUID.randomUUID(), new InetSocketAddress(2000), new InetSocketAddress(3000)),
 		}));
 		Assert.assertEquals(1L, state.currentTermNumber);
