@@ -72,6 +72,9 @@ public class ProcessWrapper {
 		// Start the processes.
 		List<String> args = new LinkedList<>();
 		args.add(javaLauncherPath);
+		// For now, we fix the memory usage at 64m.
+		args.add("-Xmx64m");
+		args.add("-Xms64m");
 		args.add("-jar");
 		args.add(jarPath);
 		args.addAll(Arrays.asList(mainArgs));
