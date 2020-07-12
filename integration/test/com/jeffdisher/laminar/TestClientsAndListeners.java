@@ -677,6 +677,37 @@ public class TestClientsAndListeners {
 		Assert.assertEquals(0, wrapper.stop());
 	}
 
+	/**
+	 * Tests that a restart succeeds, even if nothing has been done with the original instance.
+	 */
+	@Test
+	public void testEmptyRestart() throws Throwable {
+		TopicName topic = TopicName.fromString("test");
+		// We want to reuse the data directory so we see restart logic.
+		File dataDirectory = _folder.newFolder();
+		// We also need the UUID so that the configs match.
+		UUID serverUuid = UUID.randomUUID();
+		ServerWrapper wrapper = ServerWrapper.startedServerWrapperWithUuid("testEmptyRestart-PRE", serverUuid, 2000, 3000, dataDirectory);
+		InetSocketAddress address = new InetSocketAddress(InetAddress.getLocalHost(), 3000);
+		Assert.assertEquals(0, wrapper.stop());
+		wrapper = ServerWrapper.startedServerWrapperWithUuid("testEmptyRestart-POST", serverUuid, 2000, 3000, dataDirectory);
+		
+		// Send 1 message and make sure we can observe it.
+		try (ClientConnection client = ClientConnection.open(address)) {
+			Assert.assertEquals(CommitInfo.Effect.VALID, client.sendCreateTopic(topic).waitForCommitted().effect);
+		}
+		CaptureListener afterListener = new CaptureListener(address, topic, 1);
+		afterListener.setName("After");
+		afterListener.start();
+		Consequence[] afterEvents = afterListener.waitForTerminate();
+		Assert.assertEquals(Consequence.Type.TOPIC_CREATE, afterEvents[0].type);
+		Assert.assertEquals(1L, afterEvents[0].intentionOffset);
+		Assert.assertEquals(1L, afterEvents[0].consequenceOffset);
+		
+		// Shut down.
+		Assert.assertEquals(0, wrapper.stop());
+	}
+
 
 	private void _sendMessage(SocketChannel socket, ClientMessage message) throws IOException {
 		byte[] serialized = message.serialize();

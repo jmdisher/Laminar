@@ -65,6 +65,17 @@ public class RecoveredState {
 		// The intention index is the last thing written so it is the first thing we read.
 		// We need to add an extra byte to the record size interpretation for intentions for CommitInfo.Effect.
 		ByteBuffer intentBuffer = _readLastExtentFromLogDirectory(logger, intentionDirectory, false, Byte.BYTES);
+		// Handle the case where the log is empty.
+		RecoveredState state;
+		if (null == intentBuffer) {
+			state = new RecoveredState(defaultConfig, 0L, 0L, new HashMap<>(), new HashMap<>());
+		} else {
+			state = _readNonEmptyLog(logger, defaultConfig, intentionDirectory, topLevelConsequenceDirectory, intentBuffer);
+		}
+		return state;
+	}
+
+	private static RecoveredState _readNonEmptyLog(Logger logger, ClusterConfig defaultConfig, File intentionDirectory, File topLevelConsequenceDirectory, ByteBuffer intentBuffer) throws IOException {
 		// We want the size of the serialized intention.
 		Short.toUnsignedInt(intentBuffer.getShort());
 		// Next, we need the effect.
