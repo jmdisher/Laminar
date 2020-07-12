@@ -1,6 +1,8 @@
 package com.jeffdisher.laminar;
 
 import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.net.InetAddress;
 import java.util.UUID;
 
 import org.junit.Assert;
@@ -51,5 +53,33 @@ public class TestBasics {
 		ServerWrapper wrapper = ServerWrapper.startedServerWrapperWithUuidAndIp("testIpv6", UUID.randomUUID(), "::1", 2001, 2000, _folder.newFolder());
 		int exit = wrapper.stop();
 		Assert.assertEquals(0, exit);
+	}
+
+	/**
+	 * Tests that a single node will fail to restart if it is given a mismatched UUID.
+	 */
+	@Test
+	public void testRestartUuidMismatch() throws Throwable {
+		// We want to reuse the data directory so we see restart logic.
+		File dataDirectory = _folder.newFolder();
+		UUID serverUuid = UUID.randomUUID();
+		ServerWrapper wrapper = ServerWrapper.startedServerWrapperWithUuid("testRestartUuidMismatch-PRE", serverUuid, 2000, 3000, dataDirectory);
+		Assert.assertEquals(0, wrapper.stop());
+		
+		String localhost = InetAddress.getLocalHost().getHostAddress();
+		wrapper = ServerWrapper.startedServerWrapperRaw(new String[] {"--uuid", UUID.randomUUID().toString()
+				, "--clusterIp", localhost
+				, "--clusterPort", Integer.toString(2000)
+				, "--clientIp", localhost
+				, "--clientPort", Integer.toString(3000)
+				, "--data", dataDirectory.getAbsolutePath()
+				}, new ByteArrayOutputStream());
+		Assert.assertEquals(1, wrapper.stop());
+		
+		// But the correct UUID will work.
+		wrapper = ServerWrapper.startedServerWrapperWithUuid("testRestartUuidMismatch-POST", serverUuid, 2000, 3000, dataDirectory);
+		
+		// Shut down.
+		Assert.assertEquals(0, wrapper.stop());
 	}
 }

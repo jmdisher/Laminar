@@ -1,10 +1,13 @@
 package com.jeffdisher.laminar;
 
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.UnknownHostException;
+import java.nio.ByteBuffer;
 import java.nio.channels.ServerSocketChannel;
 import java.util.UUID;
 
@@ -46,11 +49,7 @@ public class Laminar {
 		String uuidString = parseOption(args, "--uuid");
 		boolean verbose = _parseFlag(args, "--verbose");
 		
-		// Create the UUID this node will use (in config, etc).
-		UUID serverUuid = (null == uuidString)
-				? UUID.randomUUID()
-				: UUID.fromString(uuidString);
-		System.out.println("Laminar server starting up:  " + serverUuid);
+		System.out.println("Laminar server starting up...");
 		
 		// Make sure we were given our required options.
 		if ((null == clientIpString) || (null == clientPortString) || (null == clusterIpString) || (null == clusterPortString) || (null == dataDirectoryName)) {
@@ -74,23 +73,12 @@ public class Laminar {
 		// Create the logger.
 		Logger logger = new Logger(System.out, verbose);
 		
-		// Note that we need to create an "initial config" which we will use until we get a cluster update from a client or another node starts sending updates.
-		ConfigEntry self = new ConfigEntry(serverUuid, clusterSocketAddress, clientSocketAddress);
-		
 		// Data elements which we may find on-disk after a restart.
 		RecoveredState recoveredState = null;
 		
-		// Check data directory.
+		// Check data directory and UUID file to see if we should load from an existing state.
 		File dataDirectory = new File(dataDirectoryName);
-		if (dataDirectory.exists()) {
-			// See if we are restarting from an existing state.
-			try {
-				// Returns null if this doesn't appear to be a valid storage representation.
-				recoveredState = RecoveredState.readStateFromRootDirectory(logger, dataDirectory, ClusterConfig.configFromEntries(new ConfigEntry[] {self}));
-			} catch (IOException e1) {
-				failStart("Failure restarting from on-disk state: " + e1.getLocalizedMessage());
-			}
-		} else {
+		if (!dataDirectory.exists()) {
 			boolean didCreate = dataDirectory.mkdirs();
 			if (!didCreate) {
 				failStart("Could not create data directory (or parents): \"" + dataDirectoryName +"\"");
@@ -100,10 +88,37 @@ public class Laminar {
 			failStart("Data directory not writable: \"" + dataDirectoryName +"\"");
 		}
 		
+		File uuidFile = new File(dataDirectory, DiskManager.UUID_FILE_NAME);
+		// Note that we need to create an "initial config" which we will use until we get a cluster update from a client or another node starts sending updates.
+		UUID serverUuid;
+		ConfigEntry self;
+		if (uuidFile.exists()) {
+			serverUuid = _readUuid(uuidFile);
+			if ((null != uuidString) && !UUID.fromString(uuidString).equals(serverUuid)) {
+				failStart("UUID requested does not match stored version: " + serverUuid);
+			}
+			self = new ConfigEntry(serverUuid, clusterSocketAddress, clientSocketAddress);
+			try {
+				// Returns null if this doesn't appear to be a valid storage representation.
+				recoveredState = RecoveredState.readStateFromRootDirectory(logger, dataDirectory, ClusterConfig.configFromEntries(new ConfigEntry[] {self}));
+			} catch (IOException e1) {
+				failStart("Failure restarting from on-disk state: " + e1.getLocalizedMessage());
+			}
+		} else {
+			// Create the UUID this node will use (in config, etc).
+			serverUuid = (null == uuidString)
+					? UUID.randomUUID()
+					: UUID.fromString(uuidString);
+			
+			self = new ConfigEntry(serverUuid, clusterSocketAddress, clientSocketAddress);
+			_writeUuid(uuidFile, serverUuid);
+		}
+		
 		// Log the successful start-up.
 		System.out.println("Client-facing socket bound: " + clientSocketAddress);
 		System.out.println("Cluster-facing socket bound: " + clusterSocketAddress);
 		System.out.println("Data directory configured: " + dataDirectoryName);
+		System.out.println("Server instance UUID:  " + serverUuid);
 		
 		// By this point, all requirements of the system should be satisfied so create the subsystems.
 		// First, the core NodeState and the background thread callback handlers for the managers.
@@ -218,5 +233,35 @@ public class Laminar {
 		}
 		int port = Integer.parseInt(portString);
 		return ClusterConfig.cleanSocketAddress(new InetSocketAddress(ip, port));
+	}
+
+	private static UUID _readUuid(File uuidFile) {
+		UUID uuid = null;
+		try (FileInputStream stream = new FileInputStream(uuidFile)) {
+			byte[] raw = new byte[128];
+			int didRead = stream.read(raw);
+			if (raw.length == didRead) {
+				ByteBuffer buffer = ByteBuffer.wrap(raw);
+				uuid = new UUID(buffer.getLong(), buffer.getLong());
+			} else {
+				failStart("Failed to read stored UUID (wrong size)");
+			}
+		} catch (IOException e) {
+			failStart("Failed to read stored UUID: " + e.getLocalizedMessage());
+		}
+		return uuid;
+	}
+
+	private static void _writeUuid(File uuidFile, UUID serverUuid) {
+		try (FileOutputStream stream = new FileOutputStream(uuidFile)) {
+			byte[] raw = new byte[128];
+			ByteBuffer.wrap(raw)
+				.putLong(serverUuid.getMostSignificantBits())
+				.putLong(serverUuid.getLeastSignificantBits())
+			;
+			stream.write(raw);
+		} catch (IOException e) {
+			failStart("Failed to store UUID: " + e.getLocalizedMessage());
+		}
 	}
 }

@@ -25,6 +25,11 @@ import com.jeffdisher.laminar.utils.Assert;
 public class DiskManager implements IDiskManager {
 	public static final String INTENTION_DIRECTORY_NAME = "intentions";
 	public static final String CONSEQUENCE_TOPICS_DIRECTORY_NAME = "consequence_topics";
+	/**
+	 * Note that the UUID is not handled by the DiskManager, but by the launcher.  It is related to storage, though, so
+	 * it is defined here.
+	 */
+	public static final String UUID_FILE_NAME = "uuid";
 
 	// Read-only fields setup during construction.
 	private final IDiskManagerBackgroundCallbacks _callbackTarget;
