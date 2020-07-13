@@ -17,3 +17,15 @@ Laminar's embeddable libraries are available here:
 </repositories>
 ```
 
+Currently, this is just the clientlib for the `0.0-research1` build:
+
+```
+<dependencies>
+	<dependency>
+		<groupId>com.jeffdisher.laminar</groupId>
+		<artifactId>clientlib</artifactId>
+		<version>0.0-research1</version>
+	</dependency>
+</dependencies>
+```
+
